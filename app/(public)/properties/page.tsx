@@ -18,6 +18,24 @@ import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
 import { PropertyFiltersModal } from "@/components/PropertyFiltersModal"
 import { SaveFavoriteModal } from "@/components/SaveFavoriteModal"
+import { propertiesAPI } from "@/lib/api/properties"
+
+// Placeholder image for properties without photos
+const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
+
+// Helper to get property image with fallback
+const getPropertyImage = (property: any): string => {
+  // Try images array first
+  if (property.images && property.images.length > 0 && property.images[0]) {
+    return property.images[0]
+  }
+  // Try single image field
+  if (property.image && property.image.trim() !== '') {
+    return property.image
+  }
+  // Return placeholder
+  return DEFAULT_PROPERTY_IMAGE
+}
 
 // Dynamically import Mapbox component to avoid SSR issues
 const PropertyMap = dynamic(() => import('@/components/PropertyMapbox'), { 
@@ -33,7 +51,7 @@ const PropertyMap = dynamic(() => import('@/components/PropertyMapbox'), {
 })
 
 interface Property {
-  id: number
+  id: string  // Changed from number to string (UUID)
   title: string
   location: string
   price: number
@@ -42,114 +60,21 @@ interface Property {
   baths: number
   sqft: number
   type: string
+  property_type: string
   image: string
+  images: string[]
   featured: boolean
   latitude: number
   longitude: number
   description?: string
+  landlord?: {
+    id: string
+    name: string
+    avatar_url?: string
+  }
 }
 
-// Sample properties with coordinates - Nigerian Cities
-const propertiesData: Property[] = [
-  // Lagos Properties
-  {
-    id: 1,
-    title: "Luxury Penthouse Victoria Island",
-    location: "Victoria Island, Lagos, Nigeria",
-    price: 450000,
-    pricePerMonth: 2800,
-    beds: 4,
-    baths: 4,
-    sqft: 3500,
-    type: "Penthouse",
-    image: "/luxury-apartment-lagos.jpg",
-    featured: true,
-    latitude: 6.4281,
-    longitude: 3.4219,
-    description: "Stunning penthouse with ocean views and modern amenities"
-  },
-  {
-    id: 2,
-    title: "Modern Duplex Lekki Phase 1",
-    location: "Lekki Phase 1, Lagos, Nigeria",
-    price: 380000,
-    pricePerMonth: 2200,
-    beds: 5,
-    baths: 5,
-    sqft: 4200,
-    type: "Duplex",
-    image: "/modern-villa-living-room.jpg",
-    featured: true,
-    latitude: 6.4474,
-    longitude: 3.4739,
-    description: "Spacious duplex in gated estate with 24/7 security"
-  },
-  {
-    id: 3,
-    title: "Elegant Apartment Ikoyi",
-    location: "Ikoyi, Lagos, Nigeria",
-    price: 320000,
-    pricePerMonth: 1900,
-    beds: 3,
-    baths: 3,
-    sqft: 2800,
-    type: "Apartment",
-    image: "/apartment-accra.jpg",
-    featured: false,
-    latitude: 6.4541,
-    longitude: 3.4316,
-    description: "High-rise luxury apartment in prestigious Ikoyi"
-  },
-  {
-    id: 4,
-    title: "Contemporary Villa Banana Island",
-    location: "Banana Island, Lagos, Nigeria",
-    price: 850000,
-    pricePerMonth: 5500,
-    beds: 6,
-    baths: 7,
-    sqft: 6500,
-    type: "Villa",
-    image: "/contemporary-townhouse-johannesburg.jpg",
-    featured: true,
-    latitude: 6.4167,
-    longitude: 3.4333,
-    description: "Ultra-luxury villa on exclusive Banana Island"
-  },
-  // Abuja Properties
-  {
-    id: 5,
-    title: "Executive Mansion Maitama",
-    location: "Maitama, Abuja, Nigeria",
-    price: 720000,
-    pricePerMonth: 4200,
-    beds: 5,
-    baths: 6,
-    sqft: 5800,
-    type: "Mansion",
-    image: "/luxury-apartment-lagos.jpg",
-    featured: true,
-    latitude: 9.0820,
-    longitude: 7.4951,
-    description: "Prestigious mansion in Abuja's most exclusive district"
-  },
-  {
-    id: 6,
-    title: "Modern Apartment Wuse 2",
-    location: "Wuse 2, Abuja, Nigeria",
-    price: 280000,
-    pricePerMonth: 1600,
-    beds: 3,
-    baths: 3,
-    sqft: 2400,
-    type: "Apartment",
-    image: "/apartment-accra.jpg",
-    featured: false,
-    latitude: 9.0643,
-    longitude: 7.4820,
-    description: "Contemporary apartment in central business district"
-  },
-]
+
 
 type ViewMode = 'list' | 'map' | 'split'
 
@@ -158,6 +83,11 @@ export default function PropertiesPage() {
   const router = useRouter()
   const { user } = useAuth()
   
+  // ADD THESE THREE NEW STATES:
+  const [properties, setProperties] = useState<Property[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
   const [searchQuery, setSearchQuery] = useState("")
   const [favorites, setFavorites] = useState<number[]>([])
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
@@ -172,7 +102,7 @@ export default function PropertiesPage() {
   const [showMoreDropdown, setShowMoreDropdown] = useState(false)
   
   // Filters
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000000])
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])
   const [selectedType, setSelectedType] = useState<string>("all")
   const [minBeds, setMinBeds] = useState<number>(0)
   const [minBaths, setMinBaths] = useState<number>(0)
@@ -184,6 +114,82 @@ export default function PropertiesPage() {
 
   // REMOVED: Problematic click-outside handler
   // Dropdowns now close only via Apply/Reset buttons or clicking another filter
+
+
+
+
+  // Fetch properties from database
+  useEffect(() => {
+    const fetchProperties = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+        
+        const response = await propertiesAPI.search({
+          page: 1,
+          limit: 100
+        })
+        
+        // DEBUG: Log API response
+        console.log('🔍 API Response:', response)
+        console.log('📊 Total properties from API:', response.properties?.length)
+        console.log('📦 Raw properties data:', response.properties)
+        
+        // Transform API response to match component interface
+        const transformedProperties = response.properties.map(prop => ({
+          id: prop.id,
+          title: prop.title,
+          location: prop.location,
+          price: prop.price,
+          pricePerMonth: prop.price,
+          beds: prop.beds || 0,
+          baths: prop.baths || 0,
+          sqft: prop.sqft || 0,
+          type: prop.property_type || 'apartment',
+          property_type: prop.property_type || 'apartment',
+          image: prop.images?.[0] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800',
+          images: prop.images || [],
+          featured: prop.featured || false,
+          latitude: prop.latitude || 0,
+          longitude: prop.longitude || 0,
+          description: prop.description,
+          landlord: prop.landlord
+        }))
+        
+        console.log('✅ Transformed properties:', transformedProperties)
+        console.log('📈 Total transformed:', transformedProperties.length)
+        
+        setProperties(transformedProperties)
+      } catch (err: any) {
+        console.error('Failed to fetch properties:', err)
+        console.error('Error response:', err.response)
+        console.error('Error message:', err.message)
+        console.error('Error details:', err.response?.data)
+        
+        const errorMsg = err.response?.data?.detail || err.message || 'Failed to load properties'
+        setError(errorMsg)
+        toast.error(`Failed to load properties: ${errorMsg}`)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    fetchProperties()
+  }, [])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // Read URL parameters and set filters
   useEffect(() => {
@@ -203,13 +209,29 @@ export default function PropertiesPage() {
   }, [searchParams])
 
   // Filter properties
-  const filteredProperties = propertiesData.filter(property => {
-    const matchesSearch = property.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         property.location.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredProperties = properties.filter(property => {
+    // More flexible search - split by comma and check each part
+    const searchTerms = searchQuery.toLowerCase().split(',').map(s => s.trim()).filter(s => s.length > 0)
+    const matchesSearch = searchQuery === '' || searchTerms.some(term => 
+      property.title.toLowerCase().includes(term) ||
+      property.location.toLowerCase().includes(term)
+    )
     const matchesPrice = property.price >= priceRange[0] && property.price <= priceRange[1]
     const matchesType = selectedType === "all" || property.type === selectedType
     const matchesBeds = property.beds >= minBeds
     const matchesBaths = property.baths >= minBaths
+    
+    // DEBUG: Log filtering
+    if (!matchesSearch || !matchesPrice || !matchesType || !matchesBeds || !matchesBaths) {
+      console.log(`❌ Property "${property.title}" filtered out:`, {
+        matchesSearch,
+        matchesPrice,
+        matchesType,
+        matchesBeds,
+        matchesBaths,
+        property: { price: property.price, type: property.type, beds: property.beds, baths: property.baths }
+      })
+    }
     
     return matchesSearch && matchesPrice && matchesType && matchesBeds && matchesBaths
   }).sort((a, b) => {
@@ -217,6 +239,10 @@ export default function PropertiesPage() {
     if (sortBy === 'price-high') return b.price - a.price
     return 0
   })
+  
+  // DEBUG: Log final filtered count
+  console.log('🎯 Filtered properties count:', filteredProperties.length)
+  console.log('🔍 Current filters:', { searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy })
 
   const toggleFavorite = (id: number) => {
     // If not logged in, show the save favorite modal
@@ -233,9 +259,14 @@ export default function PropertiesPage() {
     )
 
     if (isFavorite) {
-      toast.info("Removed from favorites")
+      toast.success(
+        <div className="flex items-center justify-between gap-4">
+          <span>❤️ Removed from favorites</span>
+        </div>,
+        { duration: 3000 }
+      )
     } else {
-      toast.success("Added to favorites")
+      toast.success("✅ Saved to Favorites!", { duration: 3000 })
     }
   }
 
@@ -314,11 +345,42 @@ export default function PropertiesPage() {
   }
 
   const formatPrice = (value: number) => {
-    if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
-    if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`
-    return `$${value}`
+    return new Intl.NumberFormat('en-NG', {
+      style: 'currency',
+      currency: 'NGN',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(value)
   }
 
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-orange-500 mx-auto mb-4" />
+          <p className="text-slate-600 font-medium">Loading properties...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <Home className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Oops!</h2>
+          <p className="text-slate-600 mb-4">{error}</p>
+          <Button onClick={() => window.location.reload()}>
+            Try Again
+          </Button>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="min-h-screen bg-white overflow-hidden">
       {/* Modern Inline Filter Bar - Fixed */}
@@ -425,15 +487,17 @@ export default function PropertiesPage() {
               </button>
 
               {/* Clear All */}
-              {(minBeds > 0 || minBaths > 0 || selectedType !== 'all' || priceRange[0] > 0 || priceRange[1] < 1000000 || selectedAmenities.length > 0 || selectedPreferences.length > 0) && (
+              {(minBeds > 0 || minBaths > 0 || selectedType !== 'all' || priceRange[0] > 0 || priceRange[1] < 10000000 || selectedAmenities.length > 0 || selectedPreferences.length > 0 || searchQuery !== '') && (
                 <button
                   onClick={() => {
                     setMinBeds(0)
                     setMinBaths(0)
                     setSelectedType('all')
-                    setPriceRange([0, 1000000])
+                    setPriceRange([0, 10000000])
+                    setSearchQuery('')
                     setSelectedAmenities([])
                     setSelectedPreferences([])
+                    router.push('/properties')
                     toast.success('All filters cleared')
                   }}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all whitespace-nowrap"
@@ -509,13 +573,16 @@ export default function PropertiesPage() {
         selectedPreferences={selectedPreferences}
         setSelectedPreferences={setSelectedPreferences}
         onClearAll={() => {
-          setPriceRange([0, 1000000])
-          setSelectedType("all")
           setMinBeds(0)
           setMinBaths(0)
-          setSearchQuery("")
+          setSelectedType('all')
+          setPriceRange([0, 10000000])
+          setSearchQuery('')
           setSelectedAmenities([])
           setSelectedPreferences([])
+          router.push('/properties')
+          toast.success('All filters cleared')
+
         }}
         onApply={() => {
           // Filters are already applied in real-time
@@ -614,13 +681,14 @@ export default function PropertiesPage() {
                   <p className="text-slate-600 mb-6">Try adjusting your filters or clear them to see all properties</p>
                   <Button
                     onClick={() => {
-                      setPriceRange([0, 1000000])
+                      setPriceRange([0, 10000000])
                       setSelectedType("all")
                       setMinBeds(0)
                       setMinBaths(0)
                       setSearchQuery("")
                       setSelectedAmenities([])
                       setSelectedPreferences([])
+                      router.push('/properties')
                       toast.success("All filters cleared")
                     }}
                     className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-lg font-medium"
@@ -644,7 +712,7 @@ export default function PropertiesPage() {
                     {/* Image */}
                     <div className="relative w-full h-56 overflow-hidden bg-slate-100">
                       <img
-                        src={property.image}
+                        src={getPropertyImage(property)}
                         alt={property.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       />
@@ -677,10 +745,10 @@ export default function PropertiesPage() {
                       <div className="mb-2">
                         <div className="flex items-baseline gap-2">
                           <span className="text-xl font-bold text-slate-900">
-                            ${(property.price / 1000).toFixed(0)}k
+                            {formatPrice(property.price)}
                           </span>
                           <span className="text-xs text-slate-500">
-                            ${property.pricePerMonth}/mo
+                            /month
                           </span>
                         </div>
                       </div>
@@ -732,7 +800,7 @@ export default function PropertiesPage() {
         onContinueBrowsing={handleContinueBrowsing}
         propertyTitle={
           pendingFavoriteId 
-            ? propertiesData.find(p => p.id === pendingFavoriteId)?.title || "this property"
+            ? properties.find(p => p.id === pendingFavoriteId)?.title || "this property"
             : "this property"
         }
       />

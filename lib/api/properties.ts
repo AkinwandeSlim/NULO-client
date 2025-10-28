@@ -79,8 +79,11 @@ export const propertiesAPI = {
   /**
    * Create new property (landlord only)
    */
-  create: async (data: CreatePropertyData): Promise<Property> => {
-    const response = await apiClient.post<Property>('/api/v1/properties', data);
+  create: async (data: CreatePropertyData | FormData): Promise<Property> => {
+    const response = await apiClient.post<Property>('/api/v1/properties', data, {
+      headers: data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {},
+      timeout: 60000 // 60 seconds for file uploads
+    });
     return response.data;
   },
 
@@ -97,6 +100,16 @@ export const propertiesAPI = {
    */
   delete: async (id: string): Promise<void> => {
     await apiClient.delete(`/api/v1/properties/${id}`);
+  },
+
+  /**
+   * Get landlord's properties
+   */
+  getMyProperties: async (page: number = 1, limit: number = 20): Promise<PropertySearchResponse> => {
+    const response = await apiClient.get<PropertySearchResponse>('/api/v1/properties/my-properties', {
+      params: { page, limit }
+    });
+    return response.data;
   },
 };
 

@@ -32,7 +32,7 @@ export default function PublicLayout({
   const searchParams = useSearchParams()
   
   // Determine if we should show search bar (properties or dashboard pages)
-  const showSearchBar = pathname?.startsWith('/properties') || pathname?.startsWith('/dashboard')
+  const showSearchBar = pathname?.startsWith('/properties') || pathname?.startsWith('/dashboard') || pathname?.startsWith('/')
   const isHomepage = pathname === '/'
   
   // Use real Supabase auth
@@ -147,7 +147,7 @@ export default function PublicLayout({
                         <ChevronDown className="h-4 w-4 text-slate-500" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuContent align="end" className="w-56 z-[150]">
                       <DropdownMenuLabel>
                         <div className="flex flex-col">
                           <span className="text-sm font-semibold text-slate-900">
@@ -165,7 +165,7 @@ export default function PublicLayout({
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem asChild>
-                        <Link href={profile?.role === 'landlord' ? '/landlord/dashboard' : '/dashboard'} className="cursor-pointer">
+                        <Link href={profile?.user_type === 'landlord' ? '/landlord/overview' : '/tenant'} className="cursor-pointer">
                           <LayoutGrid className="h-4 w-4 mr-2" />
                           Dashboard
                         </Link>
@@ -296,7 +296,7 @@ export default function PublicLayout({
                         asChild
                         onClick={() => setMobileMenuOpen(false)}
                       >
-                        <Link href={profile?.role === 'landlord' ? '/landlord/dashboard' : '/dashboard'}>
+                        <Link href={profile?.user_type === 'landlord' ? '/landlord/overview' : '/tenant'}>
                           Dashboard
                         </Link>
                       </Button>

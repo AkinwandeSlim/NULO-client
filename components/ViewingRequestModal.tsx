@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Calendar, Clock, MessageCircle, Phone, User, CheckCircle2, AlertCircle } from "lucide-react"
+import { Calendar, Clock, MessageCircle, Phone, User, CheckCircle2, AlertCircle, Shield } from "lucide-react"
 import { toast } from "sonner"
 
 interface ViewingRequestModalProps {
@@ -121,37 +121,44 @@ export function ViewingRequestModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <Calendar className="h-5 w-5 text-orange-500" />
-            Request Property Viewing
-          </DialogTitle>
-          <DialogDescription className="text-slate-600">
-            Schedule a viewing for <strong>"{propertyTitle}"</strong>
-          </DialogDescription>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="space-y-3 pb-4 border-b border-slate-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <Calendar className="h-6 w-6 text-orange-600" />
+            </div>
+            <div>
+              <DialogTitle className="text-2xl font-bold text-slate-900">
+                Request Property Viewing
+              </DialogTitle>
+              <DialogDescription className="text-sm text-slate-600 mt-1">
+                Schedule a viewing for <strong className="text-slate-900">"{propertyTitle}"</strong>
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-5 py-4">
+        <div className="space-y-6 py-6">
           {/* Name Input */}
           <div className="space-y-2">
-            <Label htmlFor="name" className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <Label htmlFor="name" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
               <User className="h-4 w-4 text-orange-500" />
-              Your Name *
+              Your Full Name
+              <span className="text-red-500">*</span>
             </Label>
             <Input
               id="name"
               type="text"
-              placeholder="e.g., John Doe"
+              placeholder="Enter your full name"
               value={name}
               onChange={(e) => {
                 setName(e.target.value)
                 setErrors(prev => ({ ...prev, name: "" }))
               }}
-              className={`h-11 ${errors.name ? 'border-red-500' : ''}`}
+              className={`h-12 text-base ${errors.name ? 'border-red-500 focus:ring-red-500' : 'focus:ring-orange-500'}`}
             />
             {errors.name && (
-              <p className="text-xs text-red-600 flex items-center gap-1">
+              <p className="text-xs text-red-600 flex items-center gap-1 mt-1">
                 <AlertCircle className="h-3 w-3" />
                 {errors.name}
               </p>
@@ -160,30 +167,35 @@ export function ViewingRequestModal({
 
           {/* Date Picker */}
           <div className="space-y-2">
-            <Label htmlFor="date" className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <Label htmlFor="date" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
               <Calendar className="h-4 w-4 text-orange-500" />
-              Select Viewing Date *
+              Preferred Viewing Date
+              <span className="text-red-500">*</span>
             </Label>
-            <Input
-              id="date"
-              type="date"
-              min={today}
-              max={maxDateStr}
-              value={selectedDate}
-              onChange={(e) => {
-                setSelectedDate(e.target.value)
-                setErrors(prev => ({ ...prev, date: "" }))
-              }}
-              className={`h-11 ${errors.date ? 'border-red-500' : ''}`}
-            />
+            <div className="relative">
+              <Input
+                id="date"
+                type="date"
+                min={today}
+                max={maxDateStr}
+                value={selectedDate}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value)
+                  setErrors(prev => ({ ...prev, date: "" }))
+                }}
+                className={`h-12 text-base ${errors.date ? 'border-red-500 focus:ring-red-500' : 'focus:ring-orange-500'}`}
+              />
+            </div>
             {selectedDate && (
-              <p className="text-xs text-green-600 flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3" />
-                {formatDate(selectedDate)}
-              </p>
+              <div className="p-2 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-xs text-green-700 flex items-center gap-1 font-medium">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {formatDate(selectedDate)}
+                </p>
+              </div>
             )}
             {errors.date && (
-              <p className="text-xs text-red-600 flex items-center gap-1">
+              <p className="text-xs text-red-600 flex items-center gap-1 mt-1">
                 <AlertCircle className="h-3 w-3" />
                 {errors.date}
               </p>
@@ -191,39 +203,31 @@ export function ViewingRequestModal({
           </div>
 
           {/* Time Slot Selector */}
-          <div className="space-y-2">
-            <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <div className="space-y-3">
+            <Label className="text-sm font-semibold text-slate-900 flex items-center gap-2">
               <Clock className="h-4 w-4 text-orange-500" />
               Preferred Time Slot
             </Label>
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-3 gap-3">
               {timeSlots.map((slot) => (
                 <button
                   key={slot.value}
                   type="button"
                   onClick={() => setSelectedTimeSlot(slot.value)}
-                  className={`flex items-center justify-between p-3 rounded-lg border-2 transition-all ${
+                  className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
                     selectedTimeSlot === slot.value
-                      ? 'border-orange-500 bg-orange-50 text-orange-700'
+                      ? 'border-orange-500 bg-orange-50 shadow-md scale-105'
                       : 'border-slate-200 hover:border-orange-300 hover:bg-slate-50'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{slot.icon}</span>
-                    <div className="text-left">
-                      <p className="font-semibold text-sm">{slot.label}</p>
-                      <p className="text-xs text-slate-600">{slot.time}</p>
-                    </div>
-                  </div>
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                    selectedTimeSlot === slot.value
-                      ? 'border-orange-500 bg-orange-500'
-                      : 'border-slate-300'
-                  }`}>
-                    {selectedTimeSlot === slot.value && (
-                      <div className="w-2 h-2 bg-white rounded-full" />
-                    )}
-                  </div>
+                  <span className="text-3xl mb-2">{slot.icon}</span>
+                  <p className={`font-semibold text-sm ${
+                    selectedTimeSlot === slot.value ? 'text-orange-700' : 'text-slate-700'
+                  }`}>{slot.label}</p>
+                  <p className="text-xs text-slate-500 mt-1">{slot.time}</p>
+                  {selectedTimeSlot === slot.value && (
+                    <CheckCircle2 className="h-5 w-5 text-orange-500 mt-2" />
+                  )}
                 </button>
               ))}
             </div>
@@ -231,9 +235,10 @@ export function ViewingRequestModal({
 
           {/* Contact Number */}
           <div className="space-y-2">
-            <Label htmlFor="phone" className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <Label htmlFor="phone" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
               <Phone className="h-4 w-4 text-orange-500" />
-              Your Contact Number *
+              Your Contact Number
+              <span className="text-red-500">*</span>
             </Label>
             <Input
               id="phone"
@@ -244,10 +249,10 @@ export function ViewingRequestModal({
                 setContactNumber(e.target.value)
                 setErrors(prev => ({ ...prev, contactNumber: "" }))
               }}
-              className={`h-11 ${errors.contactNumber ? 'border-red-500' : ''}`}
+              className={`h-12 text-base ${errors.contactNumber ? 'border-red-500 focus:ring-red-500' : 'focus:ring-orange-500'}`}
             />
             {errors.contactNumber && (
-              <p className="text-xs text-red-600 flex items-center gap-1">
+              <p className="text-xs text-red-600 flex items-center gap-1 mt-1">
                 <AlertCircle className="h-3 w-3" />
                 {errors.contactNumber}
               </p>
@@ -256,68 +261,74 @@ export function ViewingRequestModal({
 
           {/* Message to Landlord */}
           <div className="space-y-2">
-            <Label htmlFor="message" className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <Label htmlFor="message" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
               <MessageCircle className="h-4 w-4 text-orange-500" />
-              Message to Landlord (Optional)
+              Additional Message
+              <span className="text-xs text-slate-500 font-normal ml-1">(Optional)</span>
             </Label>
             <Textarea
               id="message"
               placeholder="Hi, I'm interested in viewing this property. Looking forward to hearing from you!"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              rows={3}
-              className="resize-none"
+              rows={4}
+              maxLength={500}
+              className="resize-none text-base focus:ring-orange-500"
             />
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 text-right">
               {message.length}/500 characters
             </p>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className="flex-1 h-12 bg-orange-500 hover:bg-orange-600 text-white font-semibold"
-            >
-              {isSubmitting ? (
-                <>
-                  <span className="animate-spin mr-2">⏳</span>
-                  Sending Request...
-                </>
-              ) : (
-                <>
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Request Viewing
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={onClose}
-              variant="outline"
-              disabled={isSubmitting}
-              className="flex-1 h-12 border-2 border-slate-200 hover:bg-slate-50 font-semibold"
-            >
-              Cancel
-            </Button>
+          {/* Info Banners */}
+          <div className="space-y-3 pt-2">
+            {/* Response Time Notice */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+              <p className="text-sm text-blue-800 text-center">
+                <strong>⚡ Quick Response:</strong> {landlordName} typically responds {landlordResponseTime}. 
+                You'll receive confirmation via SMS and email.
+              </p>
+            </div>
+
+            {/* Trust & Safety */}
+            <div className="p-4 bg-green-50 border border-green-200 rounded-xl">
+              <p className="text-sm text-green-800 text-center">
+                🛡️ <strong>Protected by Nulo:</strong> All viewing requests are logged and monitored for your safety.
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Response Time Notice */}
-        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-xs text-blue-700 text-center">
-            <strong>⚡ Quick Response:</strong> {landlordName} typically responds {landlordResponseTime}. 
-            You'll receive confirmation via SMS and email.
-          </p>
-        </div>
-
-        {/* Trust & Safety */}
-        <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-          <p className="text-xs text-green-700 text-center">
-            🛡️ <strong>Protected by Nulo:</strong> All viewing requests are logged and monitored for your safety.
-          </p>
+        {/* Action Buttons */}
+        <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4 border-t border-slate-200">
+          <Button
+            onClick={onClose}
+            variant="outline"
+            disabled={isSubmitting}
+            className="flex-1 h-13 border-2 border-slate-300 hover:bg-slate-50 font-semibold text-base"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="flex-1 h-13 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-base shadow-lg hover:shadow-xl transition-all"
+          >
+            {isSubmitting ? (
+              <>
+                <span className="animate-spin mr-2">⏳</span>
+                Sending Request...
+              </>
+            ) : (
+              <>
+                <Calendar className="h-5 w-5 mr-2" />
+                Request Viewing
+              </>
+            )}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
   )
 }
+

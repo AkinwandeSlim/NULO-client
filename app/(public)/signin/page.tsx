@@ -115,9 +115,9 @@ export default function SignInPage() {
           if (callbackUrl && callbackUrl !== '/properties') {
             console.log('🔄 Redirecting to callback:', callbackUrl)
             router.push(callbackUrl)
-          } else if (profile?.role === 'landlord') {
+          } else if (profile?.user_type === 'landlord') {
             console.log('🔄 Redirecting to landlord dashboard...')
-            router.push('/landlord/dashboard')
+            router.push('/landlord/overview')
           } else {
             console.log('🔄 Redirecting to properties page...')
             router.push('/properties')
