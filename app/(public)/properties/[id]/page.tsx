@@ -80,8 +80,15 @@ export default function PropertyDetailPage() {
 
   const router = useRouter()
   const params = useParams()
-  const { user } = useAuth()
+  const { user, profile, loading: authLoading } = useAuth()
   const propertyId = params.id as string
+
+  // Redirect landlords to their dashboard
+  useEffect(() => {
+    if (profile?.user_type === 'landlord') {
+      router.replace('/landlord/overview')
+    }
+  }, [profile, router])
 
   // Fetch property data
   useEffect(() => {
@@ -318,6 +325,18 @@ export default function PropertyDetailPage() {
       navigator.clipboard.writeText(window.location.href)
       toast.success('Link copied to clipboard!')
     }
+  }
+
+  // Show loading while checking user type (must be after all hooks)
+  if (authLoading || profile?.user_type === 'landlord') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-orange-500 mx-auto mb-4" />
+          <p className="text-slate-600 font-medium">Loading...</p>
+        </div>
+      </div>
+    )
   }
 
   // Loading state

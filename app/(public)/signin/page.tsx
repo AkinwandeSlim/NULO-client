@@ -96,34 +96,35 @@ export default function SignInPage() {
         
         // Get user profile to determine redirect
         const { data: { user } } = await supabase.auth.getUser()
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role, full_name')
+        console.log('👤 User data:', user)
+        
+        const { data: profile, error: profileError} = await supabase
+          .from('users')
+          .select('user_type, full_name')
           .eq('id', user?.id)
           .single()
         
         console.log('👤 User profile:', profile)
+        console.log('👤 Profile error:', profileError)
+        console.log('👤 User type:', profile?.user_type)
         
         // Success toast with personalized message
         toast.success('Welcome back!', {
           description: profile?.full_name ? `Welcome back, ${profile.full_name}!` : 'You have successfully signed in.',
-          duration: 3000,
+          duration: 2000,
         })
         
-        // Redirect based on role or callback URL
-        setTimeout(() => {
-          if (callbackUrl && callbackUrl !== '/properties') {
-            console.log('🔄 Redirecting to callback:', callbackUrl)
-            router.push(callbackUrl)
-          } else if (profile?.user_type === 'landlord') {
-            console.log('🔄 Redirecting to landlord dashboard...')
-            router.push('/landlord/overview')
-          } else {
-            console.log('🔄 Redirecting to properties page...')
-            router.push('/properties')
-          }
-          router.refresh()
-        }, 500)
+        // Redirect immediately based on user type
+        if (profile?.user_type === 'landlord') {
+          console.log('🔄 Redirecting to landlord dashboard...')
+          router.replace('/landlord/overview')
+        } else if (callbackUrl && callbackUrl !== '/properties') {
+          console.log('🔄 Redirecting to callback:', callbackUrl)
+          router.replace(callbackUrl)
+        } else {
+          console.log('🔄 Redirecting to tenant properties...')
+          router.replace('/properties')
+        }
       }
     } catch (error: any) {
       console.error('❌ Unexpected sign in error:', error)

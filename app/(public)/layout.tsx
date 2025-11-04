@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Menu, X, Home, Building2, LayoutGrid, User, LogOut, Search, ChevronDown } from "lucide-react"
+import { Menu, X, Home, Building2, LayoutGrid, User, LogOut, Search, ChevronDown, Bell, Settings, MessageSquare, Heart, Calendar } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -99,8 +99,8 @@ export default function PublicLayout({
 
   return (
     <div className="min-h-screen bg-warm-ivory-gradient">
-      {/* Navigation Bar */}
-      <nav className="fixed top-0 z-50 w-full bg-white border-b border-slate-200 shadow-sm">
+      {/* Unified Navigation Bar */}
+      <nav className="fixed top-0 z-50 w-full bg-white/98 backdrop-blur-lg border-b border-slate-100 shadow-sm">
         <div className="max-w-[1920px] mx-auto px-4 lg:px-6">
           <div className="flex h-16 items-center justify-between gap-4">
             {/* Logo */}
@@ -134,17 +134,31 @@ export default function PublicLayout({
                 <div className="h-10 w-32 bg-slate-100 animate-pulse rounded-lg" />
               ) : isAuthenticated ? (
                 <>
-                  {/* Authenticated State - User Dropdown Menu */}
+                  {/* Notification Bell */}
+                  <Button variant="ghost" size="icon" className="relative hidden sm:flex">
+                    <Bell className="h-5 w-5 text-slate-700" />
+                    <span className="absolute top-1 right-1 h-2 w-2 bg-orange-500 rounded-full" />
+                  </Button>
+
+                  {/* Profile Dropdown Menu */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors">
-                        <Avatar className="h-8 w-8 border-2 border-slate-200">
+                      <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+                        <Avatar className="h-9 w-9 border-2 border-slate-200">
                           <AvatarImage src={profile?.avatar_url || undefined} />
                           <AvatarFallback className="bg-orange-500 text-white text-sm font-semibold">
                             {getUserInitials()}
                           </AvatarFallback>
                         </Avatar>
-                        <ChevronDown className="h-4 w-4 text-slate-500" />
+                        <div className="hidden lg:block text-left">
+                          <p className="text-sm font-medium text-slate-900">
+                            {profile?.full_name || user?.email?.split('@')[0] || 'User'}
+                          </p>
+                          <p className="text-xs text-slate-500 capitalize">
+                            {profile?.user_type || 'tenant'}
+                          </p>
+                        </div>
+                        <ChevronDown className="h-4 w-4 text-slate-500 hidden lg:block" />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56 z-[150]">
@@ -156,11 +170,9 @@ export default function PublicLayout({
                           <span className="text-xs text-slate-500 font-normal">
                             {user?.email || ''}
                           </span>
-                          {profile?.role && (
-                            <span className="text-xs text-orange-600 font-medium capitalize mt-1">
-                              {profile.role}
-                            </span>
-                          )}
+                          <span className="text-xs text-orange-600 font-medium capitalize mt-1">
+                            {profile?.user_type || 'tenant'}
+                          </span>
                         </div>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
@@ -171,9 +183,56 @@ export default function PublicLayout({
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href="/properties" className="cursor-pointer">
-                          <Building2 className="h-4 w-4 mr-2" />
-                          Browse Properties
+                        <Link href="/tenant/profile" className="cursor-pointer">
+                          <User className="h-4 w-4 mr-2" />
+                          Profile
+                        </Link>
+                      </DropdownMenuItem>
+                      {/* Only show Browse Properties for non-landlords */}
+                      {profile?.user_type !== 'landlord' && (
+                        <>
+                          <DropdownMenuItem asChild>
+                            <Link href="/properties" className="cursor-pointer">
+                              <Home className="h-4 w-4 mr-2" />
+                              Browse Properties
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href="/tenant/favorites" className="cursor-pointer">
+                              <Heart className="h-4 w-4 mr-2" />
+                              Favorites
+                            </Link>
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      {/* Show My Properties for landlords */}
+                      {profile?.user_type === 'landlord' && (
+                        <>
+                          <DropdownMenuItem asChild>
+                            <Link href="/landlord/properties" className="cursor-pointer">
+                              <Building2 className="h-4 w-4 mr-2" />
+                              My Properties
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href="/landlord/viewings" className="cursor-pointer">
+                              <Calendar className="h-4 w-4 mr-2" />
+                              Viewings
+                            </Link>
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      <DropdownMenuItem asChild>
+                        <Link href="/tenant/messages" className="cursor-pointer">
+                          <MessageSquare className="h-4 w-4 mr-2" />
+                          Messages
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link href="/tenant/profile" className="cursor-pointer">
+                          <Settings className="h-4 w-4 mr-2" />
+                          Settings
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />

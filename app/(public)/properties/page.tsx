@@ -81,13 +81,12 @@ type ViewMode = 'list' | 'map' | 'split'
 export default function PropertiesPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, profile, loading } = useAuth()
   
-  // ADD THESE THREE NEW STATES:
+  // ALL HOOKS MUST BE DECLARED FIRST (before any early returns)
   const [properties, setProperties] = useState<Property[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
   const [searchQuery, setSearchQuery] = useState("")
   const [favorites, setFavorites] = useState<number[]>([])
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
@@ -111,13 +110,14 @@ export default function PropertiesPage() {
   // Advanced Filters
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([])
   const [selectedPreferences, setSelectedPreferences] = useState<string[]>([])
-
-  // REMOVED: Problematic click-outside handler
-  // Dropdowns now close only via Apply/Reset buttons or clicking another filter
-
-
-
-
+  
+  // Redirect landlords to their dashboard
+  useEffect(() => {
+    if (profile?.user_type === 'landlord') {
+      router.replace('/landlord/overview')
+    }
+  }, [profile, router])
+  
   // Fetch properties from database
   useEffect(() => {
     const fetchProperties = async () => {
@@ -177,20 +177,6 @@ export default function PropertiesPage() {
     fetchProperties()
   }, [])
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   // Read URL parameters and set filters
   useEffect(() => {
     const location = searchParams.get('location')
@@ -207,6 +193,18 @@ export default function PropertiesPage() {
     if (bedrooms && bedrooms !== 'Any') setMinBeds(parseInt(bedrooms.replace('+', '')))
     if (bathrooms && bathrooms !== 'Any') setMinBaths(parseInt(bathrooms.replace('+', '')))
   }, [searchParams])
+
+  // Show loading while checking user type (AFTER all hooks)
+  if (loading || profile?.user_type === 'landlord') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   // Filter properties
   const filteredProperties = properties.filter(property => {
@@ -629,11 +627,23 @@ export default function PropertiesPage() {
 
             {/* Map Container */}
             <div className="w-full h-full">
-              <PropertyMap
-                properties={filteredProperties}
-                selectedProperty={selectedProperty}
-                onPropertySelect={handlePropertySelect}
-              />
+              {process.env.NEXT_PUBLIC_MAPBOX_TOKEN ? (
+                <PropertyMap
+                  properties={filteredProperties}
+                  selectedProperty={selectedProperty}
+                  onPropertySelect={handlePropertySelect}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-slate-100 rounded-lg">
+                  <div className="text-center p-8">
+                    <MapIcon className="h-16 w-16 text-slate-400 mx-auto mb-4" />
+                    <p className="text-slate-600 font-medium mb-2">Map Unavailable</p>
+                    <p className="text-sm text-slate-500">
+                      Mapbox token not configured. Add NEXT_PUBLIC_MAPBOX_TOKEN to .env.local
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Map Footer - Property Count */}

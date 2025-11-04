@@ -30,6 +30,8 @@ export default function PropertiesPage() {
     try {
       setLoading(true)
       const data = await propertiesAPI.getMyProperties()
+      console.log('📦 Properties data:', data.properties)
+      console.log('🖼️ First property images:', data.properties[0]?.images, data.properties[0]?.photos)
       setProperties(data.properties)
     } catch (error: any) {
       console.error('Failed to fetch properties:', error)
@@ -46,8 +48,7 @@ export default function PropertiesPage() {
 
     try {
       setDeletingId(propertyId)
-      // TODO: Create delete property API endpoint
-      // await propertiesAPI.delete(propertyId)
+      await propertiesAPI.delete(propertyId)
       setProperties(properties.filter(p => p.id !== propertyId))
       toast.success(`"${propertyTitle}" deleted successfully`)
     } catch (error: any) {
@@ -132,18 +133,20 @@ export default function PropertiesPage() {
           {properties.map((property) => (
             <Card key={property.id} className="bg-white/90 backdrop-blur-sm border-white/50 hover:shadow-xl transition-all duration-300 overflow-hidden group">
               <div className="relative">
-                <Link href={`/properties/${property.id}`}>
+                <Link href={`/landlord/properties/${property.id}`}>
                   <img
-                    src={property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
+                    src={property.photos?.[0] || property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
                     alt={property.title}
                     className="h-48 w-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 </Link>
                 <Badge 
                   className={`absolute top-3 left-3 ${
-                    property.status === 'available' 
+                    property.status === 'vacant' 
                       ? 'bg-green-500 text-white' 
-                      : 'bg-slate-500 text-white'
+                      : property.status === 'rented'
+                      ? 'bg-slate-500 text-white'
+                      : 'bg-amber-500 text-white'
                   }`}
                 >
                   {property.status}
@@ -162,7 +165,7 @@ export default function PropertiesPage() {
               </div>
 
               <CardContent className="p-5">
-                <Link href={`/properties/${property.id}`}>
+                <Link href={`/landlord/properties/${property.id}`}>
                   <h3 className="font-bold text-lg text-slate-900 mb-2 hover:text-orange-600 transition-colors line-clamp-1">
                     {property.title}
                   </h3>
@@ -176,21 +179,23 @@ export default function PropertiesPage() {
                 <div className="flex items-center gap-4 text-sm text-slate-600 mb-4">
                   <span className="flex items-center gap-1">
                     <Bed className="h-4 w-4 text-orange-500" />
-                    {property.beds}
+                    {property.bedrooms || property.beds || 0}
                   </span>
                   <span className="flex items-center gap-1">
                     <Bath className="h-4 w-4 text-orange-500" />
-                    {property.baths}
+                    {property.bathrooms || property.baths || 0}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <Square className="h-4 w-4 text-orange-500" />
-                    {property.sqft}
-                  </span>
+                  {(property.square_feet || property.sqft) && (
+                    <span className="flex items-center gap-1">
+                      <Square className="h-4 w-4 text-orange-500" />
+                      {property.square_feet || property.sqft}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-2xl font-bold text-orange-600">
-                    {formatPrice(property.price)}
+                    {formatPrice(property.rent_amount || property.price || 0)}
                     <span className="text-sm font-normal text-slate-600">/mo</span>
                   </p>
                 </div>
@@ -199,20 +204,20 @@ export default function PropertiesPage() {
                 <div className="flex items-center gap-4 text-xs text-slate-600 mb-4 pb-4 border-b border-slate-200">
                   <span className="flex items-center gap-1">
                     <Eye className="h-3 w-3 text-slate-400" />
-                    {property.views || 0}
+                    {property.view_count || property.views || 0}
                   </span>
                   <span className="flex items-center gap-1">
                     <Heart className="h-3 w-3 text-slate-400" />
-                    {property.favorites || 0}
+                    {property.favorites_count || property.favorites || 0}
                   </span>
                   <span className="flex items-center gap-1">
                     <Calendar className="h-3 w-3 text-slate-400" />
-                    {property.viewings || 0}
+                    {property.viewings_count || property.viewings || 0}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
-                  <Link href={`/properties/${property.id}`}>
+                  <Link href={`/landlord/properties/${property.id}`}>
                     <Button variant="outline" size="sm" className="w-full text-xs">
                       <Eye className="mr-1 h-3 w-3" />
                       View

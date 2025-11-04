@@ -153,8 +153,8 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-50 to-orange-50">
-      {/* Top Navigation Bar */}
-      <nav className="fixed top-0 z-50 w-full bg-white/80 backdrop-blur-xl border-b border-stone-200">
+      {/* Unified Top Navigation Bar */}
+      <nav className="fixed top-0 z-50 w-full bg-white/98 backdrop-blur-lg border-b border-slate-100 shadow-sm">
         <div className="px-4 lg:px-6">
           <div className="flex h-16 items-center justify-between">
             {/* Left: Logo + Mobile Menu Toggle */}
@@ -167,10 +167,10 @@ export default function DashboardLayout({
               >
                 <Menu className="h-6 w-6" />
               </Button>
-              <Link href={getDashboardHome()} className="flex items-center gap-2">
-                <div className="text-2xl font-bold">
-                  <span className="text-stone-800">Nulo</span>
-                  <span className="text-orange-600">Africa</span>
+              <Link href={getDashboardHome()} className="flex items-center gap-2 group">
+                <div className="text-xl font-bold">
+                  <span className="text-slate-900">Nulo</span>
+                  <span className="text-orange-500">Africa</span>
                 </div>
               </Link>
             </div>
@@ -267,10 +267,44 @@ export default function DashboardLayout({
                       Profile
                     </Link>
                   </DropdownMenuItem>
+                  {/* Only show Browse Properties for tenants */}
+                  {userType !== 'landlord' && (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <Link href="/properties" className="cursor-pointer">
+                          <Home className="h-4 w-4 mr-2" />
+                          Browse Properties
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/tenant/favorites" className="cursor-pointer">
+                          <Heart className="h-4 w-4 mr-2" />
+                          Favorites
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {/* Show My Properties for landlords */}
+                  {userType === 'landlord' && (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <Link href="/landlord/properties" className="cursor-pointer">
+                          <Building2 className="h-4 w-4 mr-2" />
+                          My Properties
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/landlord/viewings" className="cursor-pointer">
+                          <Calendar className="h-4 w-4 mr-2" />
+                          Viewings
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
                   <DropdownMenuItem asChild>
-                    <Link href="/properties" className="cursor-pointer">
-                      <Building2 className="h-4 w-4 mr-2" />
-                      Browse Properties
+                    <Link href="/tenant/messages" className="cursor-pointer">
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Messages
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />

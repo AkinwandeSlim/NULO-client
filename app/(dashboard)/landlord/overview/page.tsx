@@ -12,8 +12,7 @@ import {
   ArrowRight, AlertCircle, CheckCircle
 } from "lucide-react"
 import Link from "next/link"
-import { viewingRequestsAPI } from "@/lib/api/viewingRequests"
-import { messagesAPI } from "@/lib/api/messages"
+import { propertiesAPI } from "@/lib/api/properties"
 import { toast } from "sonner"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
@@ -41,37 +40,46 @@ export default function LandlordDashboard() {
     try {
       setLoading(true)
       
-      // Fetch properties (landlord's properties)
-      // TODO: Create landlord properties API endpoint
-      // For now, using mock data
+      // Fetch landlord's properties
+      try {
+        const propertiesData = await propertiesAPI.getMyProperties()
+        const propertiesList = propertiesData.properties || []
+        setProperties(propertiesList)
+        
+        // Calculate stats from properties
+        const totalProperties = propertiesList.length
+        const activeListings = propertiesList.filter((p: any) => p.status === 'vacant').length
+        const totalViews = propertiesList.reduce((sum: number, p: any) => sum + (p.view_count || 0), 0)
+        
+        setStats(prev => ({
+          ...prev,
+          totalProperties,
+          activeListings,
+          totalViews
+        }))
+      } catch (error) {
+        console.error('Failed to fetch properties:', error)
+        toast.error('Failed to load properties')
+      }
       
       // TODO: Fetch viewing requests (landlord side) - Need to create landlord endpoint
       // For now, skip this to avoid 403 errors
-      // try {
-      //   const viewingsData = await viewingRequestsAPI.getLandlordRequests()
-      //   setViewingRequests(viewingsData.viewing_requests.slice(0, 5))
-      //   const pending = viewingsData.viewing_requests.filter((v: any) => v.status === 'pending').length
-      //   setStats(prev => ({ ...prev, pendingViewings: pending }))
-      // } catch (error) {
-      //   console.error('Failed to fetch viewing requests:', error)
-      // }
       
       // TODO: Fetch conversations (landlord side) - Need to create landlord endpoint
       // For now, skip this to avoid 403 errors
-      // try {
-      //   const messagesData = await messagesAPI.getConversations()
-      //   setConversations(messagesData.conversations.slice(0, 4))
-      //   const unread = messagesData.conversations.filter((c: any) => c.unread_count > 0).length
-      //   setStats(prev => ({ ...prev, unreadMessages: unread }))
-      // } catch (error) {
-      //   console.error('Failed to fetch messages:', error)
-      // }
+      
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
     } finally {
       setLoading(false)
     }
   }
+
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const getUserName = () => {
     return profile?.full_name || user?.email?.split('@')[0] || 'there'
@@ -102,7 +110,7 @@ export default function LandlordDashboard() {
       {/* Welcome Section */}
       <div className="mb-8">
         <h1 className="mb-2 text-3xl md:text-4xl font-bold text-slate-900">
-          Welcome back, {getUserName()}! 👋
+          Welcome back{mounted && `, ${getUserName()}`}!
         </h1>
         <p className="text-slate-600">Here's what's happening with your properties</p>
       </div>
@@ -214,7 +222,7 @@ export default function LandlordDashboard() {
                     <Link key={property.id} href={`/landlord/properties/${property.id}`}>
                       <div className="flex gap-4 p-4 rounded-xl border border-stone-200 hover:border-orange-300 hover:shadow-md transition-all cursor-pointer">
                         <img
-                          src={property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
+                          src={property.photos?.[0] || property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
                           alt={property.title}
                           className="h-24 w-32 rounded-lg object-cover"
                         />
@@ -229,9 +237,11 @@ export default function LandlordDashboard() {
                             </div>
                             <Badge
                               className={
-                                property.status === "available"
+                                property.status === "vacant"
                                   ? "bg-green-100 text-green-700 border-0"
-                                  : "bg-slate-100 text-slate-700 border-0"
+                                  : property.status === "rented"
+                                  ? "bg-slate-100 text-slate-700 border-0"
+                                  : "bg-amber-100 text-amber-700 border-0"
                               }
                             >
                               {property.status}
@@ -240,22 +250,24 @@ export default function LandlordDashboard() {
                           <div className="flex items-center gap-3 text-xs text-slate-600 mb-2">
                             <span className="flex items-center gap-1">
                               <Bed className="h-3 w-3 text-orange-500" />
-                              {property.beds}
+                              {property.bedrooms}
                             </span>
                             <span className="flex items-center gap-1">
                               <Bath className="h-3 w-3 text-orange-500" />
-                              {property.baths}
+                              {property.bathrooms}
                             </span>
-                            <span className="flex items-center gap-1">
-                              <Square className="h-3 w-3 text-orange-500" />
-                              {property.sqft} sqft
-                            </span>
+                            {property.square_feet && (
+                              <span className="flex items-center gap-1">
+                                <Square className="h-3 w-3 text-orange-500" />
+                                {property.square_feet} sqft
+                              </span>
+                            )}
                             <span className="flex items-center gap-1">
                               <Eye className="h-3 w-3 text-orange-500" />
-                              {property.views || 0} views
+                              {property.view_count || 0} views
                             </span>
                           </div>
-                          <p className="text-lg font-bold text-orange-600">{formatPrice(property.price)}/mo</p>
+                          <p className="text-lg font-bold text-orange-600">{formatPrice(property.rent_amount || property.price || 0)}/mo</p>
                         </div>
                       </div>
                     </Link>
