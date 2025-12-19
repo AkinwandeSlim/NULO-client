@@ -93,7 +93,31 @@ export default function PropertiesPage() {
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false)
   const [pendingFavoriteId, setPendingFavoriteId] = useState<number | null>(null)
-  const [viewMode, setViewMode] = useState<ViewMode>('split')
+  // Set initial view mode based on screen size
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
+  
+  // Effect to handle responsive view mode
+  useEffect(() => {
+    // Function to update view mode based on screen size
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        // On mobile/tablet, default to list view
+        setViewMode(prev => prev === 'map' ? 'map' : 'list')
+      } else {
+        // On desktop, default to split view if not in map mode
+        setViewMode(prev => prev === 'map' ? 'map' : 'split')
+      }
+    }
+    
+    // Set initial view mode
+    handleResize()
+    
+    // Add event listener for window resize
+    window.addEventListener('resize', handleResize)
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
   const [showPriceDropdown, setShowPriceDropdown] = useState(false)
   const [showBedsDropdown, setShowBedsDropdown] = useState(false)
   const [showBathsDropdown, setShowBathsDropdown] = useState(false)
@@ -528,7 +552,7 @@ export default function PropertiesPage() {
                 </button>
                 <button
                   onClick={() => setViewMode('split')}
-                  className={`p-1.5 rounded-md transition-colors ${
+                  className={`p-1.5 rounded-md transition-colors hidden lg:block ${
                     viewMode === 'split' 
                       ? 'bg-white text-orange-600 shadow-sm' 
                       : 'text-slate-600 hover:text-slate-900'
