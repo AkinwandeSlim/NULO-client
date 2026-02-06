@@ -124,26 +124,26 @@ export default function MessagesPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-stone-50">
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]">
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-xl border-b border-stone-200/50 sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <Link href="/" className="text-2xl font-bold">
               <span className="text-stone-800">Nulo</span>
-              <span className="text-amber-600">Africa</span>
+              <span className="text-orange-600">Africa</span>
             </Link>
             <nav className="hidden md:flex items-center gap-6">
-              <Link href="/" className="text-slate-700 hover:text-amber-600 transition-colors">
+              <Link href="/" className="text-slate-700 hover:text-orange-600 transition-colors">
                 Home
               </Link>
-              <Link href="/properties" className="text-slate-700 hover:text-amber-600 transition-colors">
+              <Link href="/properties" className="text-slate-700 hover:text-orange-600 transition-colors">
                 Properties
               </Link>
-              <Link href="/messages" className="text-amber-600 font-semibold">
+              <Link href="/messages" className="text-orange-600 font-semibold">
                 Messages
               </Link>
-              <Link href="/dashboard" className="text-slate-700 hover:text-amber-600 transition-colors">
+              <Link href="/dashboard" className="text-slate-700 hover:text-orange-600 transition-colors">
                 Dashboard
               </Link>
             </nav>
@@ -179,7 +179,7 @@ export default function MessagesPage() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search conversations..."
-                    className="w-full h-10 pl-10 pr-4 rounded-lg border border-stone-200 bg-white text-slate-800 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/20 transition-all"
+                    className="w-full h-10 pl-10 pr-4 rounded-lg border border-stone-200 bg-white text-slate-800 placeholder:text-slate-500 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
                   />
                 </div>
               </div>

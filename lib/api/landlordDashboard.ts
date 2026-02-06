@@ -1,0 +1,400 @@
+/**
+ * Landlord Dashboard API Client
+ * Handles all landlord dashboard operations and real-time data
+ */
+
+import apiClient from './client';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface LandlordDashboardData {
+  profile: LandlordProfile
+  onboarding: LandlordOnboarding
+  stats: LandlordStats
+  properties: LandlordProperties[]
+  recentActivity: RecentActivity[]
+  notifications: Notification[]
+}
+
+export interface LandlordProfile {
+  id: string
+  user_id: string
+  full_name: string
+  email: string
+  phone_number?: string
+  avatar_url?: string
+  account_type: 'individual' | 'company'
+  company_name?: string
+  verification_status: 'pending' | 'approved' | 'rejected' | 'partial'
+  verification_fee_paid: boolean
+  verification_submitted_at?: string
+  verification_approved_at?: string
+  trust_score: number
+  onboarding_started: boolean
+  first_time_visit: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface LandlordOnboarding {
+  id: string
+  landlord_id: string
+  current_step: number
+  all_steps_completed: boolean
+  onboarding_completed_at?: string
+  submitted_for_review: boolean
+  submitted_for_review_at?: string
+  admin_review_status: 'pending' | 'approved' | 'rejected'
+  admin_reviewed_at?: string
+  admin_notes?: string
+  document_processing_status: string
+  profile_step_completed: boolean
+  payment_step_completed: boolean
+  property_step_completed: boolean
+  protection_step_completed: boolean
+  created_at: string
+  last_updated_at: string
+}
+
+export interface LandlordStats {
+  total_properties: number
+  active_listings: number
+  pending_viewings: number
+  unread_messages: number
+  total_views: number
+  occupancy_rate: number
+  monthly_revenue: number
+  avg_response_time: string
+  applications_pending: number
+  applications_approved: number
+  properties_vacant: number
+  properties_occupied: number
+}
+
+export interface LandlordProperties {
+  id: string
+  title: string
+  property_type: string
+  address: string
+  city: string
+  state: string
+  price: number
+  status: 'vacant' | 'occupied' | 'pending' | 'under_review'
+  verification_status: 'pending' | 'approved' | 'rejected'
+  beds: number
+  baths: number
+  sqft?: number
+  images: string[]
+  amenities: string[]
+  created_at: string
+  view_count: number
+  application_count: number
+  favorite_count: number
+}
+
+export interface RecentActivity {
+  id: string
+  type: 'viewing_request' | 'application' | 'message' | 'property_view' | 'verification_update'
+  title: string
+  description: string
+  property_id?: string
+  property_title?: string
+  tenant_id?: string
+  tenant_name?: string
+  created_at: string
+  read: boolean
+}
+
+export interface Notification {
+  id: string
+  type: 'info' | 'success' | 'warning' | 'error'
+  title: string
+  message: string
+  action_url?: string
+  created_at: string
+  read: boolean
+}
+
+export interface OnboardingStep {
+  step: number
+  title: string
+  description: string
+  completed: boolean
+  can_access: boolean
+}
+
+// ============================================================================
+// API FUNCTIONS
+// ============================================================================
+
+/**
+ * Get comprehensive landlord dashboard data
+ */
+export const getLandlordDashboard = async (): Promise<LandlordDashboardData> => {
+  try {
+    console.log('📤 [LANDLORD DASHBOARD API] Fetching dashboard data...')
+    
+    const response = await apiClient.get('/api/v1/landlord/dashboard')
+    
+    console.log('✅ [LANDLORD DASHBOARD API] Dashboard data retrieved')
+    return response.data
+  } catch (error: any) {
+    console.error('❌ [LANDLORD DASHBOARD API] Error fetching dashboard:', error)
+    throw new Error(
+      error.response?.data?.detail || 
+      'Failed to fetch dashboard data'
+    )
+  }
+}
+
+/**
+ * Get landlord profile information
+ */
+export const getLandlordProfile = async (): Promise<LandlordProfile> => {
+  try {
+    console.log('📤 [LANDLORD DASHBOARD API] Fetching profile...')
+    
+    const response = await apiClient.get('/api/v1/landlord/profile')
+    
+    console.log('✅ [LANDLORD DASHBOARD API] Profile retrieved')
+    return response.data.profile
+  } catch (error: any) {
+    console.error('❌ [LANDLORD DASHBOARD API] Error fetching profile:', error)
+    throw new Error(
+      error.response?.data?.detail || 
+      'Failed to fetch profile'
+    )
+  }
+}
+
+/**
+ * Get landlord onboarding status
+ */
+export const getLandlordOnboarding = async (): Promise<LandlordOnboarding> => {
+  try {
+    console.log('📤 [LANDLORD DASHBOARD API] Fetching onboarding status...')
+    
+    const response = await apiClient.get('/api/v1/landlord/onboarding')
+    
+    console.log('✅ [LANDLORD DASHBOARD API] Onboarding status retrieved')
+    return response.data.onboarding
+  } catch (error: any) {
+    console.error('❌ [LANDLORD DASHBOARD API] Error fetching onboarding:', error)
+    throw new Error(
+      error.response?.data?.detail || 
+      'Failed to fetch onboarding status'
+    )
+  }
+}
+
+/**
+ * Get landlord statistics
+ */
+export const getLandlordStats = async (): Promise<LandlordStats> => {
+  try {
+    console.log('📤 [LANDLORD DASHBOARD API] Fetching stats...')
+    
+    const response = await apiClient.get('/api/v1/landlord/stats')
+    
+    console.log('✅ [LANDLORD DASHBOARD API] Stats retrieved')
+    return response.data.stats
+  } catch (error: any) {
+    console.error('❌ [LANDLORD DASHBOARD API] Error fetching stats:', error)
+    throw new Error(
+      error.response?.data?.detail || 
+      'Failed to fetch statistics'
+    )
+  }
+}
+
+/**
+ * Get landlord properties
+ */
+export const getLandlordProperties = async (): Promise<LandlordProperties[]> => {
+  try {
+    console.log('📤 [LANDLORD DASHBOARD API] Fetching properties...')
+    
+    const response = await apiClient.get('/api/v1/landlord/properties')
+    
+    console.log('✅ [LANDLORD DASHBOARD API] Properties retrieved:', response.data.properties.length)
+    return response.data.properties
+  } catch (error: any) {
+    console.error('❌ [LANDLORD DASHBOARD API] Error fetching properties:', error)
+    throw new Error(
+      error.response?.data?.detail || 
+      'Failed to fetch properties'
+    )
+  }
+}
+
+/**
+ * Get recent activity
+ */
+export const getRecentActivity = async (limit: number = 10): Promise<RecentActivity[]> => {
+  try {
+    console.log('📤 [LANDLORD DASHBOARD API] Fetching recent activity...')
+    
+    const response = await apiClient.get(`/api/v1/landlord/activity?limit=${limit}`)
+    
+    console.log('✅ [LANDLORD DASHBOARD API] Activity retrieved:', response.data.activity.length)
+    return response.data.activity
+  } catch (error: any) {
+    console.error('❌ [LANDLORD DASHBOARD API] Error fetching activity:', error)
+    throw new Error(
+      error.response?.data?.detail || 
+      'Failed to fetch recent activity'
+    )
+  }
+}
+
+/**
+ * Get notifications
+ */
+export const getNotifications = async (): Promise<Notification[]> => {
+  try {
+    console.log('📤 [LANDLORD DASHBOARD API] Fetching notifications...')
+    
+    const response = await apiClient.get('/api/v1/landlord/notifications')
+    
+    console.log('✅ [LANDLORD DASHBOARD API] Notifications retrieved:', response.data.notifications.length)
+    return response.data.notifications
+  } catch (error: any) {
+    console.error('❌ [LANDLORD DASHBOARD API] Error fetching notifications:', error)
+    throw new Error(
+      error.response?.data?.detail || 
+      'Failed to fetch notifications'
+    )
+  }
+}
+
+/**
+ * Mark notification as read
+ */
+export const markNotificationRead = async (notificationId: string): Promise<void> => {
+  try {
+    console.log('📤 [LANDLORD DASHBOARD API] Marking notification as read:', notificationId)
+    
+    await apiClient.patch(`/api/v1/landlord/notifications/${notificationId}/read`)
+    
+    console.log('✅ [LANDLORD DASHBOARD API] Notification marked as read')
+  } catch (error: any) {
+    console.error('❌ [LANDLORD DASHBOARD API] Error marking notification as read:', error)
+    throw new Error(
+      error.response?.data?.detail || 
+      'Failed to mark notification as read'
+    )
+  }
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Check if landlord is verified
+ */
+export const isLandlordVerified = (profile: LandlordProfile): boolean => {
+  return profile.verification_status === 'approved'
+}
+
+/**
+ * Check if onboarding is completed
+ */
+export const isOnboardingCompleted = (onboarding: LandlordOnboarding): boolean => {
+  return onboarding.all_steps_completed && onboarding.submitted_for_review
+}
+
+/**
+ * Get onboarding progress percentage
+ */
+export const getOnboardingProgress = (onboarding: LandlordOnboarding): number => {
+  const steps = [
+    onboarding.profile_step_completed,
+    onboarding.payment_step_completed,
+    onboarding.property_step_completed,
+    onboarding.protection_step_completed
+  ]
+  
+  const completed = steps.filter(Boolean).length
+  return (completed / steps.length) * 100
+}
+
+/**
+ * Get verification status color
+ */
+export const getVerificationStatusColor = (status: string): string => {
+  const colorMap: { [key: string]: string } = {
+    approved: 'green',
+    pending: 'orange',
+    rejected: 'red',
+    partial: 'yellow'
+  }
+  return colorMap[status] || 'gray'
+}
+
+/**
+ * Get property status color
+ */
+export const getPropertyStatusColor = (status: string): string => {
+  const colorMap: { [key: string]: string } = {
+    vacant: 'blue',
+    occupied: 'green',
+    pending: 'orange',
+    under_review: 'yellow'
+  }
+  return colorMap[status] || 'gray'
+}
+
+/**
+ * Format currency
+ */
+export const formatCurrency = (amount: number): string => {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+/**
+ * Format date
+ */
+export const formatDate = (dateString: string): string => {
+  return new Date(dateString).toLocaleDateString('en-NG', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  })
+}
+
+// ============================================================================
+// EXPORT AS OBJECT
+// ============================================================================
+
+const landlordDashboardAPI = {
+  // Core data fetching
+  getLandlordDashboard,
+  getLandlordProfile,
+  getLandlordOnboarding,
+  getLandlordStats,
+  getLandlordProperties,
+  getRecentActivity,
+  getNotifications,
+  
+  // Actions
+  markNotificationRead,
+  
+  // Helpers
+  isLandlordVerified,
+  isOnboardingCompleted,
+  getOnboardingProgress,
+  getVerificationStatusColor,
+  getPropertyStatusColor,
+  formatCurrency,
+  formatDate
+}
+
+export default landlordDashboardAPI

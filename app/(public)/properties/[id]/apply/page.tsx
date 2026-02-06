@@ -74,7 +74,7 @@ const steps = [
 export default function ApplicationPage() {
   const router = useRouter()
   const params = useParams()
-  const { user, profile, loading } = useAuth()
+  const { user, userProfile, loading } = useAuth()
   const propertyId = params?.id as string
   
   const [currentStep, setCurrentStep] = useState(1)
@@ -83,10 +83,10 @@ export default function ApplicationPage() {
   const [loadingProperty, setLoadingProperty] = useState(true)
   
   const [formData, setFormData] = useState<ApplicationData>({
-    firstName: profile?.full_name?.split(' ')[0] || '',
-    lastName: profile?.full_name?.split(' ')[1] || '',
+    firstName: user?.full_name?.split(' ')[0] || '',
+    lastName: user?.full_name?.split(' ')[1] || '',
     email: user?.email || '',
-    phone: profile?.phone || '',
+    phone: user?.phone_number || '',
     dateOfBirth: '',
     nationality: '',
     maritalStatus: '',

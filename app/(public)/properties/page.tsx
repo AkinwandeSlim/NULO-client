@@ -1,843 +1,1449 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import React from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { useAuth } from '@/contexts/AuthContext'
+import { toast } from 'sonner'
+import { propertiesAPI } from '@/lib/api/properties'
+import { formatPrice, formatPriceCompact, debounce, formatLocation } from '@/lib/utils/format'
+
+// Components
+import SearchBar from '@/components/properties/SearchBar'
+import ViewModeToggle, { ViewMode } from '@/components/properties/ViewModeToggle'
+import PaginationControls from '@/components/properties/PaginationControls'
+import { PropertyFiltersModal } from '@/components/PropertyFiltersModal'
+import SaveFavoriteModal from '@/components/SaveFavoriteModal'
+import PropertyCard from '@/components/properties/PropertyCard'
+import PropertyList from '@/components/properties/PropertyList'
+import PropertyGrid from '@/components/properties/PropertyGrid'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { 
-  MapPin, Bed, Bath, Square, Heart, Search, 
-  Home, Loader2, X, SlidersHorizontal, Wifi, Car, 
-  Dumbbell, Shield, Waves, Wind, Zap, Dog, Filter,
-  List, Map as MapIcon, Columns3, ChevronDown, DollarSign,
-  Star, Bookmark, MoreHorizontal, Tag
-} from "lucide-react"
-import Link from "next/link"
-import { useAuth } from "@/contexts/AuthContext"
-import { toast } from "sonner"
-import { PropertyFiltersModal } from "@/components/PropertyFiltersModal"
-import { SaveFavoriteModal } from "@/components/SaveFavoriteModal"
-import { propertiesAPI } from "@/lib/api/properties"
+  Filter, 
+  Home, 
+  AlertCircle, 
+  RefreshCw, 
+  MapPin, 
+  Grid, 
+  List, 
+  Map, 
+  Loader2, 
+  TrendingUp,
+  Heart,
+  Bed,
+  Bath,
+  Square,
+  Camera,
+  Star,
+  Shield,
+  Wifi,
+  Car,
+  Zap,
+  ChevronRight,
+  Search,
+  Users,
+  Eye
+} from 'lucide-react'
+import { Navbar } from '@/components/navigation/Navbar'
+import Link from 'next/link'
+import Image from 'next/image'
 
-// Placeholder image for properties without photos
-const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
-
-// Helper to get property image with fallback
-const getPropertyImage = (property: any): string => {
-  // Try images array first
-  if (property.images && property.images.length > 0 && property.images[0]) {
-    return property.images[0]
-  }
-  // Try single image field
-  if (property.image && property.image.trim() !== '') {
-    return property.image
-  }
-  // Return placeholder
-  return DEFAULT_PROPERTY_IMAGE
-}
-
-// Dynamically import Mapbox component to avoid SSR issues
-const PropertyMap = dynamic(() => import('@/components/PropertyMapbox'), { 
+// Dynamically import map with lazy loading - using lightweight PropertyMap
+const PropertyMap = dynamic(() => import('@/components/PropertyMap'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-slate-900">
+    <div className="w-full h-full flex items-center justify-center bg-slate-100">
       <div className="text-center">
-        <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto mb-3" />
-        <p className="text-white font-medium">Loading interactive map...</p>
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto mb-2" />
+        <p className="text-slate-600 text-sm">Loading map...</p>
       </div>
     </div>
   )
 })
 
-interface Property {
-  id: string  // Changed from number to string (UUID)
-  title: string
-  location: string
-  price: number
-  pricePerMonth: number
-  beds: number
-  baths: number
-  sqft: number
-  type: string
-  property_type: string
-  image: string
-  images: string[]
-  featured: boolean
-  latitude: number
-  longitude: number
-  description?: string
-  landlord?: {
-    id: string
-    name: string
-    avatar_url?: string
-  }
+// Constants
+const DEFAULT_LAGOS_LAT = 6.5244
+const DEFAULT_LAGOS_LNG = 3.3792
+const SEARCH_DEBOUNCE_MS = 300
+const ITEMS_PER_PAGE = 20
+
+
+// Consistent Property Skeleton Component
+function PropertySkeleton() {
+  return (
+    <Card className="overflow-hidden shadow-lg rounded-2xl border-slate-200 hover:shadow-xl transition-all duration-300">
+      <div className="relative">
+        <Skeleton className="h-48 w-full" />
+        <div className="absolute top-3 left-3">
+          <Skeleton className="h-6 w-16 rounded-full" />
+        </div>
+        <div className="absolute top-3 right-3">
+          <Skeleton className="h-8 w-8 rounded-full" />
+        </div>
+      </div>
+      <CardContent className="p-4">
+        <Skeleton className="h-6 w-3/4 mb-2" />
+        <Skeleton className="h-4 w-full mb-1" />
+        <Skeleton className="h-4 w-2/3 mb-3" />
+        <div className="flex items-center gap-4 mb-3">
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-4 w-16" />
+        </div>
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-6 w-24" />
+          <Skeleton className="h-8 w-20 rounded-lg" />
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
-
-
-type ViewMode = 'list' | 'map' | 'split'
-
-export default function PropertiesPage() {
-  const searchParams = useSearchParams()
-  const router = useRouter()
-  const { user, profile, loading } = useAuth()
+// Enhanced Loading State with Skeletons
+function LoadingState({ viewMode }: { viewMode: ViewMode }) {
+  const skeletonCount = viewMode === 'split' ? 2 : 8
   
-  // ALL HOOKS MUST BE DECLARED FIRST (before any early returns)
-  const [properties, setProperties] = useState<Property[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [favorites, setFavorites] = useState<number[]>([])
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
-  const [showFilterModal, setShowFilterModal] = useState(false)
-  const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false)
-  const [pendingFavoriteId, setPendingFavoriteId] = useState<number | null>(null)
-  // Set initial view mode based on screen size
-  const [viewMode, setViewMode] = useState<ViewMode>('list')
-  
-  // Effect to handle responsive view mode
-  useEffect(() => {
-    // Function to update view mode based on screen size
-    const handleResize = () => {
-      if (window.innerWidth < 1024) {
-        // On mobile/tablet, default to list view
-        setViewMode(prev => prev === 'map' ? 'map' : 'list')
-      } else {
-        // On desktop, default to split view if not in map mode
-        setViewMode(prev => prev === 'map' ? 'map' : 'split')
-      }
-    }
-    
-    // Set initial view mode
-    handleResize()
-    
-    // Add event listener for window resize
-    window.addEventListener('resize', handleResize)
-    
-    // Cleanup
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-  const [showPriceDropdown, setShowPriceDropdown] = useState(false)
-  const [showBedsDropdown, setShowBedsDropdown] = useState(false)
-  const [showBathsDropdown, setShowBathsDropdown] = useState(false)
-  const [showTypeDropdown, setShowTypeDropdown] = useState(false)
-  const [showMoreDropdown, setShowMoreDropdown] = useState(false)
-  
-  // Filters
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])
-  const [selectedType, setSelectedType] = useState<string>("all")
-  const [minBeds, setMinBeds] = useState<number>(0)
-  const [minBaths, setMinBaths] = useState<number>(0)
-  const [sortBy, setSortBy] = useState<'recent' | 'price-low' | 'price-high'>('recent')
-  
-  // Advanced Filters
-  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([])
-  const [selectedPreferences, setSelectedPreferences] = useState<string[]>([])
-  
-  // Redirect landlords to their dashboard
-  useEffect(() => {
-    if (profile?.user_type === 'landlord') {
-      router.replace('/landlord/overview')
-    }
-  }, [profile, router])
-  
-  // Fetch properties from database
-  useEffect(() => {
-    const fetchProperties = async () => {
-      try {
-        setIsLoading(true)
-        setError(null)
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white">
+      <div className="container mx-auto px-4 lg:px-6 py-8">
+        <div className="flex items-center gap-3 mb-8">
+          <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Finding perfect properties...</h3>
+            <p className="text-sm text-slate-600">Discovering amazing homes in your area</p>
+          </div>
+        </div>
         
-        const response = await propertiesAPI.search({
-          page: 1,
-          limit: 100
-        })
-        
-        // DEBUG: Log API response
-        console.log('🔍 API Response:', response)
-        console.log('📊 Total properties from API:', response.properties?.length)
-        console.log('📦 Raw properties data:', response.properties)
-        
-        // Transform API response to match component interface
-        const transformedProperties = response.properties.map(prop => ({
-          id: prop.id,
-          title: prop.title,
-          location: prop.location,
-          price: prop.price,
-          pricePerMonth: prop.price,
-          beds: prop.beds || 0,
-          baths: prop.baths || 0,
-          sqft: prop.sqft || 0,
-          type: prop.property_type || 'apartment',
-          property_type: prop.property_type || 'apartment',
-          image: prop.images?.[0] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800',
-          images: prop.images || [],
-          featured: prop.featured || false,
-          latitude: prop.latitude || 0,
-          longitude: prop.longitude || 0,
-          description: prop.description,
-          landlord: prop.landlord
-        }))
-        
-        console.log('✅ Transformed properties:', transformedProperties)
-        console.log('📈 Total transformed:', transformedProperties.length)
-        
-        setProperties(transformedProperties)
-      } catch (err: any) {
-        console.error('Failed to fetch properties:', err)
-        console.error('Error response:', err.response)
-        console.error('Error message:', err.message)
-        console.error('Error details:', err.response?.data)
-        
-        const errorMsg = err.response?.data?.detail || err.message || 'Failed to load properties'
-        setError(errorMsg)
-        toast.error(`Failed to load properties: ${errorMsg}`)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-    
-    fetchProperties()
-  }, [])
-
-  // Read URL parameters and set filters
-  useEffect(() => {
-    const location = searchParams.get('location')
-    const type = searchParams.get('type')
-    const minPrice = searchParams.get('minPrice')
-    const maxPrice = searchParams.get('maxPrice')
-    const bedrooms = searchParams.get('bedrooms')
-    const bathrooms = searchParams.get('bathrooms')
-
-    if (location) setSearchQuery(location)
-    if (type) setSelectedType(type)
-    if (minPrice) setPriceRange(prev => [parseInt(minPrice), prev[1]])
-    if (maxPrice) setPriceRange(prev => [prev[0], parseInt(maxPrice)])
-    if (bedrooms && bedrooms !== 'Any') setMinBeds(parseInt(bedrooms.replace('+', '')))
-    if (bathrooms && bathrooms !== 'Any') setMinBaths(parseInt(bathrooms.replace('+', '')))
-  }, [searchParams])
-
-  // Show loading while checking user type (AFTER all hooks)
-  if (loading || profile?.user_type === 'landlord') {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-600">Loading...</p>
+        <div className={`grid gap-6 ${
+          viewMode === 'split' 
+            ? 'grid-cols-1' 
+            : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+        }`}>
+          {Array.from({ length: skeletonCount }).map((_, index) => (
+            <PropertySkeleton key={index} />
+          ))}
         </div>
       </div>
-    )
-  }
+    </div>
+  )
+}
 
-  // Filter properties
-  const filteredProperties = properties.filter(property => {
-    // More flexible search - split by comma and check each part
-    const searchTerms = searchQuery.toLowerCase().split(',').map(s => s.trim()).filter(s => s.length > 0)
-    const matchesSearch = searchQuery === '' || searchTerms.some(term => 
-      property.title.toLowerCase().includes(term) ||
-      property.location.toLowerCase().includes(term)
-    )
-    const matchesPrice = property.price >= priceRange[0] && property.price <= priceRange[1]
-    const matchesType = selectedType === "all" || property.type === selectedType
-    const matchesBeds = property.beds >= minBeds
-    const matchesBaths = property.baths >= minBaths
-    
-    // DEBUG: Log filtering
-    if (!matchesSearch || !matchesPrice || !matchesType || !matchesBeds || !matchesBaths) {
-      console.log(`❌ Property "${property.title}" filtered out:`, {
-        matchesSearch,
-        matchesPrice,
-        matchesType,
-        matchesBeds,
-        matchesBaths,
-        property: { price: property.price, type: property.type, beds: property.beds, baths: property.baths }
-      })
-    }
-    
-    return matchesSearch && matchesPrice && matchesType && matchesBeds && matchesBaths
-  }).sort((a, b) => {
-    if (sortBy === 'price-low') return a.price - b.price
-    if (sortBy === 'price-high') return b.price - a.price
-    return 0
-  })
-  
-  // DEBUG: Log final filtered count
-  console.log('🎯 Filtered properties count:', filteredProperties.length)
-  console.log('🔍 Current filters:', { searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy })
-
-  const toggleFavorite = (id: number) => {
-    // If not logged in, show the save favorite modal
-    if (!user) {
-      setPendingFavoriteId(id)
-      setShowSaveFavoriteModal(true)
-      return
-    }
-
-    // If logged in, toggle favorite normally
-    const isFavorite = favorites.includes(id)
-    setFavorites(prev => 
-      prev.includes(id) ? prev.filter(fav => fav !== id) : [...prev, id]
-    )
-
-    if (isFavorite) {
-      toast.success(
-        <div className="flex items-center justify-between gap-4">
-          <span>❤️ Removed from favorites</span>
-        </div>,
-        { duration: 3000 }
-      )
-    } else {
-      toast.success("✅ Saved to Favorites!", { duration: 3000 })
-    }
-  }
-
-  const handlePropertySelect = (property: Property | null) => {
-    if (property) {
-      const lat = Number(property.latitude)
-      const lng = Number(property.longitude)
-      
-      const hasValidCoords = !isNaN(lat) && !isNaN(lng) && 
-                            lat >= -90 && lat <= 90 && 
-                            lng >= -180 && lng <= 180
-      
-      if (hasValidCoords) {
-        setSelectedProperty({ ...property, latitude: lat, longitude: lng })
-      } else {
-        setSelectedProperty(null)
-      }
-    } else {
-      setSelectedProperty(null)
-    }
-  }
-
-  // Handle save favorite with email (quick signup)
-  const handleSaveWithEmail = async (email: string) => {
-    // TODO: Implement quick signup API call
-    // For now, save to localStorage and show success
-    if (pendingFavoriteId) {
-      const localFavorites = JSON.parse(localStorage.getItem('favorites') || '[]')
-      localFavorites.push(pendingFavoriteId)
-      localStorage.setItem('favorites', JSON.stringify(localFavorites))
-      localStorage.setItem('userEmail', email)
-      
-      setFavorites(prev => [...prev, pendingFavoriteId])
-      toast.success("Property saved! Check your email to complete signup.")
-    }
-    setShowSaveFavoriteModal(false)
-    setPendingFavoriteId(null)
-  }
-
-  // Handle continue browsing without account (Skip - Don't save)
-  const handleContinueBrowsing = () => {
-    // User chose to skip - don't save the property
-    toast.info("You can browse freely. Sign in anytime to save properties!")
-    setShowSaveFavoriteModal(false)
-    setPendingFavoriteId(null)
-  }
-
-  const propertyTypes = ["all", "Villa", "Apartment", "House", "Penthouse", "Bungalow", "Duplex", "Mansion", "Terrace"]
-  
-  const amenities = [
-    { id: 'wifi', label: 'WiFi', icon: Wifi },
-    { id: 'parking', label: 'Parking', icon: Car },
-    { id: 'gym', label: 'Gym', icon: Dumbbell },
-    { id: 'security', label: '24/7 Security', icon: Shield },
-    { id: 'pool', label: 'Swimming Pool', icon: Waves },
-    { id: 'ac', label: 'Air Conditioning', icon: Wind },
-    { id: 'generator', label: 'Generator', icon: Zap },
-    { id: 'pets', label: 'Pet Friendly', icon: Dog },
-  ]
-  
-  const preferences = [
-    'Furnished', 'Unfurnished', 'Serviced', 'Newly Built',
-    'Gated Estate', 'Close to School', 'Close to Market', 'Waterfront'
-  ]
-
-  const toggleAmenity = (id: string) => {
-    setSelectedAmenities(prev =>
-      prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
-    )
-  }
-
-  const togglePreference = (pref: string) => {
-    setSelectedPreferences(prev =>
-      prev.includes(pref) ? prev.filter(p => p !== pref) : [...prev, pref]
-    )
-  }
-
-  const formatPrice = (value: number) => {
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: 'NGN',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
-  }
-
-
-  // Show loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-orange-500 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium">Loading properties...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Show error state
-  if (error) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <Home className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Oops!</h2>
-          <p className="text-slate-600 mb-4">{error}</p>
-          <Button onClick={() => window.location.reload()}>
+// Enhanced Error State
+function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center">
+      <div className="container mx-auto px-4 lg:px-6">
+        <div className="flex flex-col items-center justify-center py-16 text-center max-w-md mx-auto">
+          <div className="bg-orange-50 rounded-full p-6 mb-6">
+            <AlertCircle className="h-12 w-12 text-orange-500" />
+          </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-3">Oops! Something went wrong</h3>
+          <p className="text-slate-600 mb-8 text-lg">{error}</p>
+          <Button 
+            onClick={onRetry} 
+            className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
             Try Again
           </Button>
         </div>
       </div>
-    )
-  }
-  return (
-    <div className="min-h-screen bg-white overflow-hidden">
-      {/* Modern Inline Filter Bar - Fixed */}
-      <div className="fixed top-16 left-0 right-0 z-[100] bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-[1920px] mx-auto px-4 lg:px-6">
-          <div className="flex items-center gap-3 py-3">
-            {/* Simple Filter Chips - No Dropdowns! */}
-            <div className="flex items-center gap-2 flex-1 overflow-x-auto scrollbar-hide">
-              
-              {/* All Filters Button - Opens Modal */}
-              <button
-                onClick={() => setShowFilterModal(true)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap border-2 ${
-                  minBeds > 0 || minBaths > 0 || selectedType !== 'all' || priceRange[0] > 0 || priceRange[1] < 1000000
-                    ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600'
-                    : 'bg-white text-slate-700 border-slate-300 hover:border-orange-500'
-                }`}
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                <span>All Filters</span>
-                {(minBeds > 0 || minBaths > 0 || selectedType !== 'all' || priceRange[0] > 0 || priceRange[1] < 1000000) && (
-                  <span className="ml-1 px-2 py-0.5 bg-white/20 rounded-full text-xs font-bold">
-                    {[minBeds > 0, minBaths > 0, selectedType !== 'all', priceRange[0] > 0 || priceRange[1] < 1000000].filter(Boolean).length}
-                  </span>
-                )}
-              </button>
-
-              {/* Active Filter Tags */}
-              {minBeds > 0 && (
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-50 text-orange-600 text-sm font-medium border border-orange-200">
-                  <Bed className="h-3.5 w-3.5" />
-                  <span>{minBeds}+ beds</span>
-                  <button onClick={() => setMinBeds(0)} className="ml-1 hover:bg-orange-100 rounded-full p-0.5">
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              )}
-              
-              {minBaths > 0 && (
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-50 text-orange-600 text-sm font-medium border border-orange-200">
-                  <Bath className="h-3.5 w-3.5" />
-                  <span>{minBaths}+ baths</span>
-                  <button onClick={() => setMinBaths(0)} className="ml-1 hover:bg-orange-100 rounded-full p-0.5">
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              )}
-              
-              {selectedType !== 'all' && (
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-50 text-orange-600 text-sm font-medium border border-orange-200">
-                  <Home className="h-3.5 w-3.5" />
-                  <span>{selectedType}</span>
-                  <button onClick={() => setSelectedType('all')} className="ml-1 hover:bg-orange-100 rounded-full p-0.5">
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              )}
-              
-              {(priceRange[0] > 0 || priceRange[1] < 1000000) && (
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-50 text-orange-600 text-sm font-medium border border-orange-200">
-                  <DollarSign className="h-3.5 w-3.5" />
-                  <span>{formatPrice(priceRange[0])} - {formatPrice(priceRange[1])}</span>
-                  <button onClick={() => setPriceRange([0, 1000000])} className="ml-1 hover:bg-orange-100 rounded-full p-0.5">
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              )}
-
-              {/* Quick Toggle Chips */}
-              <button
-                onClick={() => {
-                  const isActive = selectedAmenities.includes('pets')
-                  const amenities = isActive
-                    ? selectedAmenities.filter(a => a !== 'pets')
-                    : [...selectedAmenities, 'pets']
-                  setSelectedAmenities(amenities)
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap border ${
-                  selectedAmenities.includes('pets')
-                    ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600'
-                    : 'bg-white text-slate-700 border-slate-300 hover:border-orange-500'
-                }`}
-              >
-                <Dog className="h-3.5 w-3.5" />
-                <span>Pets</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  const isActive = selectedPreferences.includes('Deals')
-                  const prefs = isActive
-                    ? selectedPreferences.filter(p => p !== 'Deals')
-                    : [...selectedPreferences, 'Deals']
-                  setSelectedPreferences(prefs)
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap border ${
-                  selectedPreferences.includes('Deals')
-                    ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600'
-                    : 'bg-white text-slate-700 border-slate-300 hover:border-orange-500'
-                }`}
-              >
-                <Tag className="h-3.5 w-3.5" />
-                <span>Deals</span>
-              </button>
-
-              {/* Clear All */}
-              {(minBeds > 0 || minBaths > 0 || selectedType !== 'all' || priceRange[0] > 0 || priceRange[1] < 10000000 || selectedAmenities.length > 0 || selectedPreferences.length > 0 || searchQuery !== '') && (
-                <button
-                  onClick={() => {
-                    setMinBeds(0)
-                    setMinBaths(0)
-                    setSelectedType('all')
-                    setPriceRange([0, 10000000])
-                    setSearchQuery('')
-                    setSelectedAmenities([])
-                    setSelectedPreferences([])
-                    router.push('/properties')
-                    toast.success('All filters cleared')
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all whitespace-nowrap"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  <span>Clear all</span>
-                </button>
-              )}
-            </div>
-
-            {/* Right: View Toggle & Results */}
-            <div className="flex items-center gap-2 ml-auto">
-              {/* Results Count */}
-              <span className="hidden md:inline text-xs font-medium text-slate-600 whitespace-nowrap">
-                {filteredProperties.length} results
-              </span>
-
-              {/* View Mode Toggle - Compact */}
-              <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-1.5 rounded-md transition-colors ${
-                    viewMode === 'list' 
-                      ? 'bg-white text-orange-600 shadow-sm' 
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title="List"
-                >
-                  <List className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => setViewMode('split')}
-                  className={`p-1.5 rounded-md transition-colors hidden lg:block ${
-                    viewMode === 'split' 
-                      ? 'bg-white text-orange-600 shadow-sm' 
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title="Split"
-                >
-                  <Columns3 className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => setViewMode('map')}
-                  className={`p-1.5 rounded-md transition-colors ${
-                    viewMode === 'map' 
-                      ? 'bg-white text-orange-600 shadow-sm' 
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title="Map"
-                >
-                  <MapIcon className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter Modal */}
-      <PropertyFiltersModal
-        isOpen={showFilterModal}
-        onClose={() => setShowFilterModal(false)}
-        priceRange={priceRange}
-        setPriceRange={setPriceRange}
-        selectedType={selectedType}
-        setSelectedType={setSelectedType}
-        minBeds={minBeds}
-        setMinBeds={setMinBeds}
-        minBaths={minBaths}
-        setMinBaths={setMinBaths}
-        selectedAmenities={selectedAmenities}
-        setSelectedAmenities={setSelectedAmenities}
-        selectedPreferences={selectedPreferences}
-        setSelectedPreferences={setSelectedPreferences}
-        onClearAll={() => {
-          setMinBeds(0)
-          setMinBaths(0)
-          setSelectedType('all')
-          setPriceRange([0, 10000000])
-          setSearchQuery('')
-          setSelectedAmenities([])
-          setSelectedPreferences([])
-          router.push('/properties')
-          toast.success('All filters cleared')
-
-        }}
-        onApply={() => {
-          // Filters are already applied in real-time
-        }}
-        resultsCount={filteredProperties.length}
-      />
-
-      {/* Main Content - Below Fixed Navbar + Filter Bar */}
-      <div className="fixed top-[124px] left-0 right-0 bottom-0 overflow-y-scroll overflow-x-hidden bg-slate-50">
-        <style jsx global>{`
-          .scrollbar-hide::-webkit-scrollbar {
-            display: none;
-          }
-          .scrollbar-hide {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-          }
-        `}</style>
-
-        {/* Wrapper for both map and listings - SWAPPED LAYOUT */}
-        <div className="flex relative">
-          {/* Map Column - Sticky Position (LEFT SIDE) */}
-          {(viewMode === 'split' || viewMode === 'map') && (
-            <div className={`${viewMode === 'map' ? 'w-full' : 'w-1/2'} h-screen sticky top-0 bg-white`}>
-            {/* Map Header */}
-            <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-white/95 to-transparent p-4 backdrop-blur-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
-                    <MapIcon className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">Map View</h3>
-                    <p className="text-xs text-slate-600">{filteredProperties.length} properties</p>
-                  </div>
-                </div>
-                {selectedProperty && (
-                  <div className="bg-orange-50 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-orange-200">
-                    <p className="text-xs font-medium text-orange-700">{selectedProperty.title}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Map Container */}
-            <div className="w-full h-full">
-              {process.env.NEXT_PUBLIC_MAPBOX_TOKEN ? (
-                <PropertyMap
-                  properties={filteredProperties}
-                  selectedProperty={selectedProperty}
-                  onPropertySelect={handlePropertySelect}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-slate-100 rounded-lg">
-                  <div className="text-center p-8">
-                    <MapIcon className="h-16 w-16 text-slate-400 mx-auto mb-4" />
-                    <p className="text-slate-600 font-medium mb-2">Map Unavailable</p>
-                    <p className="text-sm text-slate-500">
-                      Mapbox token not configured. Add NEXT_PUBLIC_MAPBOX_TOKEN to .env.local
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Map Footer - Property Count */}
-            <div className="absolute bottom-4 left-4 right-4 z-10 flex items-center justify-between">
-              <div className="bg-white rounded-lg shadow-lg px-4 py-2 border border-slate-200">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
-                  <span className="text-sm font-semibold text-slate-900">
-                    {filteredProperties.length} {filteredProperties.length === 1 ? 'property' : 'properties'} shown
-                  </span>
-                </div>
-              </div>
-            </div>
-            </div>
-          )}
-
-          {/* Listings Column - Content that scrolls (RIGHT SIDE) */}
-          <div className={`pb-20 ${
-            viewMode === 'map' ? 'hidden' : ''
-          } ${viewMode === 'split' ? 'w-1/2' : 'w-full'}`}>
-            <div className="p-4">
-              {/* Zumper-style Header */}
-              <div className="mb-6 pt-8">
-                <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-2">
-                  {selectedType !== 'all' 
-                    ? `${selectedType}s for Rent${searchQuery ? ` in ${searchQuery}` : ' in Nigeria'}`
-                    : searchQuery 
-                      ? `Apartments for Rent in ${searchQuery}`
-                      : 'Apartments for Rent in Nigeria'
-                  }
-                </h1>
-                <p className="text-sm text-slate-600">
-                  {filteredProperties.length} {filteredProperties.length === 1 ? 'property' : 'properties'} available
-                  {minBeds > 0 && ` • ${minBeds}+ beds`}
-                  {minBaths > 0 && ` • ${minBaths}+ baths`}
-                  {(priceRange[0] > 0 || priceRange[1] < 1000000) && ` • ${formatPrice(priceRange[0])} - ${formatPrice(priceRange[1])}`}
-                </p>
-              </div>
-
-              {filteredProperties.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="max-w-md mx-auto">
-                  <Home className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-                  <h3 className="text-xl font-bold text-slate-900 mb-2">No properties found</h3>
-                  <p className="text-slate-600 mb-6">Try adjusting your filters or clear them to see all properties</p>
-                  <Button
-                    onClick={() => {
-                      setPriceRange([0, 10000000])
-                      setSelectedType("all")
-                      setMinBeds(0)
-                      setMinBaths(0)
-                      setSearchQuery("")
-                      setSelectedAmenities([])
-                      setSelectedPreferences([])
-                      router.push('/properties')
-                      toast.success("All filters cleared")
-                    }}
-                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-lg font-medium"
-                  >
-                    <X className="h-4 w-4 mr-2" />
-                    Clear All Filters
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                {filteredProperties.map((property) => (
-                  <Link 
-                    key={property.id}
-                    href={`/properties/${property.id}`}
-                  >
-                    <Card 
-                      className="group cursor-pointer hover:shadow-lg transition-all duration-300 overflow-hidden border border-slate-200 hover:border-orange-300 bg-white"
-                      onMouseEnter={() => handlePropertySelect(property)}
-                    >
-                    {/* Image */}
-                    <div className="relative w-full h-56 overflow-hidden bg-slate-100">
-                      <img
-                        src={getPropertyImage(property)}
-                        alt={property.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                      />
-                      {property.featured && (
-                        <div className="absolute top-3 left-3 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full">
-                          Featured
-                        </div>
-                      )}
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          toggleFavorite(property.id)
-                        }}
-                        className="absolute top-3 right-3 w-9 h-9 bg-white/95 backdrop-blur-sm rounded-full flex items-center justify-center hover:scale-110 transition-all shadow-lg z-10"
-                      >
-                        <Heart
-                          className={`h-4 w-4 transition-all ${
-                            favorites.includes(property.id)
-                              ? 'fill-red-500 text-red-500'
-                              : 'text-slate-600'
-                          }`}
-                        />
-                      </button>
-                    </div>
-
-                    {/* Content */}
-                    <CardContent className="p-4">
-                      {/* Price */}
-                      <div className="mb-2">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-xl font-bold text-slate-900">
-                            {formatPrice(property.price)}
-                          </span>
-                          <span className="text-xs text-slate-500">
-                            /month
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Title & Location */}
-                      <h4 className="font-semibold text-base text-slate-900 mb-1 line-clamp-1 group-hover:text-orange-600 transition-colors">
-                        {property.title}
-                      </h4>
-                      <p className="text-sm text-slate-600 flex items-center gap-1 mb-3 line-clamp-1">
-                        <MapPin className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
-                        {property.location}
-                      </p>
-
-                      {/* Features */}
-                      <div className="flex items-center gap-4 pb-3 mb-3 border-b border-slate-100">
-                        <div className="flex items-center gap-1.5">
-                          <Bed className="h-4 w-4 text-slate-400" />
-                          <span className="text-xs font-medium text-slate-700">{property.beds}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Bath className="h-4 w-4 text-slate-400" />
-                          <span className="text-xs font-medium text-slate-700">{property.baths}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Square className="h-4 w-4 text-slate-400" />
-                          <span className="text-xs font-medium text-slate-700">{property.sqft}</span>
-                        </div>
-                      </div>
-
-                    </CardContent>
-                  </Card>
-                  </Link>
-                ))}
-              </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Save Favorite Modal */}
-      <SaveFavoriteModal
-        isOpen={showSaveFavoriteModal}
-        onClose={() => {
-          setShowSaveFavoriteModal(false)
-          setPendingFavoriteId(null)
-        }}
-        onSaveWithEmail={handleSaveWithEmail}
-        onContinueBrowsing={handleContinueBrowsing}
-        propertyTitle={
-          pendingFavoriteId 
-            ? properties.find(p => p.id === pendingFavoriteId)?.title || "this property"
-            : "this property"
-        }
-      />
     </div>
   )
 }
+
+// Enhanced Empty State
+function EmptyState({ onClearFilters, searchQuery }: { onClearFilters: () => void; searchQuery: string }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center">
+      <div className="container mx-auto px-4 lg:px-6">
+        <div className="flex flex-col items-center justify-center py-16 text-center max-w-md mx-auto">
+          <div className="bg-slate-100 rounded-full p-8 mb-8">
+            <Home className="h-16 w-16 text-slate-400" />
+          </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-4">
+            {searchQuery ? `No properties found for "${searchQuery}"` : 'No properties found'}
+          </h3>
+          <p className="text-slate-600 text-lg mb-8">
+            {searchQuery 
+              ? 'Try adjusting your search terms or explore different neighborhoods'
+              : 'Try adjusting your filters or explore different areas'
+            }
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Button 
+              onClick={onClearFilters} 
+              variant="outline"
+              className="border-slate-200 text-slate-700 hover:bg-slate-50 px-6 py-3 rounded-xl"
+            >
+              Clear All Filters
+            </Button>
+            {searchQuery && (
+              <Button 
+                onClick={() => onClearFilters()}
+                className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+              >
+                Browse All Properties
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Search Stats Component
+function SearchStats({ 
+  total, 
+  loadingTime, 
+  location,
+  isLoading,
+  hasSearched
+}: { 
+  total: number
+  loadingTime?: number
+  location?: string
+  isLoading?: boolean
+  hasSearched?: boolean
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 mb-6">
+      <div className="flex items-center gap-2">
+        {isLoading ? (
+          <span className="font-semibold text-slate-600 animate-pulse">Loading properties...</span>
+        ) : (
+          <>
+            <span className="font-bold text-xl text-slate-900">
+              {total.toLocaleString()}
+            </span>
+            <span className="text-slate-700">
+              {total === 1 ? 'property' : 'properties'} found
+            </span>
+          </>
+        )}
+        {location && (
+          <>
+            <span>in</span>
+            <Badge variant="secondary" className="bg-orange-100 text-orange-700 border-orange-200 px-3 py-1">
+              <MapPin className="h-3 w-3 mr-1" />
+              {location}
+            </Badge>
+          </>
+        )}
+      </div>
+      
+      {loadingTime && !isLoading && (
+        <div className="flex items-center gap-1 text-xs text-slate-500">
+          <TrendingUp className="h-3 w-3" />
+          <span>Loaded in {loadingTime}ms</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function PropertiesPage() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
+  
+  // State for modals and UI
+  const [selectedProperty, setSelectedProperty] = useState<any | null>(null)
+  const [showFilterModal, setShowFilterModal] = useState(false)
+  const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false)
+  const [pendingFavoriteId, setPendingFavoriteId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('split')
+  const [favorites, setFavorites] = useState<string[]>([])
+  const [pendingFavorites, setPendingFavorites] = useState<Set<string>>(new Set())
+
+  // Properties state
+  const [properties, setProperties] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true) // Start with loading state to prevent "0 properties found" flash
+  const [error, setError] = useState<string | null>(null)
+  const [pagination, setPagination] = useState<any>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [loadingTime, setLoadingTime] = useState<number | undefined>()
+  
+  // Filters state
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])
+  const [selectedType, setSelectedType] = useState("all")
+  const [minBeds, setMinBeds] = useState(0)
+  const [minBaths, setMinBaths] = useState(0)
+
+  // Ref for abort controller
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Debounced search function
+  const debouncedSearch = useMemo(
+    () => debounce((query: string) => {
+      if (query !== searchQuery) {
+        setSearchQuery(query)
+        setCurrentPage(1)
+      }
+    }, SEARCH_DEBOUNCE_MS),
+    [searchQuery]
+  )
+
+  // Memoized search params
+  const searchParamsMemo = useMemo(() => ({
+    location: searchQuery,
+    min_price: priceRange[0] > 0 ? priceRange[0] : undefined,
+    max_price: priceRange[1] < 10000000 ? priceRange[1] : undefined,
+    bedrooms: minBeds > 0 ? minBeds : undefined,
+    bathrooms: minBaths > 0 ? minBaths : undefined,
+    property_type: selectedType !== 'all' ? selectedType : undefined,
+    page: currentPage,
+    limit: ITEMS_PER_PAGE
+  }), [searchQuery, priceRange, minBeds, minBaths, selectedType, currentPage])
+
+  // Enhanced fetch function with performance tracking
+  const fetchProperties = useCallback(async (page: number = 1) => {
+    // Cancel previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    abortControllerRef.current = new AbortController()
+    const startTime = performance.now()
+    
+    try {
+      setIsLoading(true)
+      setError(null)
+      // ✅ CRITICAL: Clear old properties immediately so we show skeletons, not stale data
+      setProperties([])
+
+      const params = {
+        ...searchParamsMemo,
+        page,
+        limit: ITEMS_PER_PAGE
+      }
+
+      console.log('🔍 [PROPERTIES PAGE] Fetching with params:', params)
+      
+      const response = await propertiesAPI.search(params, {
+        signal: abortControllerRef.current.signal
+      })
+
+      const endTime = performance.now()
+      setLoadingTime(Math.round(endTime - startTime))
+
+      setProperties(response.properties || [])
+      setPagination(response.pagination)
+      setCurrentPage(page)
+
+      console.log(`✅ [PROPERTIES PAGE] Loaded ${response.properties?.length || 0} properties`)
+      console.log(`📊 [PAGINATION] Page: ${page}, Limit: ${ITEMS_PER_PAGE}, Expected: 20, Actual: ${response.properties?.length || 0}`)
+      console.log(`📋 [API RESPONSE] Full pagination:`, response.pagination)
+      
+      // ✅ NEW: Debug property coordinates
+      if (response.properties && response.properties.length > 0) {
+        console.log('📍 [MAP DEBUG] First 3 properties coordinates:')
+        response.properties.slice(0, 3).forEach((prop: any, idx: number) => {
+          console.log(`Property ${idx + 1}:`, {
+            title: prop.title,
+            latitude: prop.latitude,
+            longitude: prop.longitude,
+            hasCoords: prop.latitude !== null && prop.longitude !== null,
+            allKeys: Object.keys(prop)
+          })
+        })
+      }
+      
+    } catch (error: any) {
+      // ✅ Silently ignore request cancellations - they're expected during development
+      // Check both error.name and error.message since the error gets re-thrown
+      if (error.name === 'AbortError' || error.message === 'Search cancelled') {
+        return
+      }
+
+      console.error('❌ [PROPERTIES PAGE] Error:', error)
+      setError(error.message || 'Failed to load properties')
+      setProperties([])
+      setPagination(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [searchParamsMemo])
+
+  // Optimized fetch for specific page
+  const fetchPropertiesForPage = useCallback((page: number) => {
+    fetchProperties(page)
+  }, [fetchProperties])
+
+  // Handle search with debouncing
+  const handleSearchSubmit = useCallback((query: string) => {
+    debouncedSearch(query)
+  }, [debouncedSearch])
+
+  // Handle property selection
+  const handlePropertySelect = useCallback((property: any) => {
+    setSelectedProperty(property)
+  }, [])
+
+  // Handle favorite toggle
+  const handleFavoriteClick = useCallback(async (propertyId: string) => {
+    // ✅ CRITICAL: Check auth is fully loaded before allowing favorite operations
+    if (authLoading) {
+      toast.info('Please wait while we verify your account...')
+      return
+    }
+
+    if (!user) {
+      setPendingFavoriteId(propertyId)
+      setShowSaveFavoriteModal(true)
+      return
+    }
+
+    try {
+      // ✅ Check current favorite status
+      const isFavorited = favorites.includes(propertyId);
+      
+      // ✅ OPTIMISTIC UPDATE: Update UI immediately
+      const newFavorites = isFavorited
+        ? favorites.filter(id => id !== propertyId)
+        : [...favorites, propertyId];
+      
+      setFavorites(newFavorites);
+      setPendingFavorites(prev => new Set([...prev, propertyId]));
+      toast.success(isFavorited ? 'Removed from favorites' : 'Added to favorites');
+      
+      // ✅ Then sync with API in background
+      try {
+        const response = await propertiesAPI.toggleFavorite(propertyId, isFavorited);
+        console.log(`✅ [OPTIMISTIC] Confirmed favorite state for ${propertyId}`);
+        // UI is already updated, API confirmed it
+      } catch (error: any) {
+        // ❌ ROLLBACK: API failed, revert to previous state
+        console.error('❌ [OPTIMISTIC] Failed, rolling back:', error);
+        setFavorites(isFavorited ? [...favorites, propertyId] : favorites.filter(id => id !== propertyId));
+        toast.error('Failed to update favorite. Changes reverted.');
+      } finally {
+        // Remove from pending set
+        setPendingFavorites(prev => {
+          const next = new Set(prev);
+          next.delete(propertyId);
+          return next;
+        });
+      }
+    } catch (error: any) {
+      // ✅ Show error but don't affect properties display
+      const errorMsg = error.message || 'Failed to update favorite'
+      console.error('❌ Favorite toggle failed:', errorMsg)
+      toast.error(errorMsg)
+    }
+  }, [user, authLoading, favorites])
+
+  // Memoize property cards to prevent unnecessary re-renders
+  const propertyCards = useMemo(() => {
+    return properties.map((property: any) => (
+      <PropertyCard
+        key={property.id}
+        property={property}
+        onSelect={handlePropertySelect}
+        onFavorite={handleFavoriteClick}
+        isFavorite={favorites.includes(property.id)}
+        compact={viewMode === 'split'}
+        isAuthLoading={authLoading}
+        isPendingFavorite={pendingFavorites.has(property.id)}
+      />
+    ))
+  }, [properties, handlePropertySelect, handleFavoriteClick, favorites, viewMode, authLoading, pendingFavorites])
+
+  // Clear all filters
+  // Clear all filters
+  const clearAllFilters = useCallback(() => {
+    // ✅ FIXED: Reset ALL filter state immediately
+    setPriceRange([0, 10000000])
+    setSelectedType('all')
+    setMinBeds(0)
+    setMinBaths(0)
+    setSearchQuery('')
+    setCurrentPage(1)
+
+    // ✅ Clear URL completely - no query params at all
+    try {
+      // Use router.push to clear ALL query parameters
+      router.push('/properties', { scroll: false })
+    } catch (err) {
+      console.warn('Router push failed when clearing filters:', err)
+    }
+
+    // ✅ Fetch will be triggered by useEffect watching searchQuery changes
+  }, [router])
+
+  // Effects
+  // ✅ NEW: Load user's favorites on mount
+  useEffect(() => {
+    const loadFavorites = async () => {
+      // ✅ CRITICAL: Wait for auth to complete before loading favorites
+      if (authLoading) {
+        return
+      }
+
+      if (!user) {
+        // Silently clear favorites for unauthenticated users
+        setFavorites([])
+        return
+      }
+
+      try {
+        console.log('🔄 [FAVORITES] Auth confirmed, loading user favorites...')
+        const response = await propertiesAPI.getFavorites(1, 1000); // Load all favorites
+        const favoriteIds = (response.properties || []).map((fav: any) => fav.id);
+        console.log(`✅ [FAVORITES] Loaded ${favoriteIds.length} favorites`, favoriteIds)
+        setFavorites(favoriteIds)
+      } catch (error) {
+        console.warn('⚠️ [FAVORITES] Failed to load favorites:', error)
+        // Don't block page load if favorites fail
+        setFavorites([])
+      }
+    }
+
+    loadFavorites()
+  }, [user, authLoading])
+
+  // Initial data load - fetch all properties when page first loads
+  useEffect(() => {
+    // Always fetch properties on mount, even without a search query
+    // This ensures we show properties by default
+    console.log('📍 [INITIAL LOAD] Fetching initial properties...')
+    setIsLoading(true)
+    fetchProperties(1)
+  }, [fetchProperties])
+
+  // URL parameter handling - sets searchQuery from URL
+  useEffect(() => {
+    // ✅ IMPROVED: Check multiple location parameters (flexible location search)
+    const city = searchParams.get('city')
+    const location = searchParams.get('location')
+    const area = searchParams.get('area')
+    const neighborhood = searchParams.get('neighborhood')
+    
+    const searchValue = city || location || area || neighborhood
+    
+    // ✅ CRITICAL: Keep searchQuery in sync with URL
+    if (searchValue && searchValue !== searchQuery) {
+      // URL has search value - apply it
+      setSearchQuery(searchValue)
+      setCurrentPage(1)
+    } else if (!searchValue && searchQuery !== '') {
+      // ✅ NEW: URL has NO search params but searchQuery is set - clear it
+      // This happens when user clears filters/search
+      setSearchQuery('')
+      setCurrentPage(1)
+    }
+  }, [searchParams, searchQuery])
+
+  // Search with debouncing - fetches when searchQuery changes
+  useEffect(() => {
+    // Always fetch - whether empty search or with specific search
+    // Empty search will fetch all properties
+    console.log('🔍 [SEARCH EFFECT] Search query changed:', searchQuery)
+    setIsLoading(true)
+    fetchProperties(1)
+  }, [searchQuery, fetchProperties])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+  }, [])
+
+  if (isLoading && properties.length === 0) {
+    return <LoadingState viewMode={viewMode} />
+  }
+
+  if (error && properties.length === 0) {
+    return <ErrorState error={error} onRetry={() => fetchProperties(1)} />
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white">
+      <Navbar />
+      
+      {/* ✅ NEW: Auth Loading Indicator */}
+      {authLoading && (
+        <div className="bg-blue-50 border-b border-blue-200 sticky top-16 z-39">
+          <div className="container mx-auto px-4 lg:px-6 py-2 flex items-center gap-2 text-sm text-blue-700">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Verifying your account...</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Enhanced Search Header */}
+      <div className="bg-white/95 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+        <div className="container mx-auto px-4 lg:px-6 py-4">
+          <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+            <div className="w-full lg:flex-1">
+              <SearchBar 
+                searchQuery={searchQuery}
+                onSearchChange={debouncedSearch}
+                onSearchSubmit={handleSearchSubmit}
+                onClear={() => {
+                  // ✅ FIXED: Clear search and reset URL
+                  setSearchQuery('')
+                  setCurrentPage(1)
+
+                  // Navigate to clean properties page (removes all search params)
+                  try {
+                    router.push('/properties', { scroll: false })
+                    // ✅ fetch will be triggered by useEffect watching searchQuery
+                  } catch (err) {
+                    console.warn('Router push failed when clearing search:', err)
+                  }
+                }}
+                placeholder="Search by location, property type, or features..."
+                className="w-full"
+              />
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <ViewModeToggle 
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+              />
+
+              {/* Clear Filters button - visible when any filter is active */}
+              {(searchQuery !== '' || priceRange[0] > 0 || priceRange[1] < 10000000 || selectedType !== 'all' || minBeds > 0 || minBaths > 0) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAllFilters}
+                  className="flex items-center gap-2 text-slate-700 hover:bg-slate-50 rounded-xl border border-transparent"
+                >
+                  Clear Filters
+                </Button>
+              )}
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFilterModal(true)}
+                className="flex items-center gap-2 border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl"
+              >
+                <Filter className="h-4 w-4" />
+                <span className="hidden sm:inline">Filters</span>
+                {(priceRange[0] > 0 || priceRange[1] < 10000000 || selectedType !== 'all' || minBeds > 0 || minBaths > 0) && (
+                  <Badge variant="secondary" className="ml-1 bg-orange-100 text-orange-700">
+                    •
+                  </Badge>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      {viewMode === 'map' ? (
+        <div className="h-[calc(100vh-80px)]">
+          <PropertyMap
+            properties={properties}
+            selectedProperty={selectedProperty}
+            onPropertySelect={handlePropertySelect}
+            zoom={11}
+            currentPage={currentPage}
+            itemsPerPage={ITEMS_PER_PAGE}
+          />
+        </div>
+      ) : viewMode === 'split' ? (
+        <div className="h-[calc(100vh-80px)] grid grid-cols-1 lg:grid-cols-2 gap-0">
+          {/* Map on the left */}
+          <div className="h-full relative">
+            <PropertyMap
+              properties={properties}
+              selectedProperty={selectedProperty}
+              onPropertySelect={handlePropertySelect}
+              zoom={11}
+              currentPage={currentPage}
+              itemsPerPage={ITEMS_PER_PAGE}
+            />
+          </div>
+          
+          {/* Properties on the right */}
+          <div className="h-full overflow-y-auto bg-slate-50">
+            <div className="p-4">
+              <SearchStats 
+                total={properties.length}
+                loadingTime={loadingTime}
+                isLoading={isLoading}
+              />
+              
+              {/* ✅ CORRECT LOGIC: Loading → Skeleton | No Results → Empty State | Has Results → Properties */}
+              {isLoading ? (
+                // Show skeletons while loading
+                <div className="grid grid-cols-2 gap-4">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <PropertySkeleton key={index} />
+                  ))}
+                </div>
+              ) : properties.length === 0 ? (
+                // Show empty state only when done loading AND no properties found
+                <EmptyState onClearFilters={clearAllFilters} searchQuery={searchQuery} />
+              ) : (
+                // Show properties when we have results
+                <>
+                  <div className="mb-4">
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                      Properties ({properties.length})
+                    </h3>
+                    <p className="text-sm text-slate-600">
+                      Click on a property to view details on the map
+                    </p>
+                  </div>
+                  
+                  {/* Properties Grid for split view */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {propertyCards}
+                  </div>
+                  
+                  {/* Pagination for split view */}
+                  {pagination && (
+                    <div className="flex justify-center mt-6">
+                      <PaginationControls
+                        pagination={pagination}
+                        currentPage={currentPage}
+                        onPageChange={fetchPropertiesForPage}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <PropertyList 
+          properties={properties}
+          selectedProperty={selectedProperty}
+          isLoading={isLoading}
+          error={error}
+          pagination={pagination}
+          currentPage={currentPage}
+          handlePageChange={fetchPropertiesForPage}
+          handlePropertySelect={handlePropertySelect}
+          handleFavoriteClick={handleFavoriteClick}
+          favorites={favorites}
+          viewMode={viewMode}
+          clearAllFilters={clearAllFilters}
+          searchQuery={searchQuery}
+          loadingTime={loadingTime}
+          propertyCards={propertyCards}
+        />
+      )}
+
+      {/* Enhanced Filter Modal */}
+      {showFilterModal && (
+        <PropertyFiltersModal
+          isOpen={showFilterModal}
+          onClose={() => setShowFilterModal(false)}
+          filters={{
+            priceRange,
+            propertyType: selectedType,
+            bedrooms: minBeds,
+            bathrooms: minBaths
+          }}
+          onFiltersChange={(filters) => {
+            setPriceRange(filters.priceRange || [0, 10000000])
+            setSelectedType(filters.propertyType || 'all')
+            setMinBeds(filters.bedrooms || 0)
+            setMinBaths(filters.bathrooms || 0)
+            setCurrentPage(1)
+            fetchProperties(1)
+          }}
+        />
+      )}
+
+      {/* Save Favorite Modal */}
+      {showSaveFavoriteModal && (
+        <SaveFavoriteModal
+          isOpen={showSaveFavoriteModal}
+          onClose={() => setShowSaveFavoriteModal(false)}
+          propertyTitle={properties.find((p: any) => p.id === pendingFavoriteId)?.title || ''}
+          onSaveWithEmail={() => {
+            setShowSaveFavoriteModal(false)
+            toast.success('Please sign in to save favorites')
+          }}
+          onContinueBrowsing={() => {
+            setShowSaveFavoriteModal(false)
+            setPendingFavoriteId(null)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// "use client"
+
+// import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+// import React from 'react'
+// import { useSearchParams, useRouter } from 'next/navigation'
+// import { useAuth } from '@/contexts/AuthContext'
+// import { toast } from 'sonner'
+// import { propertiesAPI } from '@/lib/api/properties'
+// import { formatPrice, formatPriceCompact, debounce, formatLocation } from '@/lib/utils/format'
+
+// // Components
+// import SearchBar from '@/components/properties/SearchBar'
+// import ViewModeToggle, { ViewMode } from '@/components/properties/ViewModeToggle'
+// import PaginationControls from '@/components/properties/PaginationControls'
+// import { PropertyFiltersModal } from '@/components/PropertyFiltersModal'
+// import EnhancedPropertyMapbox from '@/components/EnhancedPropertyMapboxStunning'
+// import SaveFavoriteModal from '@/components/SaveFavoriteModal'
+// import PropertyCard from '@/components/properties/PropertyCard'
+// import PropertyList from '@/components/properties/PropertyList'
+// import PropertyGrid from '@/components/properties/PropertyGrid'
+// import { Button } from '@/components/ui/button'
+// import { Badge } from '@/components/ui/badge'
+// import { Card, CardContent } from '@/components/ui/card'
+// import { Skeleton } from '@/components/ui/skeleton'
+// import { 
+//   Filter, 
+//   Home, 
+//   AlertCircle, 
+//   RefreshCw, 
+//   MapPin, 
+//   Grid, 
+//   List, 
+//   Map, 
+//   Loader2, 
+//   TrendingUp,
+//   Heart,
+//   Bed,
+//   Bath,
+//   Square,
+//   Camera,
+//   Star,
+//   Shield,
+//   Wifi,
+//   Car,
+//   Zap,
+//   ChevronRight,
+//   Search,
+//   Users,
+//   Eye
+// } from 'lucide-react'
+// import { Navbar } from '@/components/navigation/Navbar'
+// import Link from 'next/link'
+// import Image from 'next/image'
+
+// // Constants
+// const DEFAULT_LAGOS_LAT = 6.5244
+// const DEFAULT_LAGOS_LNG = 3.3792
+// const SEARCH_DEBOUNCE_MS = 300
+// const ITEMS_PER_PAGE = 20
+
+// // Enhanced Loading Skeleton Cards
+// function PropertyCardSkeleton() {
+//   return (
+//     <Card className="overflow-hidden shadow-lg rounded-2xl border-slate-200 hover:shadow-xl transition-all duration-300">
+//       <div className="relative">
+//         <Skeleton className="h-48 w-full" />
+//         <div className="absolute top-3 left-3">
+//           <Skeleton className="h-6 w-16 rounded-full" />
+//         </div>
+//         <div className="absolute top-3 right-3">
+//           <Skeleton className="h-8 w-8 rounded-full" />
+//         </div>
+//         <div className="absolute bottom-3 left-3">
+//           <Skeleton className="h-6 w-20 rounded-full" />
+//         </div>
+//       </div>
+//       <CardContent className="p-4">
+//         <Skeleton className="h-6 w-3/4 mb-2" />
+//         <Skeleton className="h-4 w-full mb-3" />
+//         <div className="flex items-center gap-4 mb-3">
+//           <Skeleton className="h-4 w-16" />
+//           <Skeleton className="h-4 w-16" />
+//           <Skeleton className="h-4 w-16" />
+//         </div>
+//         <div className="flex items-center justify-between">
+//           <Skeleton className="h-6 w-1/3" />
+//           <div className="flex gap-2">
+//             <Skeleton className="h-8 w-8 rounded-full" />
+//             <Skeleton className="h-8 w-8 rounded-full" />
+//           </div>
+//         </div>
+//       </CardContent>
+//     </Card>
+//   )
+// }
+
+// // Enhanced Loading State with Skeletons
+// function LoadingState({ viewMode }: { viewMode: ViewMode }) {
+//   const skeletonCount = viewMode === 'split' ? 2 : 8
+  
+//   return (
+//     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white">
+//       <div className="container mx-auto px-4 lg:px-6 py-8">
+//         <div className="flex items-center gap-3 mb-8">
+//           <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+//           <div>
+//             <h3 className="text-lg font-semibold text-slate-900">Finding perfect properties...</h3>
+//             <p className="text-sm text-slate-600">Discovering amazing homes in your area</p>
+//           </div>
+//         </div>
+        
+//         <div className={`grid gap-6 ${
+//           viewMode === 'split' 
+//             ? 'grid-cols-1' 
+//             : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+//         }`}>
+//           {Array.from({ length: skeletonCount }).map((_, index) => (
+//             <PropertyCardSkeleton key={index} />
+//           ))}
+//         </div>
+//       </div>
+//     </div>
+//   )
+// }
+
+// // Enhanced Error State
+// function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+//   return (
+//     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center">
+//       <div className="container mx-auto px-4 lg:px-6">
+//         <div className="flex flex-col items-center justify-center py-16 text-center max-w-md mx-auto">
+//           <div className="bg-orange-50 rounded-full p-6 mb-6">
+//             <AlertCircle className="h-12 w-12 text-orange-500" />
+//           </div>
+//           <h3 className="text-2xl font-bold text-slate-900 mb-3">Oops! Something went wrong</h3>
+//           <p className="text-slate-600 mb-8 text-lg">{error}</p>
+//           <Button 
+//             onClick={onRetry} 
+//             className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+//           >
+//             <RefreshCw className="h-4 w-4 mr-2" />
+//             Try Again
+//           </Button>
+//         </div>
+//       </div>
+//     </div>
+//   )
+// }
+
+// // Enhanced Empty State
+// function EmptyState({ onClearFilters, searchQuery }: { onClearFilters: () => void; searchQuery: string }) {
+//   return (
+//     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center">
+//       <div className="container mx-auto px-4 lg:px-6">
+//         <div className="flex flex-col items-center justify-center py-16 text-center max-w-md mx-auto">
+//           <div className="bg-slate-100 rounded-full p-8 mb-8">
+//             <Home className="h-16 w-16 text-slate-400" />
+//           </div>
+//           <h3 className="text-2xl font-bold text-slate-900 mb-4">
+//             {searchQuery ? `No properties found for "${searchQuery}"` : 'No properties found'}
+//           </h3>
+//           <p className="text-slate-600 text-lg mb-8">
+//             {searchQuery 
+//               ? 'Try adjusting your search terms or explore different neighborhoods'
+//               : 'Try adjusting your filters or explore different areas'
+//             }
+//           </p>
+//           <div className="flex flex-col sm:flex-row gap-4">
+//             <Button 
+//               onClick={onClearFilters} 
+//               variant="outline"
+//               className="border-slate-200 text-slate-700 hover:bg-slate-50 px-6 py-3 rounded-xl"
+//             >
+//               Clear All Filters
+//             </Button>
+//             {searchQuery && (
+//               <Button 
+//                 onClick={() => onClearFilters()}
+//                 className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+//               >
+//                 Browse All Properties
+//               </Button>
+//             )}
+//           </div>
+//         </div>
+//       </div>
+//     </div>
+//   )
+// }
+
+// // Search Stats Component
+// function SearchStats({ 
+//   total, 
+//   loadingTime, 
+//   location,
+//   isLoading
+// }: { 
+//   total: number
+//   loadingTime?: number
+//   location?: string
+//   isLoading?: boolean
+// }) {
+//   return (
+//     <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 mb-6">
+//       <div className="flex items-center gap-2">
+//         {!isLoading && (
+//           <span className="font-bold text-xl text-slate-900">
+//             {total.toLocaleString()}
+//           </span>
+//         )}
+//         <span className="text-slate-700">
+//           {total === 1 ? 'property' : 'properties'} found
+//         </span>
+//         {location && (
+//           <>
+//             <span>in</span>
+//             <Badge variant="secondary" className="bg-orange-100 text-orange-700 border-orange-200 px-3 py-1">
+//               <MapPin className="h-3 w-3 mr-1" />
+//               {location}
+//             </Badge>
+//           </>
+//         )}
+//       </div>
+      
+//       {loadingTime && !isLoading && (
+//         <div className="flex items-center gap-1 text-xs text-slate-500">
+//           <TrendingUp className="h-3 w-3" />
+//           <span>Loaded in {loadingTime}ms</span>
+//         </div>
+//       )}
+//     </div>
+//   )
+// }
+
+// export default function PropertiesPage() {
+//   const searchParams = useSearchParams()
+//   const router = useRouter()
+//   const { user } = useAuth()
+  
+//   // State for modals and UI
+//   const [selectedProperty, setSelectedProperty] = useState<any | null>(null)
+//   const [showFilterModal, setShowFilterModal] = useState(false)
+//   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false)
+//   const [pendingFavoriteId, setPendingFavoriteId] = useState<string | null>(null)
+//   const [viewMode, setViewMode] = useState<ViewMode>('split')
+//   const [favorites, setFavorites] = useState<string[]>([])
+
+//   // Properties state
+//   const [properties, setProperties] = useState<any[]>([])
+//   const [isLoading, setIsLoading] = useState(false)
+//   const [error, setError] = useState<string | null>(null)
+//   const [pagination, setPagination] = useState<any>(null)
+//   const [currentPage, setCurrentPage] = useState(1)
+//   const [searchQuery, setSearchQuery] = useState("")
+//   const [loadingTime, setLoadingTime] = useState<number | undefined>()
+  
+//   // Filters state
+//   const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])
+//   const [selectedType, setSelectedType] = useState("all")
+//   const [minBeds, setMinBeds] = useState(0)
+//   const [minBaths, setMinBaths] = useState(0)
+
+//   // Ref for abort controller
+//   const abortControllerRef = useRef<AbortController | null>(null)
+
+//   // Debounced search function
+//   const debouncedSearch = useMemo(
+//     () => debounce((query: string) => {
+//       if (query !== searchQuery) {
+//         setSearchQuery(query)
+//         setCurrentPage(1)
+//       }
+//     }, SEARCH_DEBOUNCE_MS),
+//     [searchQuery]
+//   )
+
+//   // Memoized search params
+//   const searchParamsMemo = useMemo(() => ({
+//     location: searchQuery,
+//     min_price: priceRange[0] > 0 ? priceRange[0] : undefined,
+//     max_price: priceRange[1] < 10000000 ? priceRange[1] : undefined,
+//     bedrooms: minBeds > 0 ? minBeds : undefined,
+//     bathrooms: minBaths > 0 ? minBaths : undefined,
+//     property_type: selectedType !== 'all' ? selectedType : undefined,
+//     page: currentPage,
+//     limit: ITEMS_PER_PAGE
+//   }), [searchQuery, priceRange, minBeds, minBaths, selectedType, currentPage])
+
+//   // Enhanced fetch function with performance tracking
+//   const fetchProperties = useCallback(async (page: number = 1) => {
+//     // Cancel previous request
+//     if (abortControllerRef.current) {
+//       abortControllerRef.current.abort()
+//     }
+
+//     abortControllerRef.current = new AbortController()
+//     const startTime = performance.now()
+    
+//     try {
+//       setIsLoading(true)
+//       setError(null)
+
+//       const params = {
+//         ...searchParamsMemo,
+//         page,
+//         limit: ITEMS_PER_PAGE
+//       }
+
+//       console.log('🔍 [PROPERTIES PAGE] Fetching with params:', params)
+      
+//       const response = await propertiesAPI.search(params, {
+//         signal: abortControllerRef.current.signal
+//       })
+
+//       const endTime = performance.now()
+//       setLoadingTime(Math.round(endTime - startTime))
+
+//       setProperties(response.properties || [])
+//       setPagination(response.pagination)
+//       setCurrentPage(page)
+
+//       console.log(`✅ [PROPERTIES PAGE] Loaded ${response.properties?.length || 0} properties`)
+//       console.log(`📊 [PAGINATION] Page: ${page}, Limit: ${ITEMS_PER_PAGE}, Expected: 20, Actual: ${response.properties?.length || 0}`)
+//       console.log(`📋 [API RESPONSE] Full pagination:`, response.pagination)
+      
+//     } catch (error: any) {
+//       if (error.name === 'AbortError') {
+//         console.log('🚫 [PROPERTIES PAGE] Request cancelled')
+//         return
+//       }
+
+//       console.error('❌ [PROPERTIES PAGE] Error:', error)
+//       setError(error.message || 'Failed to load properties')
+//       setProperties([])
+//       setPagination(null)
+//     } finally {
+//       setIsLoading(false)
+//     }
+//   }, [searchParamsMemo])
+
+//   // Optimized fetch for specific page
+//   const fetchPropertiesForPage = useCallback((page: number) => {
+//     fetchProperties(page)
+//   }, [fetchProperties])
+
+//   // Handle search with debouncing
+//   const handleSearchSubmit = useCallback((query: string) => {
+//     debouncedSearch(query)
+//   }, [debouncedSearch])
+
+//   // Handle property selection
+//   const handlePropertySelect = useCallback((property: any) => {
+//     setSelectedProperty(property)
+//     router.push(`/properties/${property.id}`)
+//   }, [router])
+
+//   // Handle favorite toggle
+//   const handleFavoriteClick = useCallback(async (propertyId: string) => {
+//     if (!user) {
+//       setPendingFavoriteId(propertyId)
+//       setShowSaveFavoriteModal(true)
+//       return
+//     }
+
+//     try {
+//       const response = await propertiesAPI.toggleFavorite(propertyId)
+//       setFavorites(prev => 
+//         response.is_favorited 
+//           ? [...prev, propertyId]
+//           : prev.filter(id => id !== propertyId)
+//       )
+      
+//       toast.success(response.is_favorited ? 'Added to favorites' : 'Removed from favorites')
+//     } catch (error: any) {
+//       toast.error(error.message || 'Failed to update favorite')
+//     }
+//   }, [user])
+
+//   // Memoize property cards to prevent unnecessary re-renders
+//   const propertyCards = useMemo(() => {
+//     return properties.map((property: any) => (
+//       <PropertyCard
+//         key={property.id}
+//         property={property}
+//         onSelect={handlePropertySelect}
+//         onFavorite={handleFavoriteClick}
+//         isFavorite={favorites.includes(property.id)}
+//         compact={viewMode === 'split'}
+//       />
+//     ))
+//   }, [properties, handlePropertySelect, handleFavoriteClick, favorites, viewMode])
+
+//   // Clear all filters
+//   const clearAllFilters = useCallback(() => {
+//     setPriceRange([0, 10000000])
+//     setSelectedType('all')
+//     setMinBeds(0)
+//     setMinBaths(0)
+//     setSearchQuery('')
+//     setCurrentPage(1)
+//     fetchProperties(1)
+//   }, [fetchProperties])
+
+//   // Effects
+//   useEffect(() => {
+//     // Initial data load
+//     fetchProperties(1)
+//   }, [])
+
+//   // URL parameter handling
+//   useEffect(() => {
+//     const location = searchParams.get('location')
+//     if (location && location !== searchQuery) {
+//       setSearchQuery(location)
+//       setCurrentPage(1)
+//       fetchProperties(1)
+//     }
+//   }, [searchParams])
+
+//   // Search with debouncing
+//   useEffect(() => {
+//     if (searchQuery !== '') {
+//       fetchProperties(1)
+//     }
+//   }, [searchQuery])
+
+//   // Cleanup on unmount
+//   useEffect(() => {
+//     return () => {
+//       if (abortControllerRef.current) {
+//         abortControllerRef.current.abort()
+//       }
+//     }
+//   }, [])
+
+//   return (
+//     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white">
+//       <Navbar />
+      
+//       {/* Enhanced Search Header */}
+//       <div className="bg-white/95 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+//         <div className="container mx-auto px-4 lg:px-6 py-4">
+//           <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+//             <div className="w-full lg:flex-1">
+//               <SearchBar 
+//                 searchQuery={searchQuery}
+//                 onSearchChange={debouncedSearch}
+//                 onSearchSubmit={handleSearchSubmit}
+//                 placeholder="Search by location, property type, or features..."
+//                 className="w-full"
+//               />
+//             </div>
+            
+//             <div className="flex items-center gap-3">
+//               <ViewModeToggle 
+//                 viewMode={viewMode}
+//                 onViewModeChange={setViewMode}
+//               />
+              
+//               <Button
+//                 variant="outline"
+//                 size="sm"
+//                 onClick={() => setShowFilterModal(true)}
+//                 className="flex items-center gap-2 border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl"
+//               >
+//                 <Filter className="h-4 w-4" />
+//                 <span className="hidden sm:inline">Filters</span>
+//                 {(priceRange[0] > 0 || priceRange[1] < 10000000 || selectedType !== 'all' || minBeds > 0 || minBaths > 0) && (
+//                   <Badge variant="secondary" className="ml-1 bg-orange-100 text-orange-700">
+//                     •
+//                   </Badge>
+//                 )}
+//               </Button>
+//             </div>
+//           </div>
+//         </div>
+//       </div>
+
+//       {/* Main Content */}
+//       {viewMode === 'map' ? (
+//         <div className="h-[calc(100vh-80px)]">
+//           <EnhancedPropertyMapbox
+//             properties={properties}
+//             selectedProperty={selectedProperty}
+//             onPropertySelect={handlePropertySelect}
+//             center={[DEFAULT_LAGOS_LNG, DEFAULT_LAGOS_LAT]}
+//             zoom={11}
+//             offlineMode={false}
+//             pageNumber={currentPage}
+//           />
+//         </div>
+//       ) : viewMode === 'split' ? (
+//         <div className="h-[calc(100vh-80px)] grid grid-cols-1 lg:grid-cols-2 gap-0">
+//           {/* Map on the left */}
+//           <div className="h-full relative">
+//             <EnhancedPropertyMapbox
+//               properties={properties}
+//               selectedProperty={selectedProperty}
+//               onPropertySelect={handlePropertySelect}
+//               center={[DEFAULT_LAGOS_LNG, DEFAULT_LAGOS_LAT]}
+//               zoom={11}
+//               offlineMode={false}
+//               pageNumber={currentPage}
+//             />
+//           </div>
+          
+//           {/* Properties on the right */}
+//           <div className="h-full overflow-y-auto bg-slate-50">
+//             <div className="p-4">
+//               <div className="mb-4">
+//                 <h3 className="text-lg font-semibold text-slate-900 mb-2">
+//                   Properties ({properties.length})
+//                 </h3>
+//                 <p className="text-sm text-slate-600">
+//                   Click on a property to view details on the map
+//                 </p>
+//               </div>
+              
+//               {/* Properties Grid for split view */}
+//               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+//                 {propertyCards}
+//               </div>
+              
+//               {/* Pagination for split view */}
+//               {pagination && (
+//                 <div className="flex justify-center mt-6">
+//                   <PaginationControls
+//                     pagination={pagination}
+//                     currentPage={currentPage}
+//                     onPageChange={fetchPropertiesForPage}
+//                   />
+//                 </div>
+//               )}
+//             </div>
+//           </div>
+//         </div>
+//       ) : (
+//         <PropertyList 
+//           properties={properties}
+//           selectedProperty={selectedProperty}
+//           isLoading={isLoading}
+//           error={error}
+//           pagination={pagination}
+//           currentPage={currentPage}
+//           handlePageChange={fetchPropertiesForPage}
+//           handlePropertySelect={handlePropertySelect}
+//           handleFavoriteClick={handleFavoriteClick}
+//           favorites={favorites}
+//           viewMode={viewMode}
+//           clearAllFilters={clearAllFilters}
+//           searchQuery={searchQuery}
+//           loadingTime={loadingTime}
+//           propertyCards={propertyCards}
+//         />
+//       )}
+
+//       {/* Enhanced Filter Modal */}
+//       {showFilterModal && (
+//         <PropertyFiltersModal
+//           isOpen={showFilterModal}
+//           onClose={() => setShowFilterModal(false)}
+//           filters={{
+//             priceRange,
+//             propertyType: selectedType,
+//             bedrooms: minBeds,
+//             bathrooms: minBaths
+//           }}
+//           onFiltersChange={(filters) => {
+//             setPriceRange(filters.priceRange || [0, 10000000])
+//             setSelectedType(filters.propertyType || 'all')
+//             setMinBeds(filters.bedrooms || 0)
+//             setMinBaths(filters.bathrooms || 0)
+//             setCurrentPage(1)
+//             fetchProperties(1)
+//           }}
+//         />
+//       )}
+
+//       {/* Save Favorite Modal */}
+//       {showSaveFavoriteModal && (
+//         <SaveFavoriteModal
+//           isOpen={showSaveFavoriteModal}
+//           onClose={() => setShowSaveFavoriteModal(false)}
+//           propertyTitle={properties.find((p: any) => p.id === pendingFavoriteId)?.title || ''}
+//           onSaveWithEmail={() => {
+//             setShowSaveFavoriteModal(false)
+//             toast.success('Please sign in to save favorites')
+//           }}
+//           onContinueBrowsing={() => {
+//             setShowSaveFavoriteModal(false)
+//             setPendingFavoriteId(null)
+//           }}
+//         />
+//       )}
+//     </div>
+//   )
+// }

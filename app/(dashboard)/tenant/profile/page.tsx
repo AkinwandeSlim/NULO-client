@@ -16,31 +16,27 @@ import { toast } from "sonner"
 const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed='
 
 export default function ProfilePage() {
-  const { user, profile, updateProfile } = useAuth()
+  const { user, userProfile, updateUserProfile } = useAuth()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState({
     full_name: '',
-    phone: '',
-    bio: '',
-    location: ''
+    phone_number: ''
   })
 
   useEffect(() => {
-    if (profile) {
+    if (user) {
       setFormData({
-        full_name: profile.full_name || '',
-        phone: profile.phone || '',
-        bio: profile.bio || '',
-        location: profile.location || ''
+        full_name: user.full_name || '',
+        phone_number: user.phone_number || ''
       })
     }
-  }, [profile])
+  }, [user])
 
   const handleSave = async () => {
     try {
       setSaving(true)
-      await updateProfile(formData)
+      await updateUserProfile(formData)
       setEditing(false)
       toast.success('Profile updated successfully!')
     } catch (error: any) {
@@ -53,10 +49,8 @@ export default function ProfilePage() {
 
   const handleCancel = () => {
     setFormData({
-      full_name: profile?.full_name || '',
-      phone: profile?.phone || '',
-      bio: profile?.bio || '',
-      location: profile?.location || ''
+      full_name: user?.full_name || '',
+      phone_number: user?.phone_number || ''
     })
     setEditing(false)
   }
@@ -106,8 +100,8 @@ export default function ProfilePage() {
               {/* Avatar */}
               <div className="relative inline-block mb-4">
                 <img
-                  src={profile?.avatar_url || DEFAULT_AVATAR + user?.id}
-                  alt={profile?.full_name || 'User'}
+                  src={user?.avatar_url || DEFAULT_AVATAR + user?.id}
+                  alt={user?.full_name || 'User'}
                   className="h-32 w-32 rounded-full object-cover border-4 border-orange-100"
                 />
                 <button className="absolute bottom-0 right-0 p-2 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition-colors">
@@ -117,7 +111,7 @@ export default function ProfilePage() {
 
               {/* Name & Email */}
               <h2 className="text-2xl font-bold text-slate-900 mb-1">
-                {profile?.full_name || 'User'}
+                {user?.full_name || 'User'}
               </h2>
               <p className="text-slate-600 mb-4">{user?.email}</p>
 
@@ -129,7 +123,7 @@ export default function ProfilePage() {
                     Email Verified
                   </Badge>
                 ) : (
-                  <Badge className="bg-amber-100 text-amber-700 border-0">
+                  <Badge className="bg-orange-100 text-orange-700 border-0">
                     <AlertCircle className="h-3 w-3 mr-1" />
                     Email Not Verified
                   </Badge>
@@ -209,40 +203,13 @@ export default function ProfilePage() {
                     </label>
                     <input
                       type="tel"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      value={formData.phone_number}
+                      onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
                       className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                       placeholder="+234 XXX XXX XXXX"
                     />
                   </div>
 
-                  {/* Location */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Location
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.location}
-                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      placeholder="City, State"
-                    />
-                  </div>
-
-                  {/* Bio */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Bio
-                    </label>
-                    <textarea
-                      value={formData.bio}
-                      onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                      rows={4}
-                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      placeholder="Tell us about yourself..."
-                    />
-                  </div>
 
                   {/* Action Buttons */}
                   <div className="flex gap-3">
@@ -282,7 +249,7 @@ export default function ProfilePage() {
                     <div className="flex-1">
                       <p className="text-sm text-slate-600">Full Name</p>
                       <p className="font-semibold text-slate-900">
-                        {profile?.full_name || 'Not set'}
+                        {user?.full_name || 'Not set'}
                       </p>
                     </div>
                   </div>
@@ -302,29 +269,12 @@ export default function ProfilePage() {
                     <div className="flex-1">
                       <p className="text-sm text-slate-600">Phone Number</p>
                       <p className="font-semibold text-slate-900">
-                        {profile?.phone || 'Not set'}
+                        {user?.phone_number || 'Not set'}
                       </p>
                     </div>
                   </div>
 
-                  {/* Location */}
-                  <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg">
-                    <MapPin className="h-5 w-5 text-slate-400" />
-                    <div className="flex-1">
-                      <p className="text-sm text-slate-600">Location</p>
-                      <p className="font-semibold text-slate-900">
-                        {profile?.location || 'Not set'}
-                      </p>
-                    </div>
-                  </div>
 
-                  {/* Bio */}
-                  {profile?.bio && (
-                    <div className="p-4 bg-slate-50 rounded-lg">
-                      <p className="text-sm text-slate-600 mb-2">Bio</p>
-                      <p className="text-slate-900">{profile.bio}</p>
-                    </div>
-                  )}
                 </div>
               )}
             </CardContent>

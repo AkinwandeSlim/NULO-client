@@ -123,3 +123,77 @@
     @apply bg-background text-foreground;
   }
 }
+/* ✅ Map Optimization - Prevent Lag & Improve Performance */
+.property-marker {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+.property-marker > div {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Smooth marker animations without jank */
+.mapboxgl-marker {
+  z-index: 10;
+}
+
+.mapboxgl-popup {
+  will-change: opacity, transform;
+}
+
+/* Optimize map interactions */
+.mapboxgl-canvas {
+  will-change: transform;
+  touch-action: manipulation;
+}
+
+/* Prevent text selection during interactions */
+.mapboxgl-canvas,
+.property-marker {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Grid optimization for properties list */
+.properties-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+/* Split view optimization */
+.split-view-map {
+  contain: layout style paint;
+}
+
+.split-view-list {
+  contain: layout style;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Smooth scrolling */
+.split-view-list {
+  scroll-behavior: smooth;
+}
+
+/* Property card hover performance */
+.property-card {
+  transition: all 0.2s ease-out;
+  transform: translateZ(0);
+}
+
+.property-card:hover {
+  transform: translateY(-4px) translateZ(0);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+/* Pagination controls */
+.pagination-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -20,13 +21,24 @@ const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed='
 
 export default function LandlordViewingsPage() {
   const { user } = useAuth()
+  const pathname = usePathname()
   const [loading, setLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
   const [viewingRequests, setViewingRequests] = useState<any[]>([])
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [hasInitialLoadRef] = useState({ current: false })
 
   useEffect(() => {
-    fetchViewingRequests()
+    setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (mounted) {
+      setLoading(true)
+      fetchViewingRequests()
+      hasInitialLoadRef.current = true
+    }
+  }, [pathname]) // Add pathname to trigger refresh on navigation
 
   const fetchViewingRequests = async () => {
     try {
@@ -41,7 +53,7 @@ export default function LandlordViewingsPage() {
     }
   }
 
-  const handleUpdateStatus = async (requestId: string, status: string, notes?: string) => {
+  const handleUpdateStatus = async (requestId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'completed', notes?: string) => {
     try {
       setUpdatingId(requestId)
       await viewingRequestsAPI.update(requestId, { 
@@ -68,12 +80,12 @@ export default function LandlordViewingsPage() {
 
   const handleReject = (requestId: string) => {
     const reason = prompt('Please provide a reason for rejection (optional):')
-    handleUpdateStatus(requestId, 'rejected', reason || 'Unfortunately, this time slot is not available.')
+    handleUpdateStatus(requestId, 'cancelled', reason || 'Unfortunately, this time slot is not available.')
   }
 
   const getStatusBadge = (status: string) => {
     const styles = {
-      pending: "bg-amber-100 text-amber-700 border-0",
+      pending: "bg-orange-100 text-orange-700 border-0",
       confirmed: "bg-green-100 text-green-700 border-0",
       rejected: "bg-red-100 text-red-700 border-0",
       completed: "bg-blue-100 text-blue-700 border-0",
@@ -105,7 +117,7 @@ export default function LandlordViewingsPage() {
     )
   }
 
-  if (loading) {
+  if (loading && !hasInitialLoadRef.current && !mounted) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
@@ -288,7 +300,7 @@ export default function LandlordViewingsPage() {
           {groupedRequests.pending.length > 0 && (
             <div>
               <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-amber-600" />
+                <AlertCircle className="h-5 w-5 text-orange-600" />
                 Pending Requests ({groupedRequests.pending.length})
               </h2>
               <div className="space-y-4">

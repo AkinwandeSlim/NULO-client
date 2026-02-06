@@ -1,19 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/contexts/AuthContext"
+import { useDashboard } from "@/contexts/DashboardContext"  // ← ADD
+import { toast } from "sonner"
+import { Navbar } from "@/components/navigation/Navbar"
 import {
   LayoutDashboard,
   Heart,
@@ -23,15 +17,30 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
-  Search,
   Shield,
   Building2,
   FileText,
   Calendar,
   Home,
+  Users,
+  CheckCircle,
+  Info,
+  BookOpen,
+  Phone,
   ChevronDown,
+  UserPlus,
+  Edit,
+  Trash2,
+  Eye
 } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 // Tenant sidebar links
 const tenantSidebarLinks = [
@@ -51,12 +60,33 @@ const landlordSidebarLinks = [
   { href: "/tenant/profile", label: "Profile", icon: User },
 ]
 
-// Admin sidebar links
+// Admin sidebar links with dropdown for user management
 const adminSidebarLinks = [
   { href: "/admin", label: "Admin Dashboard", icon: Shield },
-  { href: "/admin/users", label: "Users", icon: User },
-  { href: "/admin/properties", label: "Properties", icon: Building2 },
-  { href: "/admin/reports", label: "Reports", icon: FileText },
+  { 
+    href: "/admin/users", 
+    label: "Manage Users", 
+    icon: Users,
+    isDropdown: true,
+    dropdownItems: [
+      { href: "/admin/users/tenants", label: "Tenant Management", icon: User, description: "View, edit, delete tenants" },
+      { href: "/admin/users/landlords", label: "Landlord Management", icon: Building2, description: "View, edit, delete landlords" },
+      { href: "/admin/users/create", label: "Create New User", icon: UserPlus, description: "Add new tenant or landlord" },
+    ]
+  },
+  // { href: "/admin/tenant-verification", label: "Tenant Verification", icon: User },
+  { href: "/admin/landlord-verification", label: "Landlord Verification", icon: Building2 },
+  { href: "/admin/property-verification", label: "Property Verification", icon: FileText },
+  { href: "/admin/verifications", label: "All Verifications", icon: CheckCircle },
+]
+
+// ✅ NEW: Public navigation links to show in dashboard navbar
+const publicNavLinks = [
+  { href: "/", label: "Home", icon: Home },
+  { href: "/properties", label: "Marketplace", icon: Building2 },
+  { href: "/about", label: "About", icon: Info },
+  { href: "/blog", label: "Blog", icon: BookOpen },
+  { href: "/contact", label: "Contact", icon: Phone },
 ]
 
 export default function DashboardLayout({
@@ -65,53 +95,68 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [isSigningOut, setIsSigningOut] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
   
-  // Real Supabase auth
-  const { user, profile, loading, signOut } = useAuth()
+  // ✅ FIXED: Use userProfile instead of profile
+  const { user, userProfile, loading, signOut } = useAuth()
   
-  // Redirect if not authenticated
+  // ✅ Initialize dashboard cache at layout level (benefits all child pages!)
+  const { fetchDashboardStats } = useDashboard()
+  
+  // Mount check
   useEffect(() => {
-    if (!loading && !user) {
+    setMounted(true)
+  }, [])
+
+  // ✅ Initialize dashboard cache when user is authenticated
+  useEffect(() => {
+    if (mounted && !loading && user) {
+      // Initialize cache for all dashboard pages
+      // This runs once and all child pages benefit from the cached data
+      fetchDashboardStats()
+      
+      console.log('🚀 [DASHBOARD LAYOUT] Initialized cache for all dashboard pages')
+    }
+  }, [mounted, loading, user, fetchDashboardStats])
+  
+  // Redirect if not authenticated (only after initial load)
+  useEffect(() => {
+    if (mounted && !loading && !user) {
       router.push('/signin?callbackUrl=' + pathname)
     }
-  }, [user, loading, pathname, router])
+  }, [user, loading, pathname, router, mounted])
   
   // Handle logout
   const handleLogout = async () => {
+    if (isSigningOut) return // Prevent multiple clicks
+    
     try {
+      setIsSigningOut(true)
+      console.log('👋 [DASHBOARD] Signing out...')
+      
       await signOut()
-      router.push('/')
-      router.refresh()
+      
     } catch (error) {
-      console.error('Logout error:', error)
+      console.error('❌ [DASHBOARD] Logout error:', error)
+      toast.error('Failed to sign out')
+      
+      // No fallback - let AuthContext handle the error
+    } finally {
+      setIsSigningOut(false)
     }
   }
   
-  // Get user initials
-  const getUserInitials = () => {
-    if (profile?.full_name) {
-      return profile.full_name
-        .split(' ')
-        .map(n => n[0])
-        .join('')
-        .toUpperCase()
-    }
-    if (user?.email) {
-      return user.email[0].toUpperCase()
-    }
-    return 'U'
-  }
-  
-  // Show loading state
-  if (loading) {
+  // ✅ FIXED: Only show loading on TRUE initial load (not on navigation)
+  // If mounted and user exists, render even if loading (for navigation between pages)
+  if (!mounted || (!user && loading)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-stone-50 to-orange-50">
+      <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1] flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-600">Loading...</p>
+          <p className="text-slate-600">Loading dashboard...</p>
         </div>
       </div>
     )
@@ -120,306 +165,329 @@ export default function DashboardLayout({
   // Don't render if not authenticated
   if (!user) return null
 
+  // FIXED: Use user for user_type
+  const userType = user?.user_type || 'tenant'
+
   // Determine which sidebar links to show based on user type
   const getSidebarLinks = () => {
-    const userType = profile?.user_type || user?.user_metadata?.user_type
-    
-    if (userType === 'landlord') {
-      return landlordSidebarLinks
-    } else if (userType === 'admin') {
+    if (userType === 'admin') {
       return adminSidebarLinks
+    } else if (userType === 'landlord') {
+      return landlordSidebarLinks
     } else {
-      // Default to tenant
       return tenantSidebarLinks
     }
   }
 
   const sidebarLinks = getSidebarLinks()
   
-  // Get user type for dynamic redirects
-  const userType = profile?.user_type || user?.user_metadata?.user_type || 'tenant'
-  
   // Get dashboard home URL based on user type
   const getDashboardHome = () => {
-    if (userType === 'landlord') return '/landlord/overview'
     if (userType === 'admin') return '/admin'
+    if (userType === 'landlord') return '/landlord/overview'
     return '/tenant'
   }
-  
-  // Get profile URL based on user type
-  const getProfileUrl = () => {
-    return '/tenant/profile' // Unified profile for all users
+
+  // Check if a nav link is active
+  const isNavLinkActive = (path: string) => {
+    if (path === '/') return pathname === '/'
+    return pathname.startsWith(path)
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-50 to-orange-50">
-      {/* Unified Top Navigation Bar */}
-      <nav className="fixed top-0 z-50 w-full bg-white/98 backdrop-blur-lg border-b border-slate-100 shadow-sm">
-        <div className="px-4 lg:px-6">
-          <div className="flex h-16 items-center justify-between">
-            {/* Left: Logo + Mobile Menu Toggle */}
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="lg:hidden"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-              >
-                <Menu className="h-6 w-6" />
-              </Button>
-              <Link href={getDashboardHome()} className="flex items-center gap-2 group">
-                <div className="text-xl font-bold">
-                  <span className="text-slate-900">Nulo</span>
-                  <span className="text-orange-500">Africa</span>
-                </div>
-              </Link>
-            </div>
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]">
+      {/* UPDATED: Use unified Navbar component */}
+      <Navbar />
 
-            {/* Center: Search Bar (Desktop) - Only for tenants */}
-            {(userType === 'tenant' || !userType) && (
-              <div className="hidden md:flex flex-1 max-w-2xl mx-8">
-                <div className="relative w-full">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <input
-                    type="text"
-                    placeholder="Search properties..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && searchQuery) {
-                        router.push(`/properties?search=${encodeURIComponent(searchQuery)}`)
-                      }
-                    }}
-                    className="w-full h-10 pl-10 pr-4 rounded-xl border border-stone-200 bg-white/60 backdrop-blur-sm text-slate-800 placeholder:text-slate-500 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
-                  />
-                </div>
-              </div>
-            )}
-            
-            {/* Center: Quick Stats (Desktop) - For landlords */}
-            {userType === 'landlord' && (
-              <div className="hidden md:flex flex-1 max-w-2xl mx-8 items-center justify-center gap-6">
-                <div className="text-center">
-                  <p className="text-xs text-slate-500">Properties</p>
-                  <p className="text-lg font-bold text-slate-900">--</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-slate-500">Viewings</p>
-                  <p className="text-lg font-bold text-slate-900">--</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-slate-500">Messages</p>
-                  <p className="text-lg font-bold text-slate-900">--</p>
-                </div>
-              </div>
-            )}
-
-            {/* Right: Notifications, Profile */}
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5 text-slate-700" />
-                <span className="absolute top-1 right-1 h-2 w-2 bg-orange-500 rounded-full" />
-              </Button>
-              
-              {/* Profile Dropdown Menu */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
-                    <Avatar className="h-9 w-9 border-2 border-slate-200">
-                      <AvatarImage src={profile?.avatar_url || undefined} />
-                      <AvatarFallback className="bg-orange-500 text-white text-sm font-semibold">
-                        {getUserInitials()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="hidden lg:block text-left">
-                      <p className="text-sm font-medium text-slate-900">
-                        {profile?.full_name || user?.email?.split('@')[0] || 'User'}
-                      </p>
-                      <p className="text-xs text-slate-500 capitalize">{userType}</p>
-                    </div>
-                    <ChevronDown className="h-4 w-4 text-slate-500 hidden lg:block" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56 z-[150]">
-                  <DropdownMenuLabel>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-slate-900">
-                        {profile?.full_name || user?.email?.split('@')[0] || 'User'}
-                      </span>
-                      <span className="text-xs text-slate-500 font-normal">
-                        {user?.email || ''}
-                      </span>
-                      <span className="text-xs text-orange-600 font-medium capitalize mt-1">
-                        {userType}
-                      </span>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href={getDashboardHome()} className="cursor-pointer">
-                      <LayoutDashboard className="h-4 w-4 mr-2" />
-                      Dashboard
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href={getProfileUrl()} className="cursor-pointer">
-                      <User className="h-4 w-4 mr-2" />
-                      Profile
-                    </Link>
-                  </DropdownMenuItem>
-                  {/* Only show Browse Properties for tenants */}
-                  {userType !== 'landlord' && (
-                    <>
-                      <DropdownMenuItem asChild>
-                        <Link href="/properties" className="cursor-pointer">
-                          <Home className="h-4 w-4 mr-2" />
-                          Browse Properties
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/tenant/favorites" className="cursor-pointer">
-                          <Heart className="h-4 w-4 mr-2" />
-                          Favorites
-                        </Link>
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  {/* Show My Properties for landlords */}
-                  {userType === 'landlord' && (
-                    <>
-                      <DropdownMenuItem asChild>
-                        <Link href="/landlord/properties" className="cursor-pointer">
-                          <Building2 className="h-4 w-4 mr-2" />
-                          My Properties
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/landlord/viewings" className="cursor-pointer">
-                          <Calendar className="h-4 w-4 mr-2" />
-                          Viewings
-                        </Link>
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuItem asChild>
-                    <Link href="/tenant/messages" className="cursor-pointer">
-                      <MessageSquare className="h-4 w-4 mr-2" />
-                      Messages
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href={getProfileUrl()} className="cursor-pointer">
-                      <Settings className="h-4 w-4 mr-2" />
-                      Settings
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50">
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      {/* Sidebar */}
-      <aside
-        className={`fixed top-16 left-0 z-40 h-[calc(100vh-4rem)] w-64 bg-white border-r border-stone-200 transition-transform duration-300 lg:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex flex-col h-full p-4">
-          {/* Navigation Links */}
-          <nav className="flex-1 space-y-2">
-            {sidebarLinks.map((link) => {
-              const Icon = link.icon
-              const isActive = pathname === link.href
-              return (
-                <Link key={link.href} href={link.href}>
-                  <Button
-                    variant={isActive ? "default" : "ghost"}
-                    className={`w-full justify-start gap-3 ${
-                      isActive
-                        ? "bg-orange-500 text-white hover:bg-orange-600"
-                        : "text-stone-700 hover:text-orange-600 hover:bg-orange-50"
-                    }`}
+      {/* FIXED: Adjusted top spacing for navbar */}
+      <div className="pt-16">
+        {/* Sidebar */}
+        <aside
+          className={`fixed top-16 left-0 z-40 h-[calc(100vh-4rem)] w-64 bg-white border-r border-slate-200 transition-transform duration-300 lg:translate-x-0 ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <div className="flex flex-col h-full p-4">
+            {/* NEW: Mobile Public Navigation Links */}
+            <div className="mb-4 lg:hidden space-y-1 pb-4 border-b border-slate-200">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 mb-2">
+                Navigation
+              </p>
+              {publicNavLinks.map((link) => {
+                const Icon = link.icon
+                const isActive = isNavLinkActive(link.href)
+                return (
+                  <Link 
+                    key={link.href}
+                    href={link.href}
                     onClick={() => setSidebarOpen(false)}
                   >
-                    <Icon className="h-5 w-5" />
-                    {link.label}
+                    <Button
+                      variant={isActive ? "default" : "ghost"}
+                      className={`w-full justify-start gap-3 ${
+                        isActive
+                          ? "bg-orange-500 text-white hover:bg-orange-600"
+                          : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {link.label}
+                    </Button>
+                  </Link>
+                )
+              })}
+            </div>
+
+            {/* Dashboard Section Header */}
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2">
+                {userType === 'admin' ? 'Admin Tools' : userType === 'landlord' ? 'Property Management' : 'My Dashboard'}
+              </p>
+            </div>
+
+            {/* Navigation Links */}
+            <nav className="flex-1 space-y-2 overflow-y-auto">
+              
+              {/* {sidebarLinks.map((link) => {
+                const Icon = link.icon
+                const isActive = pathname === link.href
+                
+                if (link.isDropdown) {
+                  return (
+                    <DropdownMenu key={link.href}>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant={pathname.startsWith(link.href) ? "default" : "ghost"}
+                          className={`w-full justify-start gap-3 ${
+                            pathname.startsWith(link.href)
+                              ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700"
+                              : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                          }`}
+                        >
+                          <Icon className="h-5 w-5" />
+                          {link.label}
+                          <ChevronDown className="h-4 w-4 ml-auto" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-56" align="start">
+                        <DropdownMenuLabel>User Management Options</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {link.dropdownItems?.map((item) => {
+                          const ItemIcon = item.icon
+                          const isItemActive = pathname === item.href
+                          return (
+                            <DropdownMenuItem key={item.href} asChild>
+                              <Link 
+                                href={item.href}
+                                onClick={() => setSidebarOpen(false)}
+                                className={`w-full p-2 flex items-center gap-3 ${
+                                  isItemActive ? "bg-orange-50 text-orange-600" : ""
+                                }`}
+                              >
+                                <ItemIcon className="h-4 w-4" />
+                                <div className="flex-1">
+                                  <p className="font-medium">{item.label}</p>
+                                  <p className="text-xs text-gray-500">{item.description}</p>
+                                </div>
+                              </Link>
+                            </DropdownMenuItem>
+                          )
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )
+                }
+                
+                return (
+                  <Link key={link.href} href={link.href}>
+                    <Button
+                      variant={isActive ? "default" : "ghost"}
+                      className={`w-full justify-start gap-3 ${
+                        isActive
+                          ? "bg-orange-500 text-white hover:bg-orange-600"
+                          : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                      }`}
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <Icon className="h-5 w-5" />
+                      {link.label}
+                    </Button>
+                  </Link>
+                )
+              })} */}
+
+          {userType === 'admin' ? adminSidebarLinks.map((link) => {
+                          const Icon = link.icon
+                          const isActive = pathname === link.href
+                          
+                          if (link.isDropdown) {
+                            return (
+                              <DropdownMenu key={link.href}>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant={pathname.startsWith(link.href) ? "default" : "ghost"}
+                                    className={`w-full justify-start gap-3 ${
+                                      pathname.startsWith(link.href)
+                                        ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700"
+                                        : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                                    }`}
+                                  >
+                                    <Icon className="h-5 w-5" />
+                                    {link.label}
+                                    <ChevronDown className="h-4 w-4 ml-auto" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-56" align="start">
+                                  <DropdownMenuLabel>User Management Options</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  {link.dropdownItems?.map((item) => {
+                                    const ItemIcon = item.icon
+                                    const isItemActive = pathname === item.href
+                                    return (
+                                      <DropdownMenuItem key={item.href} asChild>
+                                        <Link 
+                                          href={item.href}
+                                          onClick={() => setSidebarOpen(false)}
+                                          className={`w-full p-2 flex items-center gap-3 ${
+                                            isItemActive ? "bg-orange-50 text-orange-600" : ""
+                                          }`}
+                                        >
+                                          <ItemIcon className="h-4 w-4" />
+                                          <div className="flex-1">
+                                            <p className="font-medium">{item.label}</p>
+                                            <p className="text-xs text-gray-500">{item.description}</p>
+                                          </div>
+                                        </Link>
+                                      </DropdownMenuItem>
+                                    )
+                                  })}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )
+                          }
+                          
+                          return (
+                            <Link key={link.href} href={link.href}>
+                              <Button
+                                variant={isActive ? "default" : "ghost"}
+                                className={`w-full justify-start gap-3 ${
+                                  isActive
+                                    ? "bg-orange-500 text-white hover:bg-orange-600"
+                                    : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                                }`}
+                                onClick={() => setSidebarOpen(false)}
+                              >
+                                <Icon className="h-5 w-5" />
+                                {link.label}
+                              </Button>
+                            </Link>
+                          )
+                        }) :sidebarLinks.map((link) => {
+                          const Icon = link.icon
+                          const isActive = pathname === link.href
+                          
+                          return (
+                            <Link key={link.href} href={link.href}>
+                              <Button
+                                variant={isActive ? "default" : "ghost"}
+                                className={`w-full justify-start gap-3 ${
+                                  isActive
+                                    ? "bg-orange-500 text-white hover:bg-orange-600"
+                                    : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                                }`}
+                                onClick={() => setSidebarOpen(false)}
+                              >
+                                <Icon className="h-5 w-5" />
+                                {link.label}
+                              </Button>
+                            </Link>
+                          )
+                        })} 
+            </nav>
+
+            {/* Bottom Actions */}
+            <div className="space-y-2 pt-4 border-t border-slate-200 mt-4">
+              {/* Browse Properties - Only for tenants */}
+
+                <Link href="/properties">
+                  <Button 
+                    variant="ghost" 
+                    className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    <Home className="h-5 w-5" />
+                    Browse Properties
                   </Button>
                 </Link>
-              )
-            })}
-          </nav>
+              
+              
+              {/* Add Property - Only for landlords */}
+              {userType === 'landlord' && (
+                <Link href="/landlord/properties/new">
+                  <Button 
+                    variant="ghost" 
+                    className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    <Building2 className="h-5 w-5" />
+                    Add Property
+                  </Button>
+                </Link>
+              )}
 
-          {/* Bottom Actions */}
-          <div className="space-y-2 pt-4 border-t border-stone-200">
-            {(profile?.user_type === 'tenant' || !profile?.user_type) && (
-              <Link href="/properties">
+              {/* Settings */}
+              <Link href="/tenant/profile">
                 <Button 
                   variant="ghost" 
-                  className="w-full justify-start gap-3 text-stone-700 hover:text-orange-600 hover:bg-orange-50"
+                  className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
                   onClick={() => setSidebarOpen(false)}
                 >
-                  <Home className="h-5 w-5" />
-                  Browse Properties
+                  <Settings className="h-5 w-5" />
+                  Settings
                 </Button>
               </Link>
-            )}
-            {profile?.user_type === 'landlord' && (
-              <Link href="/landlord/properties/new">
-                <Button 
-                  variant="ghost" 
-                  className="w-full justify-start gap-3 text-stone-700 hover:text-orange-600 hover:bg-orange-50"
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <Building2 className="h-5 w-5" />
-                  Add Property
-                </Button>
-              </Link>
-            )}
-            <Link href={profile?.user_type === 'landlord' ? '/tenant/profile' : '/tenant/profile'}>
+              
+              {/* Sign Out */}
               <Button 
                 variant="ghost" 
-                className="w-full justify-start gap-3 text-stone-700 hover:text-orange-600 hover:bg-orange-50"
-                onClick={() => setSidebarOpen(false)}
+                className="w-full justify-start gap-3 text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSigningOut}
+                onClick={() => {
+                  setSidebarOpen(false)
+                  handleLogout()
+                }}
               >
-                <Settings className="h-5 w-5" />
-                Settings
+                {isSigningOut ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                    Signing out...
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="h-5 w-5" />
+                    Sign Out
+                  </>
+                )}
               </Button>
-            </Link>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start gap-3 text-red-600 hover:text-red-700 hover:bg-red-50"
-              onClick={() => {
-                setSidebarOpen(false)
-                handleLogout()
-              }}
-            >
-              <LogOut className="h-5 w-5" />
-              Sign Out
-            </Button>
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
 
-      {/* Overlay for mobile */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+        {/* Overlay for mobile */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
-      {/* Main Content */}
-      <main className="pt-16 lg:pl-64">
-        <div className="p-6">{children}</div>
-      </main>
+        {/* ✅ FIXED: Main Content */}
+        <main className="lg:pl-64">
+          <div className="p-4 sm:p-6">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   )
 }

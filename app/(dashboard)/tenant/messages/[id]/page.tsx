@@ -95,7 +95,7 @@ export default function ChatPage() {
 
   const handleSendMessage = async (content: string) => {
     try {
-      const data = await messagesAPI.sendMessage(conversationId, content)
+      const data = await messagesAPI.sendMessage(conversationId, { content })
       
       // Add new message to list
       setMessages([...messages, data.message])
@@ -171,7 +171,7 @@ export default function ChatPage() {
                     className="w-12 h-12 rounded-full object-cover"
                   />
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white text-lg font-semibold">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-400 to-orange-500 flex items-center justify-center text-white text-lg font-semibold">
                     {partner?.name?.charAt(0).toUpperCase() || 'L'}
                   </div>
                 )}

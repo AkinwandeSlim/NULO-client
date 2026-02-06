@@ -67,13 +67,13 @@ export default function ViewingsPage() {
       case 'completed':
         return <CheckCircle className="h-5 w-5 text-blue-600" />
       default:
-        return <AlertCircle className="h-5 w-5 text-amber-600" />
+        return <AlertCircle className="h-5 w-5 text-orange-600" />
     }
   }
 
   const getStatusBadge = (status: string) => {
     const styles = {
-      pending: "bg-amber-100 text-amber-700 border-0",
+      pending: "bg-orange-100 text-orange-700 border-0",
       confirmed: "bg-green-100 text-green-700 border-0",
       rejected: "bg-red-100 text-red-700 border-0",
       completed: "bg-blue-100 text-blue-700 border-0",
@@ -295,7 +295,7 @@ export default function ViewingsPage() {
           {groupedRequests.pending.length > 0 && (
             <div>
               <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-amber-600" />
+                <AlertCircle className="h-5 w-5 text-orange-600" />
                 Pending Requests ({groupedRequests.pending.length})
               </h2>
               <div className="space-y-4">

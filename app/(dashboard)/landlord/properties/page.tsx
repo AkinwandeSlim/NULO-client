@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
+import { usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -8,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { 
   Building2, Plus, Edit, Trash2, Eye,
   MapPin, Bed, Bath, Square, ArrowLeft,
-  MoreVertical, TrendingUp, Heart, Calendar
+  MoreVertical, TrendingUp, Heart, Calendar, RefreshCw
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -18,28 +19,67 @@ const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02
 
 export default function PropertiesPage() {
   const { user } = useAuth()
+  const pathname = usePathname()
   const [loading, setLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
   const [properties, setProperties] = useState<any[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [lastFetchTime, setLastFetchTime] = useState<number>(0)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
+  const [hasInitialLoadRef] = useState({ current: false })
 
-  useEffect(() => {
-    fetchProperties()
-  }, [])
-
-  const fetchProperties = async () => {
+  const fetchProperties = useCallback(async (forceRefresh = false) => {
     try {
+      // Get current values directly to avoid dependency issues
+      const currentProperties = properties
+      const currentTime = lastFetchTime
+      const currentInitialLoad = isInitialLoad
+      
+      const now = Date.now()
+      const timeSinceLastFetch = now - currentTime
+      const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes cache
+      
+      // Use cached data if available and recent (unless force refresh)
+      if (!forceRefresh && !currentInitialLoad && currentProperties.length > 0 && timeSinceLastFetch < CACHE_DURATION) {
+        console.log('📦 [PROPERTIES PAGE] Using cached data, age:', Math.round(timeSinceLastFetch / 1000), 'seconds')
+        setLoading(false)
+        return
+      }
+      
+      console.log('🔄 [PROPERTIES PAGE] Fetching fresh data...', forceRefresh ? '(forced)' : '')
       setLoading(true)
-      const data = await propertiesAPI.getMyProperties()
-      console.log('📦 Properties data:', data.properties)
-      console.log('🖼️ First property images:', data.properties[0]?.images, data.properties[0]?.photos)
-      setProperties(data.properties)
+      
+      // Skip cache only on force refresh or initial load
+      const data = await propertiesAPI.getMyProperties(1, 20, undefined, { 
+        skipCache: forceRefresh || currentInitialLoad 
+      })
+      
+      console.log('📦 [PROPERTIES PAGE] Properties data received:', data.properties?.length || 0)
+      setProperties(data.properties || [])
+      setLastFetchTime(now)
+      setIsInitialLoad(false)
+      hasInitialLoadRef.current = true
     } catch (error: any) {
-      console.error('Failed to fetch properties:', error)
-      toast.error(error.message || 'Failed to load properties')
+      console.error('❌ [PROPERTIES PAGE] Failed to fetch properties:', error)
+      // Don't show error toast if we have cached data and this is just a refresh attempt
+      if (properties.length === 0) {
+        toast.error(error.message || 'Failed to load properties')
+      }
     } finally {
+      console.log('✅ [PROPERTIES PAGE] Fetch completed, setting loading to false')
       setLoading(false)
     }
-  }
+  }, []) // Empty dependency array - function never recreates
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (mounted) {
+      fetchProperties()
+    }
+  }, [pathname]) // Remove fetchProperties from dependencies
 
   const handleDeleteProperty = async (propertyId: string, propertyTitle: string) => {
     if (!confirm(`Are you sure you want to delete "${propertyTitle}"? This action cannot be undone.`)) {
@@ -51,12 +91,18 @@ export default function PropertiesPage() {
       await propertiesAPI.delete(propertyId)
       setProperties(properties.filter(p => p.id !== propertyId))
       toast.success(`"${propertyTitle}" deleted successfully`)
+      // Force refresh after deletion
+      fetchProperties(true)
     } catch (error: any) {
       console.error('Failed to delete property:', error)
       toast.error(error.message || 'Failed to delete property')
     } finally {
       setDeletingId(null)
     }
+  }
+
+  const handleRefresh = () => {
+    fetchProperties(true) // Force refresh
   }
 
   const formatPrice = (price: number) => {
@@ -68,7 +114,7 @@ export default function PropertiesPage() {
     }).format(price)
   }
 
-  if (loading) {
+  if (loading && !hasInitialLoadRef.current && !mounted) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
@@ -95,15 +141,31 @@ export default function PropertiesPage() {
               My Properties
             </h1>
             <p className="text-slate-600">
-              {properties.length} {properties.length === 1 ? 'property' : 'properties'} listed
+              Manage your property listings and track performance
+              {lastFetchTime > 0 && (
+                <span className="text-sm text-slate-500 ml-2">
+                  (Updated {Math.round((Date.now() - lastFetchTime) / 1000)}s ago)
+                </span>
+              )}
             </p>
           </div>
-          <Link href="/landlord/properties/new">
-            <Button className="bg-orange-500 hover:bg-orange-600">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Property
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleRefresh}
+              className="border-slate-300 hover:bg-slate-50"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
             </Button>
-          </Link>
+            <Link href="/landlord/properties/new">
+              <Button className="bg-orange-500 hover:bg-orange-600">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Property
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -116,8 +178,11 @@ export default function PropertiesPage() {
               <h3 className="text-xl font-semibold text-slate-900 mb-2">
                 No properties listed yet
               </h3>
-              <p className="text-slate-600 mb-6">
+              <p className="text-slate-600 mb-2">
                 Start earning by listing your first property
+              </p>
+              <p className="text-sm text-slate-500 mb-6">
+                ⚠️ Note: All properties require admin verification before appearing in the marketplace
               </p>
               <Link href="/landlord/properties/new">
                 <Button className="bg-orange-500 hover:bg-orange-600">
@@ -135,7 +200,7 @@ export default function PropertiesPage() {
               <div className="relative">
                 <Link href={`/landlord/properties/${property.id}`}>
                   <img
-                    src={property.photos?.[0] || property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
+                    src={property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
                     alt={property.title}
                     className="h-48 w-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
@@ -146,10 +211,28 @@ export default function PropertiesPage() {
                       ? 'bg-green-500 text-white' 
                       : property.status === 'rented'
                       ? 'bg-slate-500 text-white'
-                      : 'bg-amber-500 text-white'
+                      : 'bg-orange-500 text-white'
                   }`}
                 >
                   {property.status}
+                </Badge>
+                
+                {/* Verification Status Badge */}
+                <Badge 
+                  className={`absolute top-3 left-24 ${
+                    property.verification_status === 'approved' 
+                      ? 'bg-green-600 text-white' 
+                      : property.verification_status === 'rejected'
+                      ? 'bg-red-600 text-white'
+                      : property.verification_status === 'pending'
+                      ? 'bg-yellow-600 text-white'
+                      : 'bg-blue-600 text-white'
+                  }`}
+                >
+                  {property.verification_status === 'pending' && '⏳ Pending'}
+                  {property.verification_status === 'approved' && '✅ Verified'}
+                  {property.verification_status === 'rejected' && '❌ Rejected'}
+                  {property.verification_status === 'needs_review' && '📋 Review'}
                 </Badge>
                 <div className="absolute top-3 right-3 flex gap-2">
                   <Link href={`/landlord/properties/${property.id}/edit`}>

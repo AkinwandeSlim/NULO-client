@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter, useParams } from "next/navigation"
+import { useState, useEffect, useCallback } from "react"
+import { useRouter, useParams, usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -41,7 +41,9 @@ const AMENITIES_OPTIONS = [
 
 export default function EditPropertyPage() {
   const [loading, setLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [hasInitialLoadRef] = useState({ current: false })
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -59,39 +61,51 @@ export default function EditPropertyPage() {
 
   const router = useRouter()
   const params = useParams()
+  const pathname = usePathname()
   const { user } = useAuth()
   const propertyId = params.id as string
 
-  useEffect(() => {
-    fetchProperty()
-  }, [propertyId])
-
-  const fetchProperty = async () => {
+  const fetchProperty = useCallback(async () => {
     try {
+      console.log(' [EDIT PROPERTY] Starting fetch for:', propertyId)
       setLoading(true)
       const data = await propertiesAPI.getById(propertyId)
+      console.log(' [EDIT PROPERTY] Property data received:', data)
       
       setFormData({
         title: data.title || '',
         description: data.description || '',
         property_type: data.property_type || '',
         location: data.location || '',
-        address: data.address || '',
-        rent_amount: data.rent_amount?.toString() || data.price?.toString() || '',
-        bedrooms: data.bedrooms?.toString() || data.beds?.toString() || '',
-        bathrooms: data.bathrooms?.toString() || data.baths?.toString() || '',
-        square_feet: data.square_feet?.toString() || data.sqft?.toString() || '',
+        address: data.location || '', // Use location as address since API doesn't have address field
+        rent_amount: data.price?.toString() || '',
+        bedrooms: data.beds?.toString() || '',
+        bathrooms: data.baths?.toString() || '',
+        square_feet: data.sqft?.toString() || '',
         amenities: data.amenities || [],
         status: data.status || 'vacant',
-        availability_start: data.availability_start || '',
+        availability_start: data.available_from || '',
       })
     } catch (error: any) {
-      console.error('Failed to fetch property:', error)
+      console.error(' [EDIT PROPERTY] Failed to fetch property:', error)
       toast.error(error.message || 'Failed to load property')
     } finally {
+      console.log(' [EDIT PROPERTY] Fetch completed, setting loading to false')
       setLoading(false)
+      hasInitialLoadRef.current = true
     }
-  }
+  }, [propertyId])
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (mounted) {
+      setLoading(true)
+      fetchProperty()
+    }
+  }, [pathname, fetchProperty]) // Add pathname to trigger refresh on navigation
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -141,7 +155,7 @@ export default function EditPropertyPage() {
     }))
   }
 
-  if (loading) {
+  if (loading && !hasInitialLoadRef.current && !mounted) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">

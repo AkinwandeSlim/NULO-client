@@ -1,5 +1,22 @@
 import { supabase } from '@/lib/supabase/client'
-import type { TrustScoreBreakdown } from '@/lib/types/database'
+
+/**
+ * Trust Score Breakdown Interface
+ */
+export interface TrustScoreBreakdown {
+  trust_score: number
+  breakdown: {
+    base_score: number
+    verification_bonus: number
+    rating_impact: number
+    completion_bonus: number
+    guarantee_bonus: number
+  }
+  ratings: {
+    average: number
+    count: number
+  }
+}
 
 /**
  * Calculate trust score breakdown for a user

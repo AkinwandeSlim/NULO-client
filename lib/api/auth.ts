@@ -11,7 +11,7 @@ export interface RegisterData {
   password: string;
   full_name: string;
   user_type: 'tenant' | 'landlord';
-  phone_number?: string;
+  phone?: string;
 }
 
 export interface LoginData {
@@ -31,6 +31,7 @@ export interface User {
   id: string;
   email: string;
   full_name: string;
+  phone: string | null;
   avatar_url: string | null;
   user_type: 'tenant' | 'landlord';
   trust_score: number;
@@ -64,7 +65,7 @@ export const authAPI = {
     console.log('🔐 [AUTH API] Attempting registration...');
     console.log('📧 [AUTH API] Email:', data.email);
     console.log('👤 [AUTH API] Full Name:', data.full_name);
-    console.log('📱 [AUTH API] Phone:', data.phone_number);
+    console.log('📱 [AUTH API] Phone:', data.phone);
     console.log('👥 [AUTH API] User Type:', data.user_type);
     console.log('🌐 [AUTH API] API Base URL:', apiClient.defaults.baseURL);
     console.log('🎯 [AUTH API] Full URL:', `${apiClient.defaults.baseURL}/api/v1/auth/register`);
@@ -179,9 +180,17 @@ export const authAPI = {
    */
   logout: async (): Promise<void> => {
     try {
-      await apiClient.post('/api/v1/auth/logout');
+      console.log('🔴 [AUTH API] Attempting logout...');
+      
+      const response = await apiClient.post('/api/v1/auth/logout');
+      
+      console.log('✅ [AUTH API] Logout successful:', response.data);
+    } catch (error: any) {
+      // Don't throw error for logout - we always want to clear local storage
+      console.warn('⚠️ [AUTH API] Logout request failed, but clearing storage anyway:', error.message);
     } finally {
-      // Clear storage regardless of API response
+      // Always clear storage regardless of API response
+      console.log('🧹 [AUTH API] Clearing local storage...');
       storage.clear();
     }
   },

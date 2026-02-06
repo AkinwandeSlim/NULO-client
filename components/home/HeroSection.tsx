@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Home, Building2, Sparkles, MapPin } from 'lucide-react'
+import { Home, Building2, Sparkles } from 'lucide-react'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { SearchBar } from './SearchBar'
 
@@ -15,7 +15,8 @@ interface HeroSectionProps {
   setPropertyType: (type: string) => void
   showAdvanced: boolean
   setShowAdvanced: (show: boolean) => void
-  locationInputRef: React.RefObject<HTMLInputElement>
+  locationInputRef: React.RefObject<HTMLInputElement | null>
+  defaultCity?: string // ✅ NEW: Default city for location suggestions
 }
 
 export function HeroSection({
@@ -27,24 +28,37 @@ export function HeroSection({
   setPropertyType,
   showAdvanced,
   setShowAdvanced,
-  locationInputRef
+  locationInputRef,
+  defaultCity = 'Abuja' // ✅ Default to Lagos, can be overridden
 }: HeroSectionProps) {
   const router = useRouter()
   const [userType, setUserType] = useState<'tenant' | 'landlord'>('tenant')
   const [showWelcome, setShowWelcome] = useState(false)
-  const { scrollY } = useScroll()
-  const imageY = useTransform(scrollY, [0, 500], [0, 150])
-  // Removed opacity transform - content stays visible
   
-  // Handle user type selection with smooth scroll and focus
+  // ✅ PERFORMANCE: Only enable parallax on desktop
+  const [isDesktop, setIsDesktop] = useState(true)
+  const { scrollY } = useScroll()
+  const imageY = useTransform(scrollY, [0, 500], [0, isDesktop ? 150 : 0])
+  
+  // ✅ PERFORMANCE: Detect mobile and disable heavy animations
+  useEffect(() => {
+    const checkDevice = () => {
+      const mobile = window.innerWidth < 768
+      setIsDesktop(!mobile)
+    }
+    
+    checkDevice()
+    window.addEventListener('resize', checkDevice)
+    return () => window.removeEventListener('resize', checkDevice)
+  }, [])
+  
+  // Handle user type selection
   const handleUserTypeClick = (type: 'tenant' | 'landlord') => {
     setUserType(type)
     
     if (type === 'tenant') {
-      // Show welcome message
       setShowWelcome(true)
       
-      // Smooth scroll to search bar
       setTimeout(() => {
         const searchSection = document.querySelector('.search-section')
         if (searchSection) {
@@ -52,92 +66,114 @@ export function HeroSection({
         }
       }, 400)
       
-      // Focus search input and pre-fill filters after scroll
       setTimeout(() => {
         locationInputRef.current?.focus()
-        // Pre-fill tenant-friendly filters
         if (propertyType === 'Property Type') {
           setPropertyType('Apartment')
         }
-        // Hide welcome message after interaction
         setTimeout(() => setShowWelcome(false), 3000)
       }, 1200)
     } else {
-      // Navigate to landlord dashboard
-      router.push('/landlord')
+      router.push('/landlord/overview')
     }
   }
 
-  // Generate consistent particle positions (fixes hydration error) - Reduced for performance
+  // ✅ PERFORMANCE: Reduce particles based on device
+  // Desktop: 8 particles, Mobile: 3 particles
   const particlePositions = useMemo(() => {
-    return Array.from({ length: 8 }, (_, i) => ({
+    const count = isDesktop ? 8 : 3
+    return Array.from({ length: count }, (_, i) => ({
       left: ((i * 12.5 + 15) % 100),
       top: ((i * 15.3 + 20) % 100),
       duration: 5 + (i % 2),
       delay: (i * 0.5) % 4
     }))
-  }, [])
+  }, [isDesktop])
 
-  // Auto-focus the search input when component mounts
+  // ✅ PERFORMANCE: Delayed auto-focus to not block initial render
   useEffect(() => {
     const timer = setTimeout(() => {
-      locationInputRef.current?.focus()
-    }, 800) // Delay to allow animations to complete
+      // Only auto-focus on desktop
+      if (isDesktop) {
+        locationInputRef.current?.focus()
+      }
+    }, 800)
     return () => clearTimeout(timer)
-  }, [locationInputRef])
+  }, [locationInputRef, isDesktop])
 
   return (
-  <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]" role="banner" aria-label="Hero section">
-      {/* Static Texture Overlays - Performance Optimized */}
-  <div className="absolute inset-0 z-[3] pointer-events-none texture-dots opacity-10" aria-hidden="true" />
-  <div className="absolute inset-0 z-[3] pointer-events-none texture-square-grid opacity-12" aria-hidden="true" />
-  <div className="absolute inset-0 z-[3] pointer-events-none texture-noise opacity-15" aria-hidden="true" />
+    <section 
+      className="relative min-h-[85vh] flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]" 
+      role="banner" 
+      aria-label="Hero section"
+    >
+      {/* ✅ OPTIMIZED: Single combined texture overlay instead of 3 separate ones */}
+      <div 
+        className="absolute inset-0 z-[3] pointer-events-none opacity-10" 
+        aria-hidden="true"
+        style={{
+          backgroundImage: `
+            radial-gradient(circle, rgba(0,0,0,0.4) 1px, transparent 1px),
+            repeating-linear-gradient(0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1) 1px, transparent 1px, transparent 20px),
+            repeating-linear-gradient(90deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1) 1px, transparent 1px, transparent 20px)
+          `,
+          backgroundSize: '4px 4px, 20px 20px, 20px 20px',
+          backgroundPosition: '0 0, 0 0, 0 0'
+        }}
+      />
       
-      {/* Ultra-Modern Background with Parallax */}
+      {/* Background with Parallax */}
       <motion.div 
         className="absolute inset-0 z-0"
         style={{ y: imageY }}
       >
-        {/* Lifestyle Background Image - African Homes */}
+        {/* Background Image */}
         <div 
           className="absolute inset-0 bg-cover bg-center"
           style={{
-            backgroundImage: "url('/PIX (13).png')",
+            backgroundImage: "url('/citywaker1.png')",
             backgroundPosition: 'center 40%',
             filter: 'brightness(1.4) contrast(0.9) saturate(1.1)',
-            opacity: 0.12
+            opacity: 0.02,
+            // ✅ PERFORMANCE: Use GPU acceleration
+            transform: 'translateZ(0)',
+            willChange: isDesktop ? 'transform' : 'auto'
           }}
           aria-hidden="true"
         />
         
-        {/* Light Gradient Overlay */}
-  <div className="absolute inset-0 bg-gradient-to-t from-white/60 via-[#FFF9F1]/40 to-transparent" aria-hidden="true" />
-        
-        {/* Warm Accent Glow */}
-  <div className="absolute inset-0 bg-gradient-to-tr from-orange-200/25 via-amber-100/15 to-transparent" aria-hidden="true" />
+        {/* Gradient Overlays */}
+        <div className="absolute inset-0 bg-gradient-to-t from-white/60 via-[#FFF9F1]/40 to-transparent" aria-hidden="true" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-orange-200/25 via-amber-100/15 to-transparent" aria-hidden="true" />
       </motion.div>
 
-      {/* Subtle Accent Elements - Performance Optimized */}
-  <div className="absolute inset-0 overflow-hidden pointer-events-none z-[1]" aria-hidden="true">
-        {/* Light Blue Bubbles - Reduced to 2 */}
-        <motion.div 
-          className="absolute top-[20%] left-[15%] w-40 h-40 bg-gradient-to-br from-blue-200/40 via-cyan-200/30 to-sky-100/20 rounded-full blur-[60px]"
-          animate={{ 
-            scale: [1, 1.3, 1], 
-            opacity: [0.3, 0.5, 0.3]
-          }}
-          transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div 
-          className="absolute bottom-[30%] right-[20%] w-44 h-44 bg-gradient-to-tl from-blue-300/35 via-sky-200/25 to-cyan-100/15 rounded-full blur-[70px]"
-          animate={{ 
-            scale: [1, 1.25, 1], 
-            opacity: [0.25, 0.45, 0.25]
-          }}
-          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-        />
+      {/* ✅ OPTIMIZED: Simplified accent elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-[1]" aria-hidden="true">
+        {/* ✅ PERFORMANCE: Only show animated blobs on desktop */}
+        {isDesktop && (
+          <>
+            <motion.div 
+              className="absolute top-[20%] left-[15%] w-40 h-40 bg-gradient-to-br from-blue-200/40 via-cyan-200/30 to-sky-100/20 rounded-full blur-[60px]"
+              animate={{ 
+                scale: [1, 1.3, 1], 
+                opacity: [0.3, 0.5, 0.3]
+              }}
+              transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+              style={{ transform: 'translateZ(0)' }}
+            />
+            <motion.div 
+              className="absolute bottom-[30%] right-[20%] w-44 h-44 bg-gradient-to-tl from-blue-300/35 via-sky-200/25 to-cyan-100/15 rounded-full blur-[70px]"
+              animate={{ 
+                scale: [1, 1.25, 1], 
+                opacity: [0.25, 0.45, 0.25]
+              }}
+              transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+              style={{ transform: 'translateZ(0)' }}
+            />
+          </>
+        )}
         
-        {/* Floating Particles - Reduced count */}
+        {/* ✅ OPTIMIZED: Fewer floating particles */}
         {particlePositions.map((particle, i) => (
           <motion.div
             key={i}
@@ -145,7 +181,8 @@ export function HeroSection({
             style={{
               left: `${particle.left}%`,
               top: `${particle.top}%`,
-              filter: 'blur(0.5px)'
+              filter: 'blur(0.5px)',
+              transform: 'translateZ(0)'
             }}
             animate={{
               y: [0, -150],
@@ -161,7 +198,7 @@ export function HeroSection({
         ))}
       </div>
 
-      {/* Main Content - Ultra Modern Layout */}
+      {/* Main Content */}
       <div className="relative z-10 w-full">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="max-w-6xl mx-auto">
@@ -203,7 +240,7 @@ export function HeroSection({
               </p>
             </motion.div>
 
-            {/* Sleek Toggle Pills with Tooltips */}
+            {/* Toggle Pills */}
             <motion.div 
               className="flex flex-col sm:flex-row justify-center gap-3 mb-6 md:mb-8 px-4"
               initial={{ opacity: 0, scale: 0.9 }}
@@ -219,13 +256,15 @@ export function HeroSection({
                   <Home className="inline-block h-4 w-4 mr-2" />
                   I'm a Tenant
                 </button>
-                {/* Tooltip */}
-                <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50">
-                  <div className="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap shadow-xl">
-                    Find verified homes and apartments across Africa
-                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
+                {/* Tooltip - only on desktop */}
+                {isDesktop && (
+                  <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50">
+                    <div className="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap shadow-xl">
+                      Find verified homes and apartments across Africa
+                      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="relative group">
@@ -237,17 +276,19 @@ export function HeroSection({
                   <Building2 className="inline-block h-4 w-4 mr-2" />
                   I'm a Property Manager
                 </button>
-                {/* Tooltip */}
-                <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50">
-                  <div className="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap shadow-xl">
-                    List and manage your rental properties
-                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
+                {/* Tooltip - only on desktop */}
+                {isDesktop && (
+                  <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50">
+                    <div className="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap shadow-xl">
+                      List and manage your rental properties
+                      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </motion.div>
 
-            {/* Welcome Message - Sleek & Optimized */}
+            {/* Welcome Message */}
             {showWelcome && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
@@ -257,16 +298,13 @@ export function HeroSection({
                 className="max-w-2xl mx-auto mb-6 px-4"
               >
                 <div className="relative bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-orange-100/50 overflow-hidden">
-                  {/* Subtle gradient accent */}
                   <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-500 to-orange-600" />
                   
                   <div className="p-5 flex flex-col items-center text-center gap-3">
-                    {/* Minimal icon */}
                     <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center">
                       <Home className="w-5 h-5 text-white" />
                     </div>
                     
-                    {/* Clean content */}
                     <div>
                       <p className="text-base font-bold text-slate-900 mb-0.5">
                         Welcome! 👋
@@ -280,7 +318,7 @@ export function HeroSection({
               </motion.div>
             )}
 
-            {/* Premium Search Bar - PRIMARY FOCUS */}
+            {/* ✅ OPTIMIZED: Simplified search bar glow animation */}
             <motion.div
               initial={{ opacity: 0, y: 40, scale: 0.95 }}
               animate={{ 
@@ -291,20 +329,22 @@ export function HeroSection({
               transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
               className="max-w-5xl mx-auto relative search-section"
             >
-              {/* Attention-grabbing pulsing glow */}
-              <motion.div
-                className="absolute -inset-4 bg-gradient-to-r from-orange-500/30 via-amber-500/30 to-orange-500/30 rounded-[2rem] blur-2xl"
-                animate={{
-                  opacity: [0.3, 0.6, 0.3],
-                  scale: [1, 1.05, 1]
-                }}
-                transition={{
-                  duration: 3,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              />
-              
+              {/* ✅ PERFORMANCE: Only show pulsing glow on desktop */}
+              {isDesktop && (
+                <motion.div
+                  className="absolute -inset-4 bg-gradient-to-r from-orange-500/30 via-amber-500/30 to-orange-500/30 rounded-[2rem] blur-2xl"
+                  animate={{
+                    opacity: [0.3, 0.6, 0.3],
+                    scale: [1, 1.05, 1]
+                  }}
+                  transition={{
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                  style={{ transform: 'translateZ(0)' }}
+                />
+              )}
 
               <div className="relative z-10">
                 <SearchBar
@@ -318,6 +358,7 @@ export function HeroSection({
                   setShowAdvanced={setShowAdvanced}
                   locationInputRef={locationInputRef}
                   userType={userType}
+                  defaultCity={defaultCity}
                 />
               </div>
             </motion.div>
@@ -325,35 +366,37 @@ export function HeroSection({
         </div>
       </div>
 
-      {/* Seamless Bottom Fade */}
+      {/* Bottom Fade */}
       <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-white via-white/50 to-transparent z-[2]" />
       
-      {/* Scroll Down Indicator */}
-      <motion.div
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[3] flex flex-col items-center gap-2"
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ 
-          opacity: [0.5, 1, 0.5],
-          y: [0, 8, 0]
-        }}
-        transition={{
-          duration: 2,
-          repeat: Infinity,
-          ease: "easeInOut",
-          delay: 2
-        }}
-      >
-        <span className="text-xs text-slate-600 font-medium">Scroll to explore</span>
-        <svg 
-          className="w-6 h-6 text-orange-600" 
-          fill="none" 
-          stroke="currentColor" 
-          viewBox="0 0 24 24"
-          aria-hidden="true"
+      {/* ✅ OPTIMIZED: Scroll indicator only on desktop */}
+      {isDesktop && (
+        <motion.div
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[3] flex flex-col items-center gap-2"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ 
+            opacity: [0.5, 1, 0.5],
+            y: [0, 8, 0]
+          }}
+          transition={{
+            duration: 2,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: 2
+          }}
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-        </svg>
-      </motion.div>
+          <span className="text-xs text-slate-600 font-medium">Scroll to explore</span>
+          <svg 
+            className="w-6 h-6 text-orange-600" 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+        </motion.div>
+      )}
     </section>
   )
 }

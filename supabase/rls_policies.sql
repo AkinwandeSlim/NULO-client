@@ -22,6 +22,10 @@ ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 -- USERS TABLE POLICIES
 -- ============================================================================
 
+-- Admins can view all users (system level access)
+CREATE POLICY "Admins can view all users" ON users
+  FOR SELECT USING (EXISTS (SELECT 1 FROM admins WHERE admins.id = auth.uid()));
+
 -- Users can view own profile
 CREATE POLICY "Users can view own profile" ON users
   FOR SELECT USING (auth.uid() = id);

@@ -15,10 +15,10 @@ export function Header() {
         {/* Logo - Left */}
         <Link href="/" className="flex items-center gap-2.5 group">
           <Logo size={36} className="flex-shrink-0 transition-transform group-hover:scale-105" />
-          <div className="text-xl font-semibold tracking-tight">
+          {/* <div className="text-xl font-semibold tracking-tight">
             <span className="text-slate-900">Nulo</span>
             <span className="text-[#FF6600]">Africa</span>
-          </div>
+          </div> */}
         </Link>
 
         {/* Center Navigation - Desktop */}

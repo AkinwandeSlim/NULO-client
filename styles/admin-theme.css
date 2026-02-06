@@ -1,0 +1,405 @@
+/* =============================================
+   NuloAfrica Admin Theme
+   Complementary to main luxury design
+   ============================================= */
+
+/* Admin-specific CSS variables */
+:root {
+  /* Admin Primary - Deep Navy Blue */
+  --admin-primary: oklch(0.25 0.02 240);
+  --admin-primary-foreground: oklch(0.98 0.005 75);
+  --admin-primary-light: oklch(0.35 0.02 240);
+  --admin-primary-dark: oklch(0.15 0.02 240);
+
+  /* Admin Secondary - Rich Blue */
+  --admin-secondary: oklch(0.35 0.04 220);
+  --admin-secondary-foreground: oklch(0.98 0.005 75);
+  --admin-secondary-light: oklch(0.45 0.04 220);
+
+  /* Admin Accent - Executive Teal */
+  --admin-accent: oklch(0.55 0.08 180);
+  --admin-accent-foreground: oklch(0.15 0.01 60);
+
+  /* Admin Success - Professional Green */
+  --admin-success: oklch(0.55 0.12 150);
+  --admin-success-foreground: oklch(0.98 0.005 75);
+
+  /* Admin Warning - Executive Amber */
+  --admin-warning: oklch(0.65 0.08 60);
+  --admin-warning-foreground: oklch(0.15 0.01 60);
+
+  /* Admin Error - Professional Red */
+  --admin-error: oklch(0.55 0.15 20);
+  --admin-error-foreground: oklch(0.98 0.005 75);
+
+  /* Admin Backgrounds */
+  --admin-bg: oklch(0.99 0.003 75);
+  --admin-bg-subtle: oklch(0.97 0.005 75);
+  --admin-bg-muted: oklch(0.95 0.008 75);
+
+  /* Admin Cards */
+  --admin-card: oklch(0.98 0.005 75);
+  --admin-card-border: oklch(0.9 0.01 75);
+  --admin-card-shadow: 0 4px 6px -1px oklch(0.2 0.02 240 / 0.1);
+
+  /* Admin Text */
+  --admin-text-primary: oklch(0.15 0.01 60);
+  --admin-text-secondary: oklch(0.35 0.01 60);
+  --admin-text-muted: oklch(0.55 0.01 60);
+
+  /* Admin Borders */
+  --admin-border: oklch(0.85 0.01 75);
+  --admin-border-subtle: oklch(0.92 0.005 75);
+  --admin-border-focus: oklch(0.25 0.02 240);
+
+  /* Admin Gradients */
+  --admin-gradient-primary: linear-gradient(135deg, oklch(0.25 0.02 240), oklch(0.35 0.04 220));
+  --admin-gradient-accent: linear-gradient(135deg, oklch(0.55 0.08 180), oklch(0.45 0.06 200));
+  --admin-gradient-subtle: linear-gradient(135deg, oklch(0.99 0.003 75), oklch(0.97 0.005 75));
+
+  /* Admin Glass Effects */
+  --admin-glass: oklch(0.98 0.005 75 / 0.7);
+  --admin-glass-border: oklch(0.9 0.01 75 / 0.3);
+}
+
+/* Dark mode admin theme */
+.dark {
+  /* Admin Primary - Bright Navy */
+  --admin-primary: oklch(0.55 0.08 240);
+  --admin-primary-foreground: oklch(0.98 0.005 75);
+  --admin-primary-light: oklch(0.65 0.08 240);
+  --admin-primary-dark: oklch(0.45 0.08 240);
+
+  /* Admin Secondary - Bright Blue */
+  --admin-secondary: oklch(0.65 0.08 220);
+  --admin-secondary-foreground: oklch(0.98 0.005 75);
+  --admin-secondary-light: oklch(0.75 0.08 220);
+
+  /* Admin Backgrounds */
+  --admin-bg: oklch(0.15 0.01 60);
+  --admin-bg-subtle: oklch(0.18 0.015 60);
+  --admin-bg-muted: oklch(0.22 0.02 60);
+
+  /* Admin Cards */
+  --admin-card: oklch(0.2 0.015 60);
+  --admin-card-border: oklch(0.3 0.02 60);
+  --admin-card-shadow: 0 4px 6px -1px oklch(0 0 0 / 0.3);
+
+  /* Admin Text */
+  --admin-text-primary: oklch(0.95 0.005 75);
+  --admin-text-secondary: oklch(0.75 0.01 75);
+  --admin-text-muted: oklch(0.55 0.01 75);
+
+  /* Admin Borders */
+  --admin-border: oklch(0.35 0.02 60);
+  --admin-border-subtle: oklch(0.28 0.015 60);
+  --admin-border-focus: oklch(0.55 0.08 240);
+}
+
+/* =============================================
+   Admin Component Styles
+   ============================================= */
+
+/* Admin page wrapper */
+.admin-page {
+  background: var(--admin-bg);
+  min-height: 100vh;
+  color: var(--admin-text-primary);
+}
+
+/* Admin header */
+.admin-header {
+  background: var(--admin-gradient-primary);
+  border-bottom: 1px solid var(--admin-border);
+  box-shadow: var(--admin-card-shadow);
+}
+
+/* Admin navigation */
+.admin-nav {
+  background: var(--admin-card);
+  border-right: 1px solid var(--admin-border);
+}
+
+.admin-nav-item {
+  color: var(--admin-text-secondary);
+  border-left: 3px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.admin-nav-item:hover {
+  background: var(--admin-bg-subtle);
+  color: var(--admin-primary);
+  border-left-color: var(--admin-primary);
+}
+
+.admin-nav-item.active {
+  background: var(--admin-primary);
+  color: var(--admin-primary-foreground);
+  border-left-color: var(--admin-accent);
+}
+
+/* Admin cards */
+.admin-card {
+  background: var(--admin-card);
+  border: 1px solid var(--admin-card-border);
+  border-radius: 12px;
+  box-shadow: var(--admin-card-shadow);
+  transition: all 0.2s ease;
+}
+
+.admin-card:hover {
+  box-shadow: 0 8px 12px -1px oklch(0.2 0.02 240 / 0.15);
+  border-color: var(--admin-border-focus);
+}
+
+/* Admin buttons */
+.admin-btn-primary {
+  background: var(--admin-gradient-primary);
+  color: var(--admin-primary-foreground);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.admin-btn-primary:hover {
+  background: var(--admin-primary-light);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px oklch(0.2 0.02 240 / 0.2);
+}
+
+.admin-btn-secondary {
+  background: var(--admin-secondary);
+  color: var(--admin-secondary-foreground);
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.admin-btn-secondary:hover {
+  background: var(--admin-secondary-light);
+  border-color: var(--admin-border-focus);
+}
+
+/* Admin badges */
+.admin-badge {
+  background: var(--admin-accent);
+  color: var(--admin-accent-foreground);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.admin-badge.success {
+  background: var(--admin-success);
+  color: var(--admin-success-foreground);
+}
+
+.admin-badge.warning {
+  background: var(--admin-warning);
+  color: var(--admin-warning-foreground);
+}
+
+.admin-badge.error {
+  background: var(--admin-error);
+  color: var(--admin-error-foreground);
+}
+
+/* Admin stats cards */
+.admin-stat-card {
+  background: var(--admin-gradient-subtle);
+  border: 1px solid var(--admin-border-subtle);
+  border-radius: 16px;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--admin-gradient-primary);
+}
+
+.admin-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--admin-text-primary);
+  margin-bottom: 4px;
+}
+
+.admin-stat-label {
+  color: var(--admin-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.admin-stat-change {
+  color: var(--admin-success);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.admin-stat-change.negative {
+  color: var(--admin-error);
+}
+
+/* Admin tables */
+.admin-table {
+  background: var(--admin-card);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.admin-table th {
+  background: var(--admin-bg-subtle);
+  color: var(--admin-text-primary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 0.875rem;
+  padding: 16px;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.admin-table td {
+  padding: 16px;
+  border-bottom: 1px solid var(--admin-border-subtle);
+  color: var(--admin-text-secondary);
+}
+
+.admin-table tr:hover {
+  background: var(--admin-bg-subtle);
+}
+
+/* Admin forms */
+.admin-form {
+  background: var(--admin-card);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  padding: 32px;
+}
+
+.admin-form-label {
+  color: var(--admin-text-primary);
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.admin-form-input {
+  background: var(--admin-bg);
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: var(--admin-text-primary);
+  transition: all 0.2s ease;
+}
+
+.admin-form-input:focus {
+  outline: none;
+  border-color: var(--admin-border-focus);
+  box-shadow: 0 0 0 3px oklch(0.25 0.02 240 / 0.1);
+}
+
+/* Admin alerts */
+.admin-alert {
+  border-radius: 12px;
+  padding: 16px 20px;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-alert.info {
+  background: oklch(0.55 0.08 180 / 0.1);
+  border-color: oklch(0.55 0.08 180);
+  color: oklch(0.35 0.04 220);
+}
+
+.admin-alert.success {
+  background: oklch(0.55 0.12 150 / 0.1);
+  border-color: oklch(0.55 0.12 150);
+  color: oklch(0.45 0.08 150);
+}
+
+.admin-alert.warning {
+  background: oklch(0.65 0.08 60 / 0.1);
+  border-color: oklch(0.65 0.08 60);
+  color: oklch(0.45 0.06 60);
+}
+
+.admin-alert.error {
+  background: oklch(0.55 0.15 20 / 0.1);
+  border-color: oklch(0.55 0.15 20);
+  color: oklch(0.45 0.08 20);
+}
+
+/* Admin loading states */
+.admin-loading {
+  background: var(--admin-glass);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--admin-glass-border);
+  border-radius: 12px;
+}
+
+.admin-spinner {
+  border: 3px solid var(--admin-border-subtle);
+  border-top: 3px solid var(--admin-primary);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: admin-spin 1s linear infinite;
+}
+
+@keyframes admin-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Admin responsive design */
+@media (max-width: 768px) {
+  .admin-stat-card {
+    padding: 16px;
+  }
+  
+  .admin-stat-value {
+    font-size: 1.5rem;
+  }
+  
+  .admin-form {
+    padding: 20px;
+  }
+  
+  .admin-table th,
+  .admin-table td {
+    padding: 12px 8px;
+  }
+}
+
+/* Admin print styles */
+@media print {
+  .admin-page {
+    background: white !important;
+    color: black !important;
+  }
+  
+  .admin-card {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+  }
+}

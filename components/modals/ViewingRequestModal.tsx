@@ -22,13 +22,13 @@ interface ViewingRequestModalProps {
 }
 
 export function ViewingRequestModal({ isOpen, onClose, property }: ViewingRequestModalProps) {
-  const { user, profile } = useAuth()
+  const { user, userProfile } = useAuth()
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     preferred_date: "",
     time_slot: "afternoon" as "morning" | "afternoon" | "evening",
-    contact_number: profile?.phone_number || "",
-    tenant_name: profile?.full_name || "",
+    contact_number: user?.phone_number || "",
+    tenant_name: userProfile?.full_name || "",
     message: "",
   })
 
@@ -76,8 +76,8 @@ export function ViewingRequestModal({ isOpen, onClose, property }: ViewingReques
       setFormData({
         preferred_date: "",
         time_slot: "afternoon",
-        contact_number: profile?.phone_number || "",
-        tenant_name: profile?.full_name || "",
+        contact_number: user?.phone_number || "",
+        tenant_name: userProfile?.full_name || "",
         message: "",
       })
 

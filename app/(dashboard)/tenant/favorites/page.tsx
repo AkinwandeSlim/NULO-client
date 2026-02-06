@@ -159,35 +159,35 @@ export default function FavoritesPage() {
                   <div className="p-5">
                     {/* Price */}
                     <div className="flex items-center justify-between mb-3">
-                      <p className="text-2xl font-bold text-amber-600">
+                      <p className="text-2xl font-bold text-orange-600">
                         {formatPrice(property.price)}
                         <span className="text-sm font-normal text-slate-500">/mo</span>
                       </p>
                     </div>
 
                     {/* Title */}
-                    <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-amber-600 transition-colors">
+                    <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
                       {property.title}
                     </h3>
 
                     {/* Location */}
                     <p className="text-sm text-slate-600 flex items-center mb-4">
-                      <MapPin className="h-4 w-4 mr-1.5 text-amber-500 flex-shrink-0" />
+                      <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
                       <span className="line-clamp-1">{property.location}</span>
                     </p>
 
                     {/* Features */}
                     <div className="flex items-center gap-4 text-sm text-slate-600 pt-4 border-t border-slate-100">
                       <div className="flex items-center gap-1.5">
-                        <Bed className="h-4 w-4 text-amber-500" />
+                        <Bed className="h-4 w-4 text-orange-500" />
                         <span className="font-medium">{property.beds || property.bedrooms || 0}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <Bath className="h-4 w-4 text-amber-500" />
+                        <Bath className="h-4 w-4 text-orange-500" />
                         <span className="font-medium">{property.baths || property.bathrooms || 0}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <Square className="h-4 w-4 text-amber-500" />
+                        <Square className="h-4 w-4 text-orange-500" />
                         <span className="font-medium">{property.sqft || property.square_feet || 0} sqft</span>
                       </div>
                     </div>

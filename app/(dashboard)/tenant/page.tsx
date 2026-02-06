@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -21,8 +21,9 @@ import { toast } from "sonner"
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 
 export default function TenantDashboard() {
-  const { user, profile } = useAuth()
+  const { user, userProfile } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
   const [loading, setLoading] = useState(true)
   const [favorites, setFavorites] = useState<any[]>([])
   const [viewingRequests, setViewingRequests] = useState<any[]>([])
@@ -36,8 +37,12 @@ export default function TenantDashboard() {
 
   // Fetch dashboard data
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
+    setLoading(true)
+    fetchDashboardData()
+  }, [pathname]) // Add pathname to trigger refresh on navigation
+
+  const fetchDashboardData = async () => {
+    try {
         setLoading(true)
         
         // Fetch favorites
@@ -75,13 +80,8 @@ export default function TenantDashboard() {
       }
     }
 
-    if (user) {
-      fetchDashboardData()
-    }
-  }, [user])
-
   const getUserName = () => {
-    return profile?.full_name || user?.email?.split('@')[0] || 'there'
+    return user?.full_name || user?.email?.split('@')[0] || 'there'
   }
 
   const formatPrice = (price: number) => {
@@ -169,8 +169,8 @@ export default function TenantDashboard() {
                 <p className="text-sm font-medium text-slate-600 mb-1">Active Rentals</p>
                 <p className="text-4xl font-bold text-slate-900">{stats.activeRentals}</p>
               </div>
-              <div className="p-4 bg-amber-100 rounded-xl">
-                <Home className="h-7 w-7 text-amber-600" />
+              <div className="p-4 bg-orange-100 rounded-xl">
+                <Home className="h-7 w-7 text-orange-600" />
               </div>
             </div>
           </CardContent>
@@ -187,7 +187,7 @@ export default function TenantDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-slate-900">Saved Properties</CardTitle>
                 <Link href="/tenant/favorites">
-                  <Button variant="ghost" size="sm" className="text-amber-600 hover:text-amber-700 hover:bg-amber-50">
+                  <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
                     View All <ArrowRight className="ml-1 h-4 w-4" />
                   </Button>
                 </Link>
@@ -213,7 +213,7 @@ export default function TenantDashboard() {
                     
                     return (
                       <Link key={property.id} href={`/properties/${property.id}`}>
-                        <div className="group relative bg-white rounded-2xl overflow-hidden border border-stone-200 hover:border-amber-300 hover:shadow-xl transition-all duration-300 cursor-pointer">
+                        <div className="group relative bg-white rounded-2xl overflow-hidden border border-stone-200 hover:border-orange-300 hover:shadow-xl transition-all duration-300 cursor-pointer">
                           {/* Property Image */}
                           <div className="relative h-56 overflow-hidden">
                             <img
@@ -233,35 +233,35 @@ export default function TenantDashboard() {
                           <div className="p-5">
                             {/* Price */}
                             <div className="flex items-center justify-between mb-3">
-                              <p className="text-2xl font-bold text-amber-600">
+                              <p className="text-2xl font-bold text-orange-600">
                                 {formatPrice(property.price)}
                                 <span className="text-sm font-normal text-slate-500">/mo</span>
                               </p>
                             </div>
 
                             {/* Title */}
-                            <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-amber-600 transition-colors">
+                            <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
                               {property.title}
                             </h3>
 
                             {/* Location */}
                             <p className="text-sm text-slate-600 flex items-center mb-4">
-                              <MapPin className="h-4 w-4 mr-1.5 text-amber-500 flex-shrink-0" />
+                              <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
                               <span className="line-clamp-1">{property.location}</span>
                             </p>
 
                             {/* Features */}
                             <div className="flex items-center gap-4 text-sm text-slate-600 pt-4 border-t border-slate-100">
                               <div className="flex items-center gap-1.5">
-                                <Bed className="h-4 w-4 text-amber-500" />
+                                <Bed className="h-4 w-4 text-orange-500" />
                                 <span className="font-medium">{property.beds || property.bedrooms || 0}</span>
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <Bath className="h-4 w-4 text-amber-500" />
+                                <Bath className="h-4 w-4 text-orange-500" />
                                 <span className="font-medium">{property.baths || property.bathrooms || 0}</span>
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <Square className="h-4 w-4 text-amber-500" />
+                                <Square className="h-4 w-4 text-orange-500" />
                                 <span className="font-medium">{property.sqft || property.square_feet || 0} sqft</span>
                               </div>
                             </div>
@@ -309,7 +309,7 @@ export default function TenantDashboard() {
                           request.status === "confirmed"
                             ? "bg-green-100 text-green-700 border-0"
                             : request.status === "pending"
-                            ? "bg-amber-100 text-amber-700 border-0"
+                            ? "bg-orange-100 text-orange-700 border-0"
                             : "bg-red-100 text-red-700 border-0"
                         }
                       >
@@ -331,7 +331,7 @@ export default function TenantDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-slate-900">Messages</CardTitle>
                 <Link href="/messages">
-                  <Button variant="ghost" size="sm" className="text-amber-600 hover:text-amber-700">
+                  <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700">
                     View All
                   </Button>
                 </Link>
@@ -370,7 +370,7 @@ export default function TenantDashboard() {
           </Card>
 
           {/* Quick Actions */}
-          <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200">
+          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
             <CardHeader>
               <CardTitle className="text-slate-900">Quick Actions</CardTitle>
             </CardHeader>

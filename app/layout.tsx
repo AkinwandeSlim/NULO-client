@@ -1,109 +1,93 @@
-import type React from "react"
+"use client"
+
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
-import { Suspense } from "react"
-import { AuthProvider } from "@/contexts/AuthContext"
+import { Suspense, useEffect } from "react"
 import { Toaster } from "sonner"
+import { AuthProvider } from "@/contexts/AuthContext"
+import { DashboardProvider } from "@/contexts/DashboardContext"
+import { PropertiesProvider } from "@/contexts/PropertiesContext"
+import { initializeLoggerConfig } from "@/lib/logger-config"
+import { metadata } from "./metadata"
 import "./globals.css"
 import "mapbox-gl/dist/mapbox-gl.css"
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-})
-
-export const metadata: Metadata = {
-  title: {
-    default: "NuloAfrica - Find Your Perfect Home in Africa",
-    template: "%s | NuloAfrica"
-  },
-  description: "Discover premium properties across Africa. Modern real estate platform for finding apartments, houses, and villas in Lagos, Nairobi, Cape Town, and more.",
-  keywords: ["real estate", "Africa", "properties", "apartments", "houses", "Lagos", "Nairobi", "Cape Town", "buy property", "rent property"],
-  authors: [{ name: "NuloAfrica Team" }],
-  creator: "NuloAfrica",
-  publisher: "NuloAfrica",
-  formatDetection: {
-    email: false,
-    address: false,
-    telephone: false,
-  },
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
-  openGraph: {
-    title: "NuloAfrica - Find Your Perfect Home in Africa",
-    description: "Discover premium properties across Africa. Modern real estate platform for finding apartments, houses, and villas.",
-    url: '/',
-    siteName: 'NuloAfrica',
-    locale: 'en_US',
-    type: 'website',
-    images: [
-      {
-        url: '/og-image.png',
-        width: 1200,
-        height: 630,
-        alt: 'NuloAfrica - Real Estate Platform',
-      },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'NuloAfrica - Find Your Perfect Home in Africa',
-    description: 'Discover premium properties across Africa',
-    images: ['/og-image.png'],
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
-    },
-  },
-  icons: {
-    icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon.ico', sizes: 'any' },
-    ],
-    apple: [
-      { url: '/apple-touch-icon.svg', type: 'image/svg+xml' },
-    ],
-    shortcut: '/favicon.svg',
-  },
-  manifest: '/manifest.json',
-  generator: "v0.app",
-}
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  // Initialize logger configuration to suppress verbose logs
+  useEffect(() => {
+    initializeLoggerConfig()
+  }, [])
+
+  // Suppress harmless Supabase locks.ts AbortError 
+  useEffect(() => {
+    const handler = (event: PromiseRejectionEvent) => {
+      const isAbortError = 
+        event.reason?.name === 'AbortError' || 
+        event.reason?.message?.includes('signal is aborted');
+      
+      if (isAbortError) {
+        event.preventDefault();
+      }
+    };
+    
+    window.addEventListener('unhandledrejection', handler);
+    return () => window.removeEventListener('unhandledrejection', handler);
+  }, []);
+
   return (
-    <html lang="en">
-      <body className={`font-sans ${inter.variable} antialiased`}>
+    <html lang="en" data-scroll-behavior="smooth">
+      <body className="font-sans antialiased">
         <AuthProvider>
+          <DashboardProvider 
+            cacheConfig={{
+              dashboardStats: 5 * 60 * 1000,    // 5 minutes
+              recentActivity: 5 * 60 * 1000,    // 5 minutes
+              recentSignups: 10 * 60 * 1000,    // 10 minutes
+              maxEntries: 50,
+              cleanupInterval: 1 * 60 * 1000,
+            }}
+          >
+        <PropertiesProvider
+          cacheConfig={{
+            listings: 5 * 60 * 1000,        // 5 min
+            searchResults: 3 * 60 * 1000,   // 3 min
+            mapData: 10 * 60 * 1000,        // 10 min
+            maxEntries: 100,
+            cleanupInterval: 60 * 1000
+          }}
+        >
           <Suspense fallback={null}>{children}</Suspense>
           <Analytics />
           <Toaster 
-            position="bottom-right" 
+            position="bottom-right"
             richColors 
             closeButton 
-            toastOptions={{
-              style: {
-                marginBottom: '1rem',
-                marginRight: '1rem',
-              },
-              className: 'toast-custom',
-            }}
             expand={false}
             visibleToasts={3}
           />
+        </PropertiesProvider>
+        </DashboardProvider>
         </AuthProvider>
       </body>
     </html>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

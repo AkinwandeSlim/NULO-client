@@ -43,28 +43,47 @@ export function UnifiedHeader({ showSearch = true, transparent = false }: Unifie
   const [searchQuery, setSearchQuery] = useState("")
   const pathname = usePathname()
   const router = useRouter()
-  const { user, profile, signOut } = useAuth()
+  const { user, userProfile, signOut } = useAuth()
 
-  const userType = profile?.user_type || 'tenant'
+  const userType = user?.user_type || 'tenant'
 
   const handleLogout = async () => {
     try {
-      await signOut()
-      router.push('/')
-      router.refresh()
+      console.log('👋 [HEADER] Starting logout...');
+      // signOut() in AuthContext handles everything:
+      // 1. Clears Supabase session
+      // 2. Clears local state
+      // 3. Clears storage
+      // 4. Shows toast
+      // 5. Redirects to home with window.location.href
+      await signOut();
+      // No manual redirect needed - AuthContext handles it
+      console.log('✅ [HEADER] Logout completed by AuthContext');
     } catch (error) {
-      console.error('Logout error:', error)
+      console.error('❌ [HEADER] Logout error:', error);
+      // Fallback: force redirect if signOut fails
+      window.location.href = '/';
     }
   }
 
   const getUserInitials = () => {
-    if (profile?.full_name) {
-      return profile.full_name
+    // Try user.full_name first (from users table)
+    if (user?.full_name) {
+      return user.full_name
         .split(' ')
         .map(n => n[0])
         .join('')
         .toUpperCase()
     }
+    // Then try userProfile (from profile tables)
+    if (userProfile?.full_name) {
+      return userProfile.full_name
+        .split(' ')
+        .map(n => n[0])
+        .join('')
+        .toUpperCase()
+    }
+    // Fallback to email
     if (user?.email) {
       return user.email[0].toUpperCase()
     }
@@ -203,19 +222,19 @@ export function UnifiedHeader({ showSearch = true, transparent = false }: Unifie
                 <span className="absolute top-1 right-1 h-2 w-2 bg-orange-500 rounded-full" />
               </Button>
 
-              {/* Profile Dropdown */}
+              {/* userProfile Dropdown */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
                     <Avatar className="h-9 w-9 border-2 border-slate-200">
-                      <AvatarImage src={profile?.avatar_url || undefined} />
+                      <AvatarImage src={user?.avatar_url || undefined} />
                       <AvatarFallback className="bg-orange-500 text-white text-sm font-semibold">
                         {getUserInitials()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="hidden lg:block text-left">
                       <p className="text-sm font-medium text-slate-900">
-                        {profile?.full_name || user?.email?.split('@')[0] || 'User'}
+                        {userProfile?.full_name || user?.email?.split('@')[0] || 'User'}
                       </p>
                       <p className="text-xs text-slate-500 capitalize">{userType}</p>
                     </div>
@@ -226,7 +245,7 @@ export function UnifiedHeader({ showSearch = true, transparent = false }: Unifie
                   <DropdownMenuLabel>
                     <div className="flex flex-col">
                       <span className="text-sm font-semibold text-slate-900">
-                        {profile?.full_name || user?.email?.split('@')[0] || 'User'}
+                        {userProfile?.full_name || user?.email?.split('@')[0] || 'User'}
                       </span>
                       <span className="text-xs text-slate-500 font-normal">
                         {user?.email || ''}

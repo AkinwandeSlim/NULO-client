@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
+import { useSignupCallbackUrl } from "@/hooks/useSignupCallbackUrl"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -11,7 +12,7 @@ import {
   MapPin, Bed, Bath, Square, Heart, Share2, ChevronRight, X,
   Home, Wifi, Car, Dumbbell, Shield, Wind, Tv, Coffee, Check, 
   Phone, Mail, Calendar, Star, MessageCircle, Eye, Grid, Maximize2,
-  CheckCircle2, TrendingDown
+  CheckCircle2, TrendingDown, Video, Users, Clock, Map, ArrowRight
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -20,6 +21,20 @@ import { ChatModal } from "@/components/ChatModal"
 import { viewingRequestsAPI, favoritesAPI } from "@/lib/api"
 import { propertiesAPI } from "@/lib/api/properties"
 import { Loader2 } from "lucide-react"
+import dynamic from "next/dynamic"
+
+// Dynamically import map component to avoid SSR issues
+const PropertyMap = dynamic(() => import('@/components/PropertyMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-64 bg-slate-100 rounded-lg flex items-center justify-center">
+      <div className="text-center">
+        <Loader2 className="h-6 w-6 animate-spin text-orange-500 mx-auto mb-2" />
+        <p className="text-slate-600 text-sm">Loading map...</p>
+      </div>
+    </div>
+  )
+})
 
 // Placeholder images for properties with missing photos
 const PLACEHOLDER_IMAGES = [
@@ -65,10 +80,11 @@ const getAmenityIcon = (amenity: string) => {
 }
 
 export default function PropertyDetailPage() {
-  const [activeTab, setActiveTab] = useState<'description' | 'amenities' | 'neighborhood' | 'landlord'>('description')
+  const [activeTab, setActiveTab] = useState<'description' | 'amenities' | 'landlord' | 'location'>('description')
   const [showImageModal, setShowImageModal] = useState(false)
   const [selectedImage, setSelectedImage] = useState(0)
   const [showViewingModal, setShowViewingModal] = useState(false)
+  const [viewingType, setViewingType] = useState<'physical' | 'virtual'>('physical')
   const [showChatModal, setShowChatModal] = useState(false)
   const [showGallery, setShowGallery] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
@@ -77,29 +93,51 @@ export default function PropertyDetailPage() {
   const [propertyData, setPropertyData] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [hasViewedVideo, setHasViewedVideo] = useState(false)
 
   const router = useRouter()
   const params = useParams()
-  const { user, profile, loading: authLoading } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const propertyId = params.id as string
+  
+  // ✅ Auto-preserve property URL for signup redirect
+  useSignupCallbackUrl()
 
   // Redirect landlords to their dashboard
   useEffect(() => {
-    if (profile?.user_type === 'landlord') {
+    if (user?.user_type === 'landlord') {
       router.replace('/landlord/overview')
     }
-  }, [profile, router])
+  }, [user, router])
 
   // Fetch property data
   useEffect(() => {
     const fetchProperty = async () => {
-      if (!propertyId) return
+      if (!propertyId) {
+        console.error('No property ID provided')
+        setError('No property ID provided')
+        setIsLoading(false)
+        return
+      }
+
+      console.log('🔍 [PROPERTY DETAIL] Fetching property:', propertyId)
+      setIsLoading(true)
+      setError(null)
+
+      // Add timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        console.warn('⏰ [PROPERTY DETAIL] Loading timeout - forcing error state')
+        setError('Loading timeout - please try again')
+        setIsLoading(false)
+        toast.error('Loading timeout - please refresh the page')
+      }, 30000) // 30 second timeout for API + token retrieval
 
       try {
-        setIsLoading(true)
-        setError(null)
-        
         const data = await propertiesAPI.getById(propertyId)
+        console.log('✅ [PROPERTY DETAIL] Data received:', data)
+        
+        // Clear timeout on success
+        clearTimeout(timeoutId)
         
         // Ensure minimum 5 images with placeholders
         if (data.images) {
@@ -110,11 +148,23 @@ export default function PropertyDetailPage() {
         
         setPropertyData(data)
         setIsFavorite(data.is_favorited || false)
+        console.log('✅ [PROPERTY DETAIL] Property data set successfully')
       } catch (err: any) {
-        console.error('Failed to fetch property:', err)
-        setError(err.response?.data?.detail || 'Failed to load property')
-        toast.error('Failed to load property details')
+        // Clear timeout on error
+        clearTimeout(timeoutId)
+        
+        console.error('❌ [PROPERTY DETAIL] Failed to fetch property:', err)
+        console.error('❌ [PROPERTY DETAIL] Error details:', {
+          message: err.message,
+          response: err.response?.data,
+          status: err.response?.status
+        })
+        
+        const errorMessage = err.response?.data?.detail || err.message || 'Failed to load property'
+        setError(errorMessage)
+        toast.error(errorMessage)
       } finally {
+        console.log('🏁 [PROPERTY DETAIL] Fetch completed, setting loading to false')
         setIsLoading(false)
       }
     }
@@ -137,8 +187,11 @@ export default function PropertyDetailPage() {
     if (isTogglingFavorite) return
     
     if (!user) {
-      toast.error('Please sign in to save favorites')
-      router.push('/signin')
+      // ✅ Redirect to signup with property callback URL
+      const currentPath = `/properties/${propertyId}`
+      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
+      toast.info('Please sign up to save favorites. You\'ll return here after verification.')
+      router.push(signupUrl)
       return
     }
 
@@ -230,19 +283,54 @@ export default function PropertyDetailPage() {
     }
   }
 
-  const handleRequestViewing = () => {
+  const handleRequestViewing = (type: 'physical' | 'virtual' = 'physical') => {
     if (!user) {
-      toast.error('Please sign in to request a viewing')
-      router.push('/signin')
+      // ✅ Redirect to signup with property callback URL
+      const currentPath = `/properties/${propertyId}`
+      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
+      toast.info('Please sign up to request a viewing. You\'ll return here after verification.')
+      router.push(signupUrl)
       return
     }
+    setViewingType(type)
+    
+    // For virtual viewing, check if video is available
+    if (type === 'virtual' && !propertyData.video_tour_url) {
+      toast.info('Virtual tour video is not available for this property. Please schedule a physical viewing.')
+      return
+    }
+    
     setShowViewingModal(true)
+  }
+
+  const handleVirtualTour = () => {
+    if (!user) {
+      // ✅ Redirect to signup with property callback URL
+      const currentPath = `/properties/${propertyId}`
+      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
+      toast.info('Please sign up to view virtual tour. You\'ll return here after verification.')
+      router.push(signupUrl)
+      return
+    }
+
+    if (!propertyData.video_tour_url) {
+      toast.info('Virtual tour video is not available for this property.')
+      return
+    }
+
+    // Mark video as viewed and open video modal
+    setHasViewedVideo(true)
+    setShowImageModal(true)
+    toast.success('Virtual tour started! Marked as viewed.')
   }
 
   const handleChatLandlord = () => {
     if (!user) {
-      toast.error('Please sign in to chat with landlord')
-      router.push('/signin')
+      // ✅ Redirect to signup with property callback URL
+      const currentPath = `/properties/${propertyId}`
+      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
+      toast.info('Please sign up to message the landlord. You\'ll return here after verification.')
+      router.push(signupUrl)
       return
     }
     setShowChatModal(true)
@@ -250,8 +338,11 @@ export default function PropertyDetailPage() {
 
   const handleReportConcern = () => {
     if (!user) {
-      toast.error('Please sign in to report concerns')
-      router.push('/signin')
+      // ✅ Redirect to signup with property callback URL
+      const currentPath = `/properties/${propertyId}`
+      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
+      toast.info('Please sign up to report concerns. You\'ll return here after verification.')
+      router.push(signupUrl)
       return
     }
     setShowReportModal(true)
@@ -259,8 +350,11 @@ export default function PropertyDetailPage() {
 
   const confirmViewing = async (data: ViewingRequestData) => {
     if (!user) {
-      toast.error('Please sign in to request a viewing')
-      router.push('/signin')
+      // ✅ Redirect to signup with property callback URL
+      const currentPath = `/properties/${propertyId}`
+      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
+      toast.info('Please sign up to request a viewing. You\'ll return here after verification.')
+      router.push(signupUrl)
       return
     }
 
@@ -327,25 +421,27 @@ export default function PropertyDetailPage() {
     }
   }
 
-  // Show loading while checking user type (must be after all hooks)
-  if (authLoading || profile?.user_type === 'landlord') {
+  // Show loading while checking auth or fetching property data
+  if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center max-w-md mx-auto px-4">
           <Loader2 className="h-12 w-12 animate-spin text-orange-500 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-orange-500 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium">Loading property details...</p>
+          <p className="text-slate-600 font-medium mb-2">
+            {authLoading ? 'Verifying account...' : 'Loading property details...'}
+          </p>
+          <p className="text-slate-500 text-sm">
+            {authLoading ? 'Please wait while we verify your account' : 'Please wait while we fetch the property information'}
+          </p>
+          
+          {/* Add a cancel button for better UX */}
+          <Button 
+            variant="outline" 
+            className="mt-4"
+            onClick={() => router.push('/properties')}
+          >
+            Back to Properties
+          </Button>
         </div>
       </div>
     )
@@ -359,9 +455,15 @@ export default function PropertyDetailPage() {
           <Home className="h-16 w-16 text-slate-300 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Property Not Found</h2>
           <p className="text-slate-600 mb-6">{error || 'The property you are looking for does not exist or has been removed.'}</p>
-          <Button onClick={() => router.push('/properties')} className="bg-orange-500 hover:bg-orange-600">
-            Browse All Properties
-          </Button>
+          
+          <div className="flex gap-3 justify-center">
+            <Button onClick={() => window.location.reload()} className="bg-orange-500 hover:bg-orange-600">
+              Try Again
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/properties')}>
+              Browse All Properties
+            </Button>
+          </div>
         </div>
       </div>
     )
@@ -421,7 +523,7 @@ export default function PropertyDetailPage() {
           </div>
 
           {/* Grid of Smaller Images */}
-          {propertyData.images.slice(1, 5).map((image, index) => (
+          {propertyData.images.slice(1, 5).map((image: any,index: any) => (
             <div
               key={index}
               className="relative group cursor-pointer overflow-hidden"
@@ -494,19 +596,38 @@ export default function PropertyDetailPage() {
                       <MapPin className="h-4 w-4 flex-shrink-0" />
                       <span className="text-sm md:text-base">{propertyData.location}</span>
                     </div>
-                    {/* Trust & Availability Badges */}
+                    {/* Enhanced Verification Badges - Phase 1 Requirements */}
                     <div className="flex flex-wrap items-center gap-2 mt-2">
-                      <div className="inline-flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-                        <Eye className="h-3.5 w-3.5" />
-                        <span>12 viewing now</span>
-                      </div>
+                      {/* Verified Property Badge */}
                       <div className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
                         <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>{propertyData.availability}</span>
+                        <span>✓ Verified Property</span>
                       </div>
-                      <div className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-                        <Shield className="h-3.5 w-3.5" />
-                        <span>{propertyData.trustScore}% Trust Score</span>
+                      
+                      {/* Verified Landlord Badge */}
+                      {propertyData.landlord?.verified && (
+                        <div className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
+                          <Shield className="h-3.5 w-3.5" />
+                          <span>✓ Verified Landlord</span>
+                        </div>
+                      )}
+                      
+                      {/* Verified Documents Badge */}
+                      <div className="inline-flex items-center gap-1.5 bg-purple-50 border border-purple-200 text-purple-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
+                        <Check className="h-3.5 w-3.5" />
+                        <span>✓ Verified Documents</span>
+                      </div>
+                      
+                      {/* Active Listing Badge */}
+                      <div className="inline-flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>✓ Active Listing</span>
+                      </div>
+                      
+                      {/* Availability Status */}
+                      <div className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>{propertyData.availability || 'Available Now'}</span>
                       </div>
                     </div>
                   </div>
@@ -516,6 +637,45 @@ export default function PropertyDetailPage() {
                     </div>
                     <div className="text-sm text-slate-600">
                       /month
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pricing Breakdown - Phase 1 Requirements */}
+                <div className="bg-gradient-to-r from-orange-50 to-blue-50 border border-orange-200 rounded-lg p-4 md:p-5">
+                  <h3 className="text-lg font-bold text-slate-900 mb-4">💰 Pricing Breakdown</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600">Monthly Rent:</span>
+                      <span className="font-bold text-slate-900">{formatPrice(propertyData.price)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600">Service Charge:</span>
+                      <span className="font-bold text-green-600">₦0 (Zero service charge!)</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600">Caution Deposit:</span>
+                      <span className="font-bold text-slate-900">₦0 (1 month rent)</span>
+                    {/* <span className="font-bold text-slate-900">{formatPrice(propertyData.price)} (1 month rent)</span> */}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600">Agency Fee:</span>
+                      <span className="font-bold text-green-600">₦0 (Zero agency fee!)</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600">Platform Fee:</span>
+                      <span className="font-bold text-slate-900">{formatPrice(propertyData.price)} + {formatPrice(propertyData.price * 0.1)}</span>
+                    </div>
+                    <div className="border-t border-slate-300 pt-3 mt-3">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-slate-900">Total Move-in Cost:</span>
+                        <span className="text-xl font-bold text-orange-600">
+                          {formatPrice(propertyData.price + (propertyData.price * 0.1))}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        (First month rent + Caution deposit + Platform fee)
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -571,16 +731,6 @@ export default function PropertyDetailPage() {
                     Amenities
                   </button>
                   <button
-                    onClick={() => setActiveTab('neighborhood')}
-                    className={`px-4 md:px-6 py-3 md:py-4 text-sm md:text-base font-semibold whitespace-nowrap transition-colors ${
-                      activeTab === 'neighborhood'
-                        ? 'text-orange-600 border-b-2 border-orange-600'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Neighborhood
-                  </button>
-                  <button
                     onClick={() => setActiveTab('landlord')}
                     className={`px-4 md:px-6 py-3 md:py-4 text-sm md:text-base font-semibold whitespace-nowrap transition-colors ${
                       activeTab === 'landlord'
@@ -589,6 +739,17 @@ export default function PropertyDetailPage() {
                     }`}
                   >
                     Landlord Info
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('location')}
+                    className={`px-4 md:px-6 py-3 md:py-4 text-sm md:text-base font-semibold whitespace-nowrap transition-colors ${
+                      activeTab === 'location'
+                        ? 'text-orange-600 border-b-2 border-orange-600'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Map className="h-4 w-4 mr-1" />
+                    Location
                   </button>
                 </div>
 
@@ -627,50 +788,6 @@ export default function PropertyDetailPage() {
                     </div>
                   )}
 
-                  {activeTab === 'neighborhood' && (
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-900 mb-4">Neighborhood Insights</h2>
-                      <div className="space-y-4">
-                        <div className="p-4 bg-slate-50 rounded-lg">
-                          <h3 className="font-semibold text-slate-900 mb-2">📍 Location</h3>
-                          <p className="text-sm text-slate-600">{propertyData.fullAddress}</p>
-                        </div>
-                        <div className="p-4 bg-slate-50 rounded-lg">
-                          <h3 className="font-semibold text-slate-900 mb-2">🚇 Nearby Transport</h3>
-                          <p className="text-sm text-slate-600">Lekki Bus Stop - 5 min walk</p>
-                          <p className="text-sm text-slate-600">Eko Hotel - 10 min drive</p>
-                        </div>
-                        <div className="p-4 bg-slate-50 rounded-lg">
-                          <h3 className="font-semibold text-slate-900 mb-2">🏫 Schools & Services</h3>
-                          <p className="text-sm text-slate-600">Corona School - 2km</p>
-                          <p className="text-sm text-slate-600">Shoprite Mall - 1.5km</p>
-                        </div>
-                        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                          <h3 className="font-semibold text-green-900 mb-2">⚡ Energy & Security Rating</h3>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm text-green-700">Energy Efficiency:</span>
-                            <div className="flex gap-0.5">
-                              {[...Array(4)].map((_, i) => (
-                                <div key={i} className="w-8 h-2 bg-green-500 rounded" />
-                              ))}
-                              <div className="w-8 h-2 bg-slate-200 rounded" />
-                            </div>
-                            <span className="text-xs text-green-600 font-semibold">A</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-green-700">Security Rating:</span>
-                            <div className="flex gap-0.5">
-                              {[...Array(5)].map((_, i) => (
-                                <div key={i} className="w-8 h-2 bg-green-500 rounded" />
-                              ))}
-                            </div>
-                            <span className="text-xs text-green-600 font-semibold">A+</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {activeTab === 'landlord' && (
                     <div>
                       <h2 className="text-xl font-bold text-slate-900 mb-4">Landlord Information</h2>
@@ -695,7 +812,7 @@ export default function PropertyDetailPage() {
                             <p className="text-sm text-slate-600 mb-2">Member since {propertyData.landlord?.joined_year || 2024}</p>
                             <div className="flex items-center gap-4 text-sm">
                               <div>
-                                <span className="font-semibold text-slate-900">{propertyData.landlord?.properties_count || 0}</span>
+                                <span className="font-semibold text-slate-900">{Math.max(1, propertyData.landlord?.properties_count || 0)}</span>
                                 <span className="text-slate-600"> properties</span>
                               </div>
                               <div>
@@ -745,6 +862,177 @@ export default function PropertyDetailPage() {
                             <li>✓ All messages protected by escrow system</li>
                             <li>✓ Fair use policy enforced</li>
                           </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'location' && (
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900 mb-4">Location & Neighborhood</h2>
+                      
+                      {/* Property Address */}
+                      <div className="p-4 bg-slate-50 rounded-lg mb-4">
+                        <div className="flex items-start gap-3">
+                          <MapPin className="h-5 w-5 text-orange-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <h3 className="font-semibold text-slate-900 mb-1">📍 Address</h3>
+                            <p className="text-slate-600">{propertyData.full_address || propertyData.location}</p>
+                            <p className="text-sm text-slate-500 mt-1">{propertyData.city}, {propertyData.state}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Static Landscape Map */}
+                      <div className="mb-6">
+                        <h3 className="font-semibold text-slate-900 mb-3">🗺️ Property Location</h3>
+                        <div className="rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                          <div className="relative w-full h-64 md:h-80 bg-gradient-to-br from-blue-100 via-green-50 to-orange-100">
+                            {/* Beautiful placeholder map with location info */}
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="text-center">
+                                {/* Location Icon */}
+                                <div className="w-16 h-16 bg-orange-500 rounded-full border-4 border-white shadow-xl flex items-center justify-center mx-auto mb-4">
+                                  <MapPin className="h-8 w-8 text-white" />
+                                </div>
+                                
+                                {/* Location Text */}
+                                <div className="bg-white/95 backdrop-blur px-4 py-2 rounded-lg shadow-lg">
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {propertyData.location || propertyData.full_address || 'Property Location'}
+                                  </p>
+                                  <p className="text-xs text-slate-600">
+                                    {propertyData.city || 'Lagos'}, {propertyData.state || 'Nigeria'}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Map Pattern Overlay */}
+                            <div className="absolute inset-0 opacity-20">
+                              <div className="grid grid-cols-8 grid-rows-6 h-full">
+                                {[...Array(48)].map((_, i) => (
+                                  <div key={i} className="border border-slate-300/30" />
+                                ))}
+                              </div>
+                            </div>
+                            
+                            {/* Compass Indicator */}
+                            <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-2 py-1 rounded-full shadow-lg">
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs font-bold text-slate-700">N</span>
+                                <div className="w-4 h-4 border-2 border-slate-700 rounded-full relative">
+                                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0.5 h-1.5 bg-red-500" />
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Coordinates Display */}
+                            <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs text-slate-600">
+                              📍 {propertyData.latitude?.toFixed(4) || '6.5244'}°N, {propertyData.longitude?.toFixed(4) || '3.3792'}°E
+                            </div>
+                            
+                            {/* Map Attribution */}
+                            <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs text-slate-600">
+                              🗺️ {propertyData.city || 'Lagos'}, Nigeria
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Neighborhood Information */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        {/* Nearby Transport */}
+                        <div className="p-4 bg-slate-50 rounded-lg">
+                          <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                            <span className="text-purple-600">�</span>
+                            Nearby Transport
+                          </h3>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-slate-600">Lekki Bus Stop</span>
+                              <span className="text-xs text-green-600 font-medium">5 min walk</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-slate-600">Eko Hotel</span>
+                              <span className="text-xs text-green-600 font-medium">10 min drive</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-slate-600">Victoria Island</span>
+                              <span className="text-xs text-green-600 font-medium">15 min drive</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Schools & Services */}
+                        <div className="p-4 bg-slate-50 rounded-lg">
+                          <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                            <span className="text-blue-600">🏫</span>
+                            Schools & Services
+                          </h3>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-slate-600">Corona School</span>
+                              <span className="text-xs text-green-600 font-medium">2 km</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-slate-600">Shoprite Mall</span>
+                              <span className="text-xs text-green-600 font-medium">1.5 km</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-slate-600">Lekki Clinic</span>
+                              <span className="text-xs text-green-600 font-medium">3 km</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Area Ratings */}
+                      <div className="p-4 bg-green-50 border border-green-200 rounded-lg mb-6">
+                        <h3 className="font-semibold text-green-900 mb-3 flex items-center gap-2">
+                          <span>⚡</span>
+                          Area Ratings
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm text-green-700">Energy Efficiency:</span>
+                              <div className="flex gap-0.5">
+                                {[...Array(4)].map((_, i) => (
+                                  <div key={i} className="w-8 h-2 bg-green-500 rounded" />
+                                ))}
+                                <div className="w-8 h-2 bg-slate-200 rounded" />
+                              </div>
+                              <span className="text-xs text-green-600 font-semibold">A</span>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-green-700">Security Rating:</span>
+                              <div className="flex gap-0.5">
+                                {[...Array(5)].map((_, i) => (
+                                  <div key={i} className="w-8 h-2 bg-green-500 rounded" />
+                                ))}
+                              </div>
+                              <span className="text-xs text-green-600 font-semibold">A+</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* View Other Properties Button */}
+                      <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="font-semibold text-orange-900 mb-1">🏠 Explore More Properties</h3>
+                            <p className="text-sm text-orange-700">Discover similar properties in {propertyData.city || 'this area'}</p>
+                          </div>
+                          <Link href="/properties">
+                            <Button className="bg-orange-500 hover:bg-orange-600 text-white">
+                              <ArrowRight className="h-4 w-4 mr-1" />
+                              Browse Properties
+                            </Button>
+                          </Link>
                         </div>
                       </div>
                     </div>
@@ -827,29 +1115,39 @@ export default function PropertyDetailPage() {
                   </div>
                 </div>
 
-                {/* Nulo Savings Badge - Simplified */}
-                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-5">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <TrendingDown className="h-4 w-4 text-green-600" />
-                    <p className="text-sm md:text-base font-semibold text-green-700">
-                      Pay ₦2,660,000/mo with Nulo
-                    </p>
-                  </div>
-                  <p className="text-xs md:text-sm text-green-600 font-medium">
-                    Save ₦1,680,000/year
-                  </p>
-                </div>
-
-                {/* Tenant Action Buttons - Improved UI/UX */}
+                {/* Tenant Action Buttons - Enhanced with Viewing Options */}
                 <div className="space-y-3">
-                  {/* Primary Action - Request Viewing */}
+                  {/* Virtual Tour Button (if video available) */}
+                  {propertyData.video_tour_url && (
+                    <Button 
+                      className="w-full h-12 text-sm font-bold bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl group"
+                      onClick={handleVirtualTour}
+                    >
+                      <Video className="h-5 w-5 mr-2.5 group-hover:scale-110 transition-transform" />
+                      {hasViewedVideo ? 'Watch Virtual Tour Again' : 'Watch Virtual Tour'}
+                      {hasViewedVideo && <Check className="h-4 w-4 ml-2" />}
+                    </Button>
+                  )}
+
+                  {/* Physical Viewing Button */}
                   <Button 
                     className="w-full h-12 md:h-14 text-sm md:text-base font-bold bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl group"
-                    onClick={handleRequestViewing}
+                    onClick={() => handleRequestViewing('physical')}
                   >
                     <Calendar className="h-5 w-5 mr-2.5 group-hover:scale-110 transition-transform" />
-                    Request Viewing
+                    Schedule Physical Viewing
                   </Button>
+
+                  {/* Virtual Viewing Button (if no video) */}
+                  {!propertyData.video_tour_url && (
+                    <Button 
+                      className="w-full h-12 text-sm font-bold bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl group"
+                      onClick={() => handleRequestViewing('virtual')}
+                    >
+                      <Video className="h-5 w-5 mr-2.5 group-hover:scale-110 transition-transform" />
+                      Request Virtual Tour
+                    </Button>
+                  )}
 
                   {/* Secondary Actions Grid */}
                   <div className="grid grid-cols-2 gap-2.5">
@@ -951,7 +1249,7 @@ export default function PropertyDetailPage() {
 
           {/* Thumbnails */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/50 p-2 rounded-lg backdrop-blur-sm">
-            {propertyData.images.map((image, index) => (
+            {propertyData.images.map((image:any, index:any) => (
               <button
                 key={index}
                 onClick={() => setSelectedImage(index)}
@@ -968,3 +1266,4 @@ export default function PropertyDetailPage() {
     </div>
   )
 }
+

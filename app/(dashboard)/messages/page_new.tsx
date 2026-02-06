@@ -11,7 +11,7 @@ import { messagesAPI } from "@/lib/api/messages"
 import { toast } from "sonner"
 
 export default function MessagesPage() {
-  const { user, profile } = useAuth()
+  const { user, userProfile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [conversations, setConversations] = useState<any[]>([])
   const [selectedConversation, setSelectedConversation] = useState<any>(null)
@@ -72,7 +72,7 @@ export default function MessagesPage() {
 
     try {
       setSendingMessage(true)
-      const message = await messagesAPI.sendMessage(selectedConversation.id, newMessage)
+      const message = await messagesAPI.sendMessage(selectedConversation.id, { content: newMessage })
       
       setMessages(prev => [...prev, message])
       setNewMessage('')

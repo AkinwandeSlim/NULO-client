@@ -135,7 +135,8 @@ export function SaveFavoriteModal({
             <Button
               onClick={() => {
                 onClose()
-                window.location.href = "/signup"
+                // Preselect tenant role when navigating to role selection
+                window.location.href = "/signup?role=tenant"
               }}
               variant="outline"
               className="w-full h-11 border-2 border-slate-200 hover:border-orange-500 hover:bg-orange-50 hover:text-orange-600 font-semibold"
@@ -166,3 +167,6 @@ export function SaveFavoriteModal({
     </Dialog>
   )
 }
+
+// Export as SaveFavoriteModal 
+export default SaveFavoriteModal

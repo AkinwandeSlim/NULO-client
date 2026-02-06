@@ -245,7 +245,7 @@ export default function ReviewStep({ formData, errors, onChange, property }: Rev
                   type: 'checkbox',
                   checked: e.target.checked
                 }
-              } as React.ChangeEvent<HTMLInputElement>
+              } as unknown as React.ChangeEvent<HTMLInputElement>
               onChange(syntheticEvent)
             }}
             className={`mt-1 h-5 w-5 rounded border-slate-300 text-orange-600 focus:ring-orange-500 cursor-pointer ${

@@ -132,7 +132,7 @@ export default function LandlordDashboard() {
             <h1 className="mb-2 text-3xl font-bold text-slate-900">Landlord Dashboard</h1>
             <p className="text-slate-600">Manage your properties and tenants</p>
           </div>
-          <Link href="/landlord/add-property">
+          <Link href="/landlord/properties/new">
             <Button className="bg-amber-500 hover:bg-amber-600 text-white">
               <Plus className="mr-2 h-4 w-4" />
               Add Property
@@ -342,7 +342,7 @@ export default function LandlordDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  <Link href="/landlord/add-property">
+                  <Link href="/landlord/properties/new">
                     <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-amber-50 hover:border-amber-500 hover:text-amber-600">
                       <Plus className="mr-2 h-4 w-4" />
                       Add New Property

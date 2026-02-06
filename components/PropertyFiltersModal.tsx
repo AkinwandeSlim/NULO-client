@@ -8,21 +8,18 @@ import { Button } from "@/components/ui/button"
 interface PropertyFiltersModalProps {
   isOpen: boolean
   onClose: () => void
-  priceRange: [number, number]
-  setPriceRange: (range: [number, number]) => void
-  selectedType: string
-  setSelectedType: (type: string) => void
-  minBeds: number
-  setMinBeds: (beds: number) => void
-  minBaths: number
-  setMinBaths: (baths: number) => void
-  selectedAmenities: string[]
-  setSelectedAmenities: (amenities: string[]) => void
-  selectedPreferences: string[]
-  setSelectedPreferences: (preferences: string[]) => void
-  onClearAll: () => void
-  onApply: () => void
-  resultsCount: number
+  filters: {
+    priceRange: [number, number]
+    propertyType: string
+    bedrooms: number
+    bathrooms: number
+  }
+  onFiltersChange: (filters: {
+    priceRange?: [number, number]
+    propertyType?: string
+    bedrooms?: number
+    bathrooms?: number
+  }) => void
 }
 
 const propertyTypes = ["all", "Villa", "Apartment", "House", "Penthouse", "Bungalow", "Duplex", "Mansion", "Terrace"]
@@ -52,39 +49,10 @@ const formatPrice = (value: number) => {
 export function PropertyFiltersModal({
   isOpen,
   onClose,
-  priceRange,
-  setPriceRange,
-  selectedType,
-  setSelectedType,
-  minBeds,
-  setMinBeds,
-  minBaths,
-  setMinBaths,
-  selectedAmenities,
-  setSelectedAmenities,
-  selectedPreferences,
-  setSelectedPreferences,
-  onClearAll,
-  onApply,
-  resultsCount
+  filters,
+  onFiltersChange
 }: PropertyFiltersModalProps) {
   
-  const toggleAmenity = (id: string) => {
-    setSelectedAmenities(
-      selectedAmenities.includes(id) 
-        ? selectedAmenities.filter(a => a !== id) 
-        : [...selectedAmenities, id]
-    )
-  }
-
-  const togglePreference = (pref: string) => {
-    setSelectedPreferences(
-      selectedPreferences.includes(pref) 
-        ? selectedPreferences.filter(p => p !== pref) 
-        : [...selectedPreferences, pref]
-    )
-  }
-
   return (
     <AnimatePresence>
       {isOpen && (
@@ -116,7 +84,7 @@ export function PropertyFiltersModal({
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">Filter Properties</h2>
-                    <p className="text-sm text-slate-600">{resultsCount} properties found</p>
+                    <p className="text-sm text-slate-600">Filter properties by your preferences</p>
                   </div>
                 </div>
                 <button
@@ -140,11 +108,11 @@ export function PropertyFiltersModal({
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="px-4 py-2 bg-orange-50 rounded-xl border border-orange-200">
-                        <span className="text-sm font-semibold text-orange-700">{formatPrice(priceRange[0])}</span>
+                        <span className="text-sm font-semibold text-orange-700">{formatPrice(filters.priceRange[0])}</span>
                       </div>
                       <div className="text-slate-400">—</div>
                       <div className="px-4 py-2 bg-orange-50 rounded-xl border border-orange-200">
-                        <span className="text-sm font-semibold text-orange-700">{formatPrice(priceRange[1])}</span>
+                        <span className="text-sm font-semibold text-orange-700">{formatPrice(filters.priceRange[1])}</span>
                       </div>
                     </div>
                     <div className="relative pt-2">
@@ -152,8 +120,8 @@ export function PropertyFiltersModal({
                         <div 
                           className="absolute h-3 bg-gradient-to-r from-orange-500 to-orange-600 rounded-full transition-all duration-300"
                           style={{
-                            left: `${(priceRange[0] / 1000000) * 100}%`,
-                            right: `${100 - (priceRange[1] / 1000000) * 100}%`
+                            left: `${(filters.priceRange[0] / 1000000) * 100}%`,
+                            right: `${100 - (filters.priceRange[1] / 1000000) * 100}%`
                           }}
                         />
                       </div>
@@ -162,11 +130,11 @@ export function PropertyFiltersModal({
                         min="0"
                         max="1000000"
                         step="10000"
-                        value={priceRange[0]}
+                        value={filters.priceRange[0]}
                         onChange={(e) => {
                           const value = parseInt(e.target.value)
-                          if (value < priceRange[1]) {
-                            setPriceRange([value, priceRange[1]])
+                          if (value < filters.priceRange[1]) {
+                            onFiltersChange({ priceRange: [value, filters.priceRange[1]] })
                           }
                         }}
                         className="absolute w-full h-3 top-2 appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-3 [&::-webkit-slider-thumb]:border-orange-500 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:hover:scale-110 [&::-webkit-slider-thumb]:transition-transform"
@@ -176,11 +144,11 @@ export function PropertyFiltersModal({
                         min="0"
                         max="1000000"
                         step="10000"
-                        value={priceRange[1]}
+                        value={filters.priceRange[1]}
                         onChange={(e) => {
                           const value = parseInt(e.target.value)
-                          if (value > priceRange[0]) {
-                            setPriceRange([priceRange[0], value])
+                          if (value > filters.priceRange[0]) {
+                            onFiltersChange({ priceRange: [filters.priceRange[0], value] })
                           }
                         }}
                         className="absolute w-full h-3 top-2 appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-3 [&::-webkit-slider-thumb]:border-orange-500 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:hover:scale-110 [&::-webkit-slider-thumb]:transition-transform"
@@ -206,9 +174,9 @@ export function PropertyFiltersModal({
                     {propertyTypes.map(type => (
                       <button
                         key={type}
-                        onClick={() => setSelectedType(type)}
+                        onClick={() => onFiltersChange({ propertyType: type })}
                         className={`px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-                          selectedType === type
+                          filters.propertyType === type
                             ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30 scale-105'
                             : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 hover:border-slate-300'
                         }`}
@@ -231,9 +199,9 @@ export function PropertyFiltersModal({
                       {[0, 1, 2, 3, 4, 5].map(num => (
                         <button
                           key={num}
-                          onClick={() => setMinBeds(num)}
+                          onClick={() => onFiltersChange({ bedrooms: num })}
                           className={`px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-                            minBeds === num
+                            filters.bedrooms === num
                               ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
                               : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
                           }`}
@@ -254,9 +222,9 @@ export function PropertyFiltersModal({
                       {[0, 1, 2, 3, 4].map(num => (
                         <button
                           key={num}
-                          onClick={() => setMinBaths(num)}
+                          onClick={() => onFiltersChange({ bathrooms: num })}
                           className={`px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-                            minBaths === num
+                            filters.bathrooms === num
                               ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
                               : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
                           }`}
@@ -268,59 +236,6 @@ export function PropertyFiltersModal({
                   </div>
                 </div>
 
-                {/* Amenities */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Sparkles className="h-5 w-5 text-orange-500" />
-                    <label className="text-base font-bold text-slate-900">Amenities</label>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {amenities.map(amenity => {
-                      const Icon = amenity.icon
-                      const isSelected = selectedAmenities.includes(amenity.id)
-                      return (
-                        <button
-                          key={amenity.id}
-                          onClick={() => toggleAmenity(amenity.id)}
-                          className={`flex flex-col items-center gap-2 px-3 py-4 rounded-xl text-sm font-semibold transition-all ${
-                            isSelected
-                              ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
-                              : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
-                          }`}
-                        >
-                          <Icon className="h-5 w-5" />
-                          <span className="text-xs text-center">{amenity.label}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Preferences */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Maximize2 className="h-5 w-5 text-orange-500" />
-                    <label className="text-base font-bold text-slate-900">Preferences</label>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {preferences.map(pref => {
-                      const isSelected = selectedPreferences.includes(pref)
-                      return (
-                        <button
-                          key={pref}
-                          onClick={() => togglePreference(pref)}
-                          className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
-                            isSelected
-                              ? 'bg-orange-500 text-white shadow-md'
-                              : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
-                          }`}
-                        >
-                          {pref}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -329,19 +244,30 @@ export function PropertyFiltersModal({
               <div className="flex items-center gap-3">
                 <Button
                   variant="outline"
-                  onClick={onClearAll}
-                  className="flex-1 h-12 text-base font-semibold border-slate-300 hover:bg-slate-100"
+                  onClick={() => {
+                    onFiltersChange({
+                      priceRange: [0, 1000000],
+                      propertyType: 'all',
+                      bedrooms: 0,
+                      bathrooms: 0
+                    })
+                  }}
+                  className="flex-1 h-12 text-base font-semibold border-slate-300 hover:bg-slate-100 text-slate-700"
                 >
                   Clear All
                 </Button>
                 <Button
-                  onClick={() => {
-                    onApply()
-                    onClose()
-                  }}
+                  variant="outline"
+                  onClick={onClose}
+                  className="flex-1 h-12 text-base font-semibold border-slate-300 hover:bg-slate-100"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={onClose}
                   className="flex-1 h-12 text-base font-bold bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg shadow-orange-500/30"
                 >
-                  Show {resultsCount} Properties
+                  Apply Filters
                 </Button>
               </div>
             </div>
@@ -351,3 +277,7 @@ export function PropertyFiltersModal({
     </AnimatePresence>
   )
 }
+
+// Export as FilterModal for backward compatibility
+export default PropertyFiltersModal
+export { PropertyFiltersModal as FilterModal }

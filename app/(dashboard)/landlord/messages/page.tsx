@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,17 +19,28 @@ const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed='
 
 export default function LandlordMessagesPage() {
   const { user } = useAuth()
+  const pathname = usePathname()
   const [loading, setLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
   const [conversations, setConversations] = useState<any[]>([])
   const [selectedConversation, setSelectedConversation] = useState<any>(null)
   const [messages, setMessages] = useState<any[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [sendingMessage, setSendingMessage] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [hasInitialLoadRef] = useState({ current: false })
 
   useEffect(() => {
-    fetchConversations()
+    setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (mounted) {
+      setLoading(true)
+      fetchConversations()
+      hasInitialLoadRef.current = true
+    }
+  }, [pathname]) // Add pathname to trigger refresh on navigation
 
   const fetchConversations = async () => {
     try {
@@ -78,7 +90,7 @@ export default function LandlordMessagesPage() {
       setSendingMessage(true)
       const data = await messagesAPI.sendMessage(
         selectedConversation.id,
-        newMessage.trim()
+        { content: newMessage.trim() }
       )
       
       setMessages([...messages, data.message])
@@ -111,7 +123,7 @@ export default function LandlordMessagesPage() {
     }
   }
 
-  if (loading) {
+  if (loading && !hasInitialLoadRef.current && !mounted) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
