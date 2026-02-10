@@ -103,7 +103,7 @@ export function HeroSection({
 
   return (
     <section 
-      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-white via-orange-50 to-amber-50 -mt-20 pt-20" 
+      className="relative min-h-[85vh] flex items-center justify-center overflow-hidden bg-gradient-to-br from-white via-orange-50 to-amber-50 -mt-20 pt-20" 
       role="banner" 
       aria-label="Hero section"
     >
@@ -120,7 +120,14 @@ export function HeroSection({
             background: `
               radial-gradient(ellipse at 20% 30%, rgba(251, 146, 60, 0.12) 0%, transparent 50%),
               radial-gradient(ellipse at 80% 70%, rgba(251, 146, 60, 0.08) 0%, transparent 50%),
-              linear-gradient(to bottom, rgba(255, 255, 255, 0.4) 0%, transparent 60%, rgba(251, 146, 60, 0.05) 100%)
+              linear-gradient(to bottom, rgba(255, 255, 255, 0.4) 0%, transparent 60%, rgba(251, 146, 60, 0.05) 100%),
+              repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 10px,
+                rgba(251, 146, 60, 0.03) 10px,
+                rgba(251, 146, 60, 0.03) 20px
+              )
             `,
             opacity: 1
           }} 
