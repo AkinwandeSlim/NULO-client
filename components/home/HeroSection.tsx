@@ -103,7 +103,7 @@ export function HeroSection({
 
   return (
     <section 
-      className="relative min-h-[85vh] flex items-center justify-center overflow-hidden bg-gradient-to-br from-white via-orange-50 to-amber-50 -mt-20 pt-20" 
+      className="relative min-h-[85vh] flex items-start justify-center overflow-hidden bg-gradient-to-br from-white via-orange-50 to-amber-50 pt-12" 
       role="banner" 
       aria-label="Hero section"
     >
