@@ -114,7 +114,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setProfile] = useState<UserProfile>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // ✅ Loading during initial auth check ONLY
+  const [authInitialized, setAuthInitialized] = useState(false); // ✅ NEW: True after first auth check completes
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const supabase = createClient();
@@ -1032,15 +1033,18 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         }
         
         setLoading(false);
+        setAuthInitialized(true); // ✅ NEW: Mark auth as initialized after first check
       } catch (error: any) {
         // Ignore AbortError - harmless cleanup signal from Supabase lock mechanism
         if (error?.name === 'AbortError' || error?.message?.includes('abort') || error?.message?.includes('signal is aborted')) {
           console.log('ℹ️ [AUTH] Ignoring harmless AbortError during initialization');
           setLoading(false);
+          setAuthInitialized(true); // ✅ NEW: Still mark as initialized even on error
           return;
         }
         console.error('❌ [AUTH] Init error:', error);
         setLoading(false);
+        setAuthInitialized(true); // ✅ NEW: Still mark as initialized even on error
       }
     };
 
@@ -1161,6 +1165,7 @@ const value: AuthContextType = {
   setUser,
   setProfile,
   loading,
+  authInitialized, // ✅ NEW: Pass initialized flag
   signUpAdmin,
   signUpTenant,
   signUpLandlord,

@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Heart, Bed, Bath, Square, Camera, Users, Eye, ChevronRight, Home, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import { Heart, Bed, Bath, Square, Camera, Users, Eye, ChevronRight, Home, Loader2, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -91,11 +92,11 @@ export default function PropertyCard({
           {property.status === 'vacant' ? 'Available' : property.status === 'rented' ? 'Rented' : property.status || 'Available'}
         </Badge>
         
-        {/* Application Count */}
+        {/* Application Count - Social Proof */}
         {property.application_count > 0 && (
-          <Badge className="absolute top-4 left-4 bg-slate-900/80 backdrop-blur-sm text-white font-semibold">
+          <Badge className="absolute top-4 left-4 bg-gradient-to-r from-orange-600 to-orange-500 backdrop-blur-sm text-white font-semibold shadow-lg">
             <Users className="w-3 h-3 mr-1" />
-            {property.application_count} applications
+            {property.application_count} {property.application_count === 1 ? 'person' : 'people'} interested
           </Badge>
         )}
         
@@ -127,9 +128,23 @@ export default function PropertyCard({
       </div>
       
       <CardContent className="p-5">
-        <h3 className="font-bold text-lg text-slate-900 mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
-          {property.title}
-        </h3>
+        {/* Verified Landlord Badge */}
+        {property.landlord?.verified && (
+          <div className="mb-2">
+            <Badge className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 text-xs flex items-center gap-1 w-fit">
+              <CheckCircle2 className="w-3 h-3" />
+              Verified Landlord
+            </Badge>
+          </div>
+        )}
+
+        
+        {/* Clickable Title - Link for easy navigation */}
+        <Link href={`/properties/${property.id}`}>
+          <h3 className="font-bold text-lg text-slate-900 mb-2 line-clamp-1 group-hover:text-orange-600 cursor-pointer transition-colors duration-200 hover:underline">
+            {property.title}
+          </h3>
+        </Link>
         
         <div className="flex items-center text-sm text-slate-600 mb-3">
           <Home className="w-4 h-4 mr-1 text-orange-500" />
@@ -161,14 +176,27 @@ export default function PropertyCard({
         </div>
         
         <div className="flex items-center justify-between pt-3 border-t border-slate-200">
-          <div className="flex items-center text-sm text-slate-600">
-            <Eye className="w-4 h-4 mr-1 text-slate-400" />
-            <span>{property.view_count || 0} views</span>
+          <div className="flex items-center gap-3 text-sm text-slate-600">
+            {/* Only show view count if > 0 */}
+            {(property.view_count || 0) > 0 && (
+              <div className="flex items-center">
+                <Eye className="w-4 h-4 mr-1 text-slate-400" />
+                <span>{property.view_count} views</span>
+              </div>
+            )}
+            
+            {/* Show photo count if multiple images */}
+            {property.images && property.images.length > 1 && (
+              <div className="flex items-center">
+                <Camera className="w-4 h-4 mr-1 text-orange-500" />
+                <span className="font-medium text-slate-900">{property.images.length}</span>
+              </div>
+            )}
           </div>
           <Button 
             variant="outline" 
             size="sm"
-            className="border-2 border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-600 font-semibold transition-all duration-300"
+            className="border-2 border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-600 font-semibold transition-all duration-300 rounded-lg"
             onClick={handleViewDetails}
           >
             View Details

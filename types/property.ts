@@ -40,6 +40,7 @@ export interface PropertySearchParams {
   bedrooms?: number
   bathrooms?: number
   property_type?: string
+  sort?: 'newest' | 'price_low' | 'price_high' | 'featured'
   page?: number
   limit?: number
 }

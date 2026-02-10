@@ -141,6 +141,7 @@ export interface AuthContextType {
   setUser: (user: User | null) => void;
   setProfile: (profile: UserProfile) => void;
   loading: boolean;
+  authInitialized: boolean; // ✅ NEW: True after first auth check completes
   signUpAdmin: (fullName: string, email: string, password: string, adminCode: string) => Promise<any>;
   signUpTenant: (firstName: string, lastName: string, email: string, password: string) => Promise<any>;
   signUpLandlord: (firstName: string, lastName: string, email: string, password: string) => Promise<any>;

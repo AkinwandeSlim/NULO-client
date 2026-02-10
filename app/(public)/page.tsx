@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { motion, Variants } from "framer-motion"
+import { useAuth } from "@/contexts/AuthContext"
 import { Footer } from "@/components/footer"
 import { 
   HeroSection, 
@@ -20,6 +21,9 @@ import { toast } from "sonner"
 // const NIGERIAN_CITIES = [...] 
 
 export default function HomePage() {
+  // ✅ CRITICAL: Get auth context for favorites
+  const { user, loading: authLoading } = useAuth()
+  
   const [location, setLocation] = useState("")
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])
   const [propertyType, setPropertyType] = useState("all")
@@ -44,6 +48,10 @@ export default function HomePage() {
   // ✅ IMPROVED: Featured properties from dedicated endpoint
   const [featuredProperties, setFeaturedProperties] = useState<any[]>([])
   const [loadingProperties, setLoadingProperties] = useState(true)
+
+  // ✅ CRITICAL: Favorites state for featured properties
+  const [favorites, setFavorites] = useState<string[]>([])
+  const [pendingFavorites, setPendingFavorites] = useState<Set<string>>(new Set())
 
   const locationInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -208,7 +216,7 @@ export default function HomePage() {
     fetchCities()
   }, [])
 
-  // ✅ IMPROVED: Fetch featured properties from dedicated endpoint
+  // ✅ IMPROVED: Fetch featured properties (vacant, recently added)
   useEffect(() => {
     const fetchFeaturedProperties = async () => {
       try {
@@ -216,7 +224,7 @@ export default function HomePage() {
         console.log('🌟 Fetching featured properties...')
         
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-        const response = await fetch(`${API_BASE_URL}/api/v1/properties/featured?limit=6`)
+        const response = await fetch(`${API_BASE_URL}/api/v1/properties/search?status=vacant&sort=newest&limit=6`)
         
         if (!response.ok) {
           throw new Error('Failed to fetch featured properties')
@@ -239,12 +247,8 @@ export default function HomePage() {
             sort: 'newest'
           })
           
-          // Prefer featured, fallback to newest
-          const featured = response.properties?.filter((p: any) => p.featured) || []
-          const toShow = featured.length > 0 ? featured : response.properties?.slice(0, 6) || []
-          
-          console.log('✅ Using fallback featured properties:', toShow.length)
-          setFeaturedProperties(toShow)
+          console.log('✅ Using fallback featured properties:', response.properties?.length || 0)
+          setFeaturedProperties(response.properties?.slice(0, 6) || [])
         } catch (fallbackError) {
           console.error('❌ Fallback also failed:', fallbackError)
           // Don't show error toast - silently fallback to empty
@@ -257,6 +261,100 @@ export default function HomePage() {
 
     fetchFeaturedProperties()
   }, [])
+
+  // ✅ CRITICAL: Load user's favorites on mount
+  useEffect(() => {
+    const loadFavorites = async () => {
+      // ✅ CRITICAL: Wait for auth to complete before loading favorites
+      if (authLoading) {
+        return
+      }
+
+      if (!user) {
+        // Silently clear favorites for unauthenticated users
+        setFavorites([])
+        return
+      }
+
+      // ✅ ADDITIONAL: Check if user has valid session
+      if (!user.id) {
+        console.warn('⚠️ [FAVORITES] User found but no valid ID, skipping favorites load')
+        setFavorites([])
+        return
+      }
+
+      try {
+        console.log('🔄 [FAVORITES] Auth confirmed, loading user favorites...')
+        const response = await propertiesAPI.getFavorites(1, 1000); // Load all favorites
+        const favoriteIds = (response.properties || []).map((fav: any) => fav.id);
+        console.log(`✅ [FAVORITES] Loaded ${favoriteIds.length} favorites`, favoriteIds)
+        setFavorites(favoriteIds)
+      } catch (error: any) {
+        // ✅ IMPROVED: Better error handling - don't log 401s as warnings
+        if (error.status === 401 || error.message?.includes('401')) {
+          console.log('ℹ️ [FAVORITES] User not authenticated for favorites, clearing list')
+        } else {
+          console.warn('⚠️ [FAVORITES] Failed to load favorites:', error)
+        }
+        // Don't block page load if favorites fail
+        setFavorites([])
+      }
+    }
+
+    loadFavorites()
+  }, [user, authLoading])
+
+  // ✅ CRITICAL: Handle favorite clicks with optimistic updates
+  const handleFavoriteClick = useCallback(async (propertyId: string, isFavorited: boolean) => {
+    // ✅ CRITICAL: Check auth is fully loaded before allowing favorite operations
+    if (authLoading) {
+      toast.info('Please wait while we verify your account...')
+      return
+    }
+
+    if (!user) {
+      toast.info('Please sign in to save favorites')
+      return
+    }
+
+    try {
+      // ✅ Check current favorite status
+      const isCurrentlyFavorited = favorites.includes(propertyId);
+      
+      // ✅ OPTIMISTIC UPDATE: Update UI immediately
+      const newFavorites = isCurrentlyFavorited
+        ? favorites.filter(id => id !== propertyId)
+        : [...favorites, propertyId];
+      
+      setFavorites(newFavorites);
+      setPendingFavorites(prev => new Set([...prev, propertyId]));
+      toast.success(isCurrentlyFavorited ? 'Removed from favorites' : 'Added to favorites');
+      
+      // ✅ Then sync with API in background
+      try {
+        const response = await propertiesAPI.toggleFavorite(propertyId, isCurrentlyFavorited);
+        console.log(`✅ [OPTIMISTIC] Confirmed favorite state for ${propertyId}`);
+        // UI is already updated, API confirmed it
+      } catch (error: any) {
+        // ❌ ROLLBACK: API failed, revert to previous state
+        console.error('❌ [OPTIMISTIC] Failed, rolling back:', error);
+        setFavorites(isCurrentlyFavorited ? [...favorites, propertyId] : favorites.filter(id => id !== propertyId));
+        toast.error('Failed to update favorite. Changes reverted.');
+      } finally {
+        // Remove from pending set
+        setPendingFavorites(prev => {
+          const next = new Set(prev);
+          next.delete(propertyId);
+          return next;
+        });
+      }
+    } catch (error: any) {
+      // ✅ Show error but don't affect properties display
+      const errorMsg = error.message || 'Failed to update favorite'
+      console.error('❌ Favorite toggle failed:', errorMsg)
+      toast.error(errorMsg)
+    }
+  }, [user, authLoading, favorites])
 
   const formatPrice = (value: number) => {
     if (value >= 1000000) return `₦${(value / 1000000).toFixed(1)}M`
@@ -343,6 +441,9 @@ export default function HomePage() {
               properties={featuredProperties}
               loading={loadingProperties}
               formatPrice={formatPrice}
+              favorites={favorites}
+              onFavorite={handleFavoriteClick}
+              isAuthLoading={authLoading}
             />
           </motion.div>
         )}

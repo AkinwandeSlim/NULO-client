@@ -92,6 +92,7 @@ export default function PropertyDetailPage() {
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false)
   const [propertyData, setPropertyData] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [shouldShowSkeleton, setShouldShowSkeleton] = useState(false) // ✅ NEW: Only show skeleton for slow fetches
   const [error, setError] = useState<string | null>(null)
   const [hasViewedVideo, setHasViewedVideo] = useState(false)
 
@@ -123,12 +124,21 @@ export default function PropertyDetailPage() {
       console.log('🔍 [PROPERTY DETAIL] Fetching property:', propertyId)
       setIsLoading(true)
       setError(null)
+      setShouldShowSkeleton(false) // ✅ Start without skeleton
+
+      // ✅ NEW: Show skeleton only if fetch takes longer than 200ms
+      // This prevents jarring loading flashes on fast networks
+      const skeletonTimeoutId = setTimeout(() => {
+        console.log('⏳ [PROPERTY DETAIL] Fetch taking longer than 200ms, showing skeleton')
+        setShouldShowSkeleton(true)
+      }, 200)
 
       // Add timeout to prevent infinite loading
       const timeoutId = setTimeout(() => {
         console.warn('⏰ [PROPERTY DETAIL] Loading timeout - forcing error state')
         setError('Loading timeout - please try again')
         setIsLoading(false)
+        setShouldShowSkeleton(false)
         toast.error('Loading timeout - please refresh the page')
       }, 30000) // 30 second timeout for API + token retrieval
 
@@ -164,8 +174,11 @@ export default function PropertyDetailPage() {
         setError(errorMessage)
         toast.error(errorMessage)
       } finally {
+        // ✅ NEW: Clear both timeouts and skeleton state
+        clearTimeout(skeletonTimeoutId)
         console.log('🏁 [PROPERTY DETAIL] Fetch completed, setting loading to false')
         setIsLoading(false)
+        setShouldShowSkeleton(false)
       }
     }
 
@@ -422,19 +435,14 @@ export default function PropertyDetailPage() {
   }
 
   // Show loading while checking auth or fetching property data
-  if (authLoading || isLoading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-4">
           <Loader2 className="h-12 w-12 animate-spin text-orange-500 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium mb-2">
-            {authLoading ? 'Verifying account...' : 'Loading property details...'}
-          </p>
-          <p className="text-slate-500 text-sm">
-            {authLoading ? 'Please wait while we verify your account' : 'Please wait while we fetch the property information'}
-          </p>
+          <p className="text-slate-600 font-medium mb-2">Verifying account...</p>
+          <p className="text-slate-500 text-sm">Please wait while we verify your account</p>
           
-          {/* Add a cancel button for better UX */}
           <Button 
             variant="outline" 
             className="mt-4"
@@ -442,6 +450,67 @@ export default function PropertyDetailPage() {
           >
             Back to Properties
           </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // ✅ IMPROVED: Show skeleton loaders ONLY for slower fetches (> 200ms)
+  // This provides better UX - fast networks show content immediately, slow networks see loading skeleton
+  if (isLoading && shouldShowSkeleton) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Skeleton Breadcrumb */}
+        <div className="bg-white border-b border-slate-200 sticky top-16 z-40">
+          <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-3">
+            <div className="flex items-center gap-2">
+              <div className="h-4 w-20 bg-slate-200 rounded animate-pulse" />
+              <div className="h-4 w-20 bg-slate-200 rounded animate-pulse" />
+              <div className="h-4 w-32 bg-slate-200 rounded animate-pulse" />
+            </div>
+          </div>
+        </div>
+
+        {/* Skeleton Gallery */}
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-1 md:gap-2 h-[300px] md:h-[500px] rounded-xl md:rounded-2xl overflow-hidden bg-slate-200 animate-pulse" />
+        </div>
+
+        {/* Skeleton Content */}
+        <div className="max-w-7xl mx-auto px-4 md:px-6 pb-8 md:pb-12">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8">
+            {/* Main Content Skeleton */}
+            <div className="lg:col-span-2 space-y-4">
+              {/* Title & Price Skeleton */}
+              <div className="bg-white rounded-lg p-6 space-y-4">
+                <div className="h-8 w-3/4 bg-slate-200 rounded animate-pulse" />
+                <div className="h-4 w-1/2 bg-slate-200 rounded animate-pulse" />
+                <div className="h-10 w-1/4 bg-orange-200 rounded animate-pulse" />
+              </div>
+
+              {/* Features Skeleton */}
+              <div className="bg-white rounded-lg p-6">
+                <div className="grid grid-cols-2 gap-4">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="h-12 bg-slate-200 rounded animate-pulse" />
+                  ))}
+                </div>
+              </div>
+
+              {/* Description Skeleton */}
+              <div className="bg-white rounded-lg p-6 space-y-3">
+                <div className="h-4 w-full bg-slate-200 rounded animate-pulse" />
+                <div className="h-4 w-5/6 bg-slate-200 rounded animate-pulse" />
+                <div className="h-4 w-4/6 bg-slate-200 rounded animate-pulse" />
+              </div>
+            </div>
+
+            {/* Sidebar Skeleton */}
+            <div className="space-y-4">
+              <div className="bg-white rounded-lg p-6 h-64 bg-slate-200 animate-pulse" />
+              <div className="bg-white rounded-lg p-6 h-40 bg-slate-200 animate-pulse" />
+            </div>
+          </div>
         </div>
       </div>
     )
