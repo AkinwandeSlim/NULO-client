@@ -175,7 +175,7 @@ export const propertiesAPI = {
       const cacheTtl = serverData.optimization?.client_cache_ttl || 300;
       
       // Only cache if we have results or if it's not a location search
-      const hasResults = serverData.data && serverData.data.length > 0;
+      const hasResults = serverData.properties && serverData.properties.length > 0;
       const hasLocationFilter = params.location && params.location.length > 0;
       const shouldCache = hasResults || !hasLocationFilter;
       
@@ -197,13 +197,13 @@ export const propertiesAPI = {
               try {
                 if (!nextParams) {
                   return {
+                    success: true,
                     properties: [],
                     pagination: {
-                      current_page: 1,
-                      total_pages: 1,
-                      total_count: 0,
-                      has_next: false,
-                      has_prev: false
+                      total: 0,
+                      page: 1,
+                      limit: 20,
+                      total_pages: 1
                     },
                     filters: {},
                     sorting: {}
@@ -212,13 +212,13 @@ export const propertiesAPI = {
                 return await propertiesAPI.search(nextParams, { skipCache: true });
               } catch {
                 return {
+                  success: true,
                   properties: [],
                   pagination: {
-                    current_page: nextParams.page || 1,
-                    total_pages: 1,
-                    total_count: 0,
-                    has_next: false,
-                    has_prev: false
+                    total: 0,
+                    page: 1,
+                    limit: nextParams.limit || 20,
+                    total_pages: 1
                   },
                   filters: {},
                   sorting: {}
@@ -241,23 +241,32 @@ export const propertiesAPI = {
       };
       
     } catch (error: any) {
-      // ✅ Check for cancellation first, don't log it as an error
+      // ✅ Check for cancellation first - these are expected, not errors
       if (axios.isCancel(error) || error.name === 'AbortError') {
-        throw new Error('Search cancelled');
+        const cancelError = new Error('Search cancelled') as any
+        cancelError.isCancelled = true
+        throw cancelError
       }
       
       // Only log actual errors, not cancellations
-      console.error('❌ [SEARCH ERROR]:', error.message);
+      console.error('❌ [SEARCH ERROR]:', error.message)
       
-      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-        throw new Error('Search timeout. Try fewer filters.');
+      // 🔄 Timeout: Could be transient, inform user
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        throw new Error('Search timed out. The server is taking too long. Please try again or refine your search.');
       }
       
-      if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND') {
-        throw new Error('Network error. Check your connection.');
+      // 🌐 Network issues: More helpful error messages
+      if (error.code === 'ECONNRESET') {
+        throw new Error('Connection lost. Please check your network and try again.');
       }
       
-      throw new Error(error.response?.data?.detail || 'Failed to search properties');
+      if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        throw new Error('Cannot reach the server. Please check your connection.');
+      }
+      
+      // Return specific backend error if available
+      throw new Error(error.response?.data?.detail || 'Failed to search properties. Please try again.');
     }
   },
 
@@ -549,16 +558,58 @@ export const propertiesAPI = {
    * Get user's favorited properties
    */
   getFavorites: async (page: number = 1, limit: number = 20): Promise<PropertySearchResponse> => {
-    try {
-      const response = await apiClient.get<PropertySearchResponse>('/api/v1/favorites', {
-        params: { page, limit }
-      });
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ [GET FAVORITES ERROR]:', error.message);
-      throw new Error('Failed to fetch favorites');
+    let lastError: any;
+    let retries = 2;
+    
+    while (retries >= 0) {
+      try {
+        // 🚀 PERFORMANCE: Use 15s timeout for favorites (accounts for DB queries)
+        const response = await apiClient.get<PropertySearchResponse>('/api/v1/favorites/', {
+          params: { page, limit },
+          timeout: 15000 // 15 seconds - enough for compound DB queries
+        });
+        
+        return response.data;
+      } catch (error: any) {
+        lastError = error;
+        console.error(`❌ [GET FAVORITES ERROR] (retry ${2 - retries}/2):`, error.message);
+        
+        // Handle non-retriable errors immediately
+        if (error.response?.status === 401) {
+          console.log('🔒 [FAVORITES] Unauthorized');
+          throw new Error('Unauthorized to fetch favorites');
+        }
+        
+        if (error.response?.status === 404) {
+          console.log('📭 [FAVORITES] Not found');
+          return {
+            success: true,
+            properties: [],
+            pagination: {
+              total: 0,
+              page: 1,
+              limit: 20,
+              total_pages: 1
+            }
+          };
+        }
+        
+        // For timeout errors, retry if we have retries left
+        if ((error.code === 'ECONNABORTED' || error.message?.includes('timeout')) && retries > 0) {
+          console.log(`⏱️ [FAVORITES] Timeout - retrying... (${retries} attempts left)`);
+          await new Promise(resolve => setTimeout(resolve, 500 * (2 - retries))); // Exponential backoff
+          retries--;
+          continue;
+        }
+        
+        // If we've exhausted retries or it's a different error, break out
+        break;
+      }
     }
+    
+    // If we get here, all retries failed or it was a non-retriable error
+    console.error(`❌ [FAVORITES] Final error after retries:`, lastError.message);
+    throw new Error(`Failed to fetch favorites: ${lastError.message}`);
   },
 
   /**

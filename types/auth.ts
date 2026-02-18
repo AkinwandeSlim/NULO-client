@@ -8,7 +8,7 @@ export interface User {
   id: string;
   email: string;
   phone_number: string | null;
-  password_hash: string | null;
+  password_hash?: string | null;
   full_name: string | null;
   avatar_url: string | null;
   trust_score: number | null;
@@ -148,7 +148,7 @@ export interface AuthContextType {
   signUpTenantWithGoogle: () => Promise<any>;
   signUpLandlordWithGoogle: () => Promise<any>;
   signIn: (email: string, password: string, callbackUrl?: string) => Promise<{ user: User; redirectPath: string }>;
-  signInWithGoogle: () => Promise<any>;
+  signInWithGoogle: (redirectUrl?: string) => Promise<any>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<any>;
   updateUserProfile: (updates: Partial<User>) => Promise<void>;
@@ -157,10 +157,5 @@ export interface AuthContextType {
   updateEmailVerification: () => Promise<void>;
   updatePhoneVerification: (phoneNumber: string) => Promise<void>;
   completeOnboarding: () => Promise<void>;
-  // Add notification properties
-  notifications: AppNotification[];
-  unreadCount: number;
-  fetchNotifications: () => Promise<void>;
-  markAsRead: (notificationId: string) => Promise<void>;
-  markAllAsRead: () => Promise<void>;
+
 }

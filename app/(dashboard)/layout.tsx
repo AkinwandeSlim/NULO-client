@@ -5,9 +5,10 @@ import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/AuthContext"
-import { useDashboard } from "@/contexts/DashboardContext"  // ← ADD
+import { useDashboard } from "@/contexts/DashboardContext"  
 import { toast } from "sonner"
 import { Navbar } from "@/components/navigation/Navbar"
+import { NotificationBadge } from "@/components/notifications/NotificationBadge"
 import {
   LayoutDashboard,
   Heart,
@@ -31,7 +32,8 @@ import {
   UserPlus,
   Edit,
   Trash2,
-  Eye
+  Eye,
+  Bell
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -48,6 +50,7 @@ const tenantSidebarLinks = [
   { href: "/tenant/favorites", label: "Saved Properties", icon: Heart },
   { href: "/tenant/viewings", label: "Viewing Requests", icon: Calendar },
   { href: "/tenant/messages", label: "Messages", icon: MessageSquare },
+  { href: "/tenant/notifications", label: "Notifications", icon: Bell },
   { href: "/tenant/profile", label: "Profile", icon: User },
 ]
 

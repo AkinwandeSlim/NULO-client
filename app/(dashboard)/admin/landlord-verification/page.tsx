@@ -172,28 +172,51 @@ export default function LandlordVerificationPage() {
         }
       }
       
-      // Fetch fresh data
-      const [verificationsData, statsData] = await Promise.all([
-        verificationAPI.getAllLandlordVerifications(),
-        verificationAPI.getVerificationStats()
-      ])
+      // Fetch fresh data WITH RETRY FOR 401 ERRORS
+      let retries = 0;
+      const maxRetries = 2;
       
-      if (!isMountedRef.current) return
-      
-      // Update state
-      setAllVerifications(verificationsData.verifications || [])
-      setStats(statsData)
-      setIsLoading(false)
-      hasInitialLoadRef.current = true
-      
-      // Save to cache
-      saveToCache(CACHE_KEY, verificationsData.verifications || [])
-      saveToCache(CACHE_STATS_KEY, statsData)
-      
-      console.log('✅ [VERIFICATION PAGE] Data loaded:', verificationsData.verifications?.length || 0)
-      
-      if (hasCacheData) {
-        console.log('🔄 [CACHE] Background refresh completed')
+      while (retries < maxRetries) {
+        try {
+          const [verificationsData, statsData] = await Promise.all([
+            verificationAPI.getAllLandlordVerifications(),
+            verificationAPI.getVerificationStats()
+          ])
+          
+          if (!isMountedRef.current) return
+          
+          // Update state
+          setAllVerifications(verificationsData.verifications || [])
+          setStats(statsData)
+          setIsLoading(false)
+          hasInitialLoadRef.current = true
+          
+          // Save to cache
+          saveToCache(CACHE_KEY, verificationsData.verifications || [])
+          saveToCache(CACHE_STATS_KEY, statsData)
+          
+          console.log('✅ [VERIFICATION PAGE] Data loaded:', verificationsData.verifications?.length || 0)
+          
+          if (hasCacheData) {
+            console.log('🔄 [CACHE] Background refresh completed')
+          }
+          
+          // Success - break retry loop
+          break;
+        } catch (apiError: any) {
+          retries++;
+          console.warn(`⚠️ [VERIFICATION PAGE] Attempt ${retries}/${maxRetries} failed:`, apiError.message);
+          
+          // If it's a 401 and we have retries left, wait and try again
+          if (apiError.response?.status === 401 && retries < maxRetries) {
+            console.log('🔄 [VERIFICATION PAGE] Retrying after token refresh...');
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+            continue;
+          }
+          
+          // If all retries exhausted, throw error
+          throw apiError;
+        }
       }
       
     } catch (err: any) {
@@ -282,7 +305,10 @@ export default function LandlordVerificationPage() {
       setDataReady(true)
       isMountedRef.current = true
       
-      fetchVerifications(true, true)
+      // ⏳ Wait a brief moment to ensure token is available in localStorage
+      const loadTimer = setTimeout(() => {
+        fetchVerifications(true, true)
+      }, 100);
       
       refreshIntervalRef.current = setInterval(() => {
         console.log('🔄 [AUTO-REFRESH] Background refresh...')
@@ -291,6 +317,7 @@ export default function LandlordVerificationPage() {
       
       return () => {
         isMountedRef.current = false
+        clearTimeout(loadTimer)
         if (refreshIntervalRef.current) {
           clearInterval(refreshIntervalRef.current)
         }

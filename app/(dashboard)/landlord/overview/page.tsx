@@ -41,6 +41,7 @@ export default function LandlordDashboard() {
   const pathname = usePathname()
   const { user, userProfile } = useAuth()
   const [mounted, setMounted] = useState(false)
+  const [loadingTooLong, setLoadingTooLong] = useState(false)
   
   // ✅ Use context hook for cached landlord data
   const { 
@@ -50,6 +51,17 @@ export default function LandlordDashboard() {
     fetchLandlordDashboard,
     invalidateLandlordCache
   } = useLandlordDashboard()
+
+  // 🚀 OPTIMIZATION: Show "taking too long" message after 8 seconds to help user decide to retry
+  useEffect(() => {
+    if (loading && !loadingTooLong) {
+      const timer = setTimeout(() => {
+        setLoadingTooLong(true)
+      }, 8000) // Show after 8 seconds (before 15s timeout)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [loading, loadingTooLong])
 
   // Handle refresh
   const handleRefresh = async () => {
@@ -67,14 +79,12 @@ export default function LandlordDashboard() {
     setMounted(true)
   }, [])
 
-  // Fetch landlord data on mount
+  // Fetch landlord data on mount - only once
   useEffect(() => {
-    if (mounted && user?.user_type === 'landlord') {
-      if (!landlordData) {
-        fetchLandlordDashboard()
-      }
+    if (mounted && user?.user_type === 'landlord' && !landlordData) {
+      fetchLandlordDashboard()
     }
-  }, [mounted, user, landlordData, fetchLandlordDashboard])
+  }, [mounted, user?.user_type, landlordData?.profile?.id]) // Changed to only trigger when needed
 
   // Handle notification click
   const handleNotificationClick = async (notification: Notification) => {
@@ -88,13 +98,14 @@ export default function LandlordDashboard() {
       }
     }
     
-    if (notification.action_url) {
-      router.push(notification.action_url)
+    if (notification.link) {
+      router.push(notification.link)
     }
   }
 
   // Get verification status badge
-  const getVerificationBadge = (profile: LandlordProfile) => {
+  const getVerificationBadge = (profile: LandlordProfile | null | undefined) => {
+    if (!profile) return null
     const color = getVerificationStatusColor(profile.verification_status)
     const status = profile.verification_status.charAt(0).toUpperCase() + profile.verification_status.slice(1)
     
@@ -162,7 +173,7 @@ export default function LandlordDashboard() {
               </div>
               
               <div className="flex items-center gap-2">
-                {getVerificationBadge(profile)}
+                {getVerificationBadge(landlordData?.profile)}
               </div>
             </div>
           </CardContent>
@@ -201,7 +212,7 @@ export default function LandlordDashboard() {
               </div>
               
               <div className="flex items-center gap-2">
-                {getVerificationBadge(profile)}
+                {getVerificationBadge(landlordData?.profile)}
               </div>
             </div>
           </CardContent>
@@ -362,6 +373,33 @@ export default function LandlordDashboard() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white p-6">
         <div className="max-w-7xl mx-auto">
+          {loadingTooLong && (
+            <Card className="mb-6 border-orange-200 bg-orange-50">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-orange-900 mb-1">
+                      Dashboard is taking longer than usual
+                    </h3>
+                    <p className="text-orange-700 text-sm mb-3">
+                      The server seems to be slow. This usually resolves in a few seconds. You can try refreshing if it doesn't load within 15 seconds.
+                    </p>
+                    <Button 
+                      onClick={handleRefresh}
+                      size="sm"
+                      className="bg-orange-500 hover:bg-orange-600"
+                      disabled={refreshing}
+                    >
+                      <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                      Retry Now
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
           <div className="animate-pulse space-y-6">
             <div className="h-8 bg-slate-200 rounded w-1/3"></div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -384,20 +422,38 @@ export default function LandlordDashboard() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-4">
-          <AlertCircle className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Dashboard Error</h2>
-          <p className="text-slate-600 mb-6">Unable to load dashboard data</p>
-          <Button onClick={handleRefresh} className="bg-orange-500 hover:bg-orange-600">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Try Again
-          </Button>
+          <AlertCircle className="h-16 w-16 text-orange-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Dashboard Unavailable</h2>
+          <p className="text-slate-600 mb-6">
+            The dashboard is currently unavailable. This could be due to server slowness or a temporary issue.
+          </p>
+          <div className="space-y-3">
+            <Button 
+              onClick={handleRefresh} 
+              className="w-full bg-orange-500 hover:bg-orange-600"
+              disabled={refreshing}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Loading...' : 'Try Again'}
+            </Button>
+            <Link href="/" className="block">
+              <Button variant="outline" className="w-full border-orange-200 text-orange-700 hover:bg-orange-50">
+                Back to Home
+              </Button>
+            </Link>
+          </div>
+          <p className="text-xs text-slate-500 mt-4">
+            If the problem persists, please contact support.
+          </p>
         </div>
       </div>
     )
   }
 
-  const { profile, onboarding, stats, properties = [], recentActivity = [], notifications = [] } = landlordData
-  const isVerified = isLandlordVerified(profile)
+  // const { profile, onboarding, stats, properties = [], recentActivity = [], notifications = [] } = landlordData
+  const profile = landlordData?.profile || null
+  const { onboarding, stats, properties = [], recentActivity = [], notifications = [] } = landlordData || {}
+  const isVerified = profile ? isLandlordVerified(profile) : false
   const hasCompletedOnboarding = onboarding ? isOnboardingCompleted(onboarding) : false
 
   return (

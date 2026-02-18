@@ -63,17 +63,26 @@ export default function AuthCallback() {
           const userType = session.user.user_metadata?.user_type || 'tenant'
           console.log('👤 User type detected:', userType)
           
-          // Check for custom redirect
-          const customRedirect = searchParams.get('redirect_to')
+          // ✅ CRITICAL: Client-side fallback to check cookie for redirect path
+          let effectiveRedirect: string | null = null;
+          
+          // Try to read from localStorage (might have been set during signup flow)
+          if (typeof window !== 'undefined') {
+            effectiveRedirect = localStorage.getItem('signup_callback_url');
+            if (effectiveRedirect) {
+              console.log('📍 [CALLBACK PAGE] Found redirect in localStorage:', effectiveRedirect);
+              localStorage.removeItem('signup_callback_url'); // Clean up
+            }
+          }
           
           // Determine redirect based on priority:
-          // 1. Custom redirect (property detail page)
+          // 1. Custom redirect (from localStorage or OAuth)
           // 2. User type default
           let redirectUrl = '/properties' // default
           
-          if (customRedirect) {
-            redirectUrl = decodeURIComponent(customRedirect)
-            console.log('🔀 Using custom redirect:', redirectUrl)
+          if (effectiveRedirect) {
+            redirectUrl = decodeURIComponent(effectiveRedirect)
+            console.log('🔀 Using localStorage redirect:', redirectUrl)
           } else if (userType === 'admin') {
             redirectUrl = '/admin'
           } else if (userType === 'landlord') {

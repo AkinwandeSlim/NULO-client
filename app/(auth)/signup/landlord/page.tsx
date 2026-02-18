@@ -5,14 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSignupCallbackUrl } from "@/hooks/useSignupCallbackUrl"
+import { checkEmailExists } from "@/lib/auth-check"
+import { EmailExistsModal } from "@/components/auth/EmailExistsModal"
 import { toast } from "sonner"
 import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, Loader2, CheckCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-
-
 
 export default function LandlordSignupPage() {
   const router = useRouter()
@@ -22,6 +22,11 @@ export default function LandlordSignupPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  
+  // Email exists modal state
+  const [showEmailExistsModal, setShowEmailExistsModal] = useState(false)
+  const [existingEmail, setExistingEmail] = useState("")
+  const [existingUserType, setExistingUserType] = useState<'landlord' | 'tenant' | 'admin'>('tenant')
   
   // ✅ Preserve callback URL if coming from property detail page
   const redirectParam = searchParams.get('redirect_to')
@@ -100,6 +105,18 @@ export default function LandlordSignupPage() {
     console.log('====================================')
 
     try {
+      // ✅ NEW: Check if email already exists
+      const emailCheck = await checkEmailExists(formData.email.trim())
+      
+      if (emailCheck.exists && emailCheck.userType) {
+        console.log('⚠️ Email already exists as:', emailCheck.userType)
+        setExistingEmail(formData.email.trim())
+        setExistingUserType(emailCheck.userType)
+        setShowEmailExistsModal(true)
+        setIsLoading(false)
+        return
+      }
+
       const authData = await signUpLandlord(
         formData.firstName.trim(),
         formData.lastName.trim(),
@@ -144,10 +161,38 @@ export default function LandlordSignupPage() {
     }
   }
 
+  const handleSignInAsExisting = async () => {
+    try {
+      setIsLoading(true)
+      // Redirect to signin with pre-filled email
+      router.push(`/signin?email=${encodeURIComponent(existingEmail)}&from=signup`)
+    } catch (error) {
+      console.error('Error redirecting to signin:', error)
+      toast.error('Failed to redirect to sign in')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleTryDifferentEmail = () => {
+    setShowEmailExistsModal(false)
+    setFormData(prev => ({ ...prev, email: "" }))
+  }
+
 
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden bg-gradient-to-br from-slate-50 via-stone-50 to-orange-50">
+      {/* Email Exists Modal */}
+      <EmailExistsModal
+        isOpen={showEmailExistsModal}
+        email={existingEmail}
+        existingUserType={existingUserType}
+        onSignIn={handleSignInAsExisting}
+        onTryDifferent={handleTryDifferentEmail}
+        isLoading={isLoading}
+      />
+
       {/* Background Elements */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-20 left-20 w-64 h-64 bg-orange-200/30 rounded-full blur-3xl animate-pulse"></div>
@@ -382,7 +427,7 @@ export default function LandlordSignupPage() {
               <p className="text-slate-600">
                 Already have an account?{" "}
                 <Link 
-                  href="/signin" 
+                  href={redirectParam ? `/signin?redirect_to=${encodeURIComponent(redirectParam)}` : '/signin'} 
                   className="text-orange-600 hover:text-orange-700 font-semibold transition-colors duration-200 hover:underline"
                 >
                   Sign in here

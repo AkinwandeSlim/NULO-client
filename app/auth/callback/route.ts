@@ -40,8 +40,10 @@ export async function GET(request: NextRequest) {
   const user_type = requestUrl.searchParams.get('user_type') || 'tenant'
 
   console.log('🔄 [CALLBACK] Processing OAuth callback')
+  console.log('📝 [CALLBACK] Full URL:', request.url)
   console.log('📝 [CALLBACK] Code:', code?.substring(0, 20) + '...')
-  console.log('📝 [CALLBACK] User type:', user_type)
+  console.log('📝 [CALLBACK] User type from URL:', requestUrl.searchParams.get('user_type'))
+  console.log('📝 [CALLBACK] User type (final):', user_type)
   console.log('🌍 [CALLBACK] Origin:', requestUrl.origin)
 
   // ✅ Handle email verification errors
@@ -141,16 +143,41 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ [CALLBACK] Session created for:', data.session.user.id)
 
-    // Get user_type from URL parameter first (OAuth), then metadata
+    // ✅ NEW: Read user_type from multiple sources (prioritized)
+    let cookieUserType: string | null = null
+    try {
+      const cookieHeader = request.headers.get('cookie') || ''
+      console.log('📝 [CALLBACK] Raw cookie header:', cookieHeader.substring(0, 100) + (cookieHeader.length > 100 ? '...' : ''))
+      
+      // Try to find nulo_user_type cookie
+      const userTypeCookieMatch = cookieHeader.match(/nulo_user_type=([^;]+)/)
+      if (userTypeCookieMatch) {
+        cookieUserType = decodeURIComponent(userTypeCookieMatch[1])
+        console.log('🍪 [CALLBACK] ✅ Found user_type in cookie:', cookieUserType)
+      } else {
+        console.log('🍪 [CALLBACK] ❌ No nulo_user_type cookie found in headers')
+        console.log('🍪 [CALLBACK] Cookies present:', cookieHeader.split(';').map(c => c.trim().split('=')[0]).join(', '))
+      }
+    } catch (cookieError) {
+      console.warn('⚠️ [CALLBACK] Error reading user_type cookie:', cookieError)
+    }
+
+    // Get user_type from URL parameter and metadata as fallbacks
     const urlUserType = requestUrl.searchParams.get('user_type')
     const authenticatedUserType = data.session.user.user_metadata?.user_type
   
-    console.log('📋 [CALLBACK] URL user_type (OAuth):', urlUserType)
-    console.log('📋 [CALLBACK] Metadata user_type (manual):', authenticatedUserType)
+    console.log('📋 [CALLBACK] User type sources found:')
+    console.log('   🍪 Cookie (PREFERRED):', cookieUserType || 'NOT FOUND')
+    console.log('   📮 URL param (FALLBACK):', urlUserType || 'NOT FOUND')
+    console.log('   📊 Metadata (FALLBACK):', authenticatedUserType || 'NOT FOUND')
   
-    // Priority: URL param (OAuth) > metadata (manual) > default to tenant
-    const finalUserType = urlUserType || authenticatedUserType || 'tenant'
-    console.log('✅ [CALLBACK] Final user_type to use:', finalUserType)
+    // Priority: Cookie (OAuth) > URL param (OAuth) > metadata (manual) > default to tenant
+    let finalUserType = cookieUserType || urlUserType || authenticatedUserType || 'tenant'
+    console.log('✅ [CALLBACK] Final user_type determined:', finalUserType)
+    
+    if (!cookieUserType && !urlUserType && !authenticatedUserType) {
+      console.warn('⚠️ [CALLBACK] WARNING: Falling back to default tenant (no cookie, URL param, or metadata found)')
+    }
 
     // IMPORTANT: Only update if metadata is missing
     if (!data.session.user.user_metadata?.user_type) {
@@ -166,6 +193,33 @@ export async function GET(request: NextRequest) {
       }
     } else {
       console.log('✅ [CALLBACK] user_type already in metadata:', data.session.user.user_metadata.user_type)
+    }
+
+    // ✅ NEW: Check if user with this email already exists (duplicate email handling)
+    console.log('🔍 [CALLBACK] Checking if user with email already exists...')
+    const { data: existingUser, error: existingUserError } = await supabase
+      .from('users')
+      .select('id, user_type, email')
+      .eq('email', data.session.user.email?.toLowerCase())
+      .single()
+    
+    if (existingUser && existingUser.id !== data.session.user.id) {
+      // Email exists for a different user (duplicate email scenario)
+      console.warn('⚠️ [CALLBACK] Email already exists for different user - this is a duplicate email signup!')
+      console.warn('   Existing user:', existingUser.id, 'Type:', existingUser.user_type)
+      console.warn('   New user:', data.session.user.id, 'Type:', finalUserType)
+      
+      // Just sign in as the existing user instead of creating a new one
+      // This mirrors Airbnb/Spleet behavior
+      console.log('✅ [CALLBACK] Signing in existing user with same email')
+      // The session is already created for the new Auth user, but we'll keep them signed in
+      // Their user_type will be based on their existing record
+      finalUserType = existingUser.user_type as 'landlord' | 'tenant'
+      console.log('📝 [CALLBACK] Updated finalUserType to existing user type:', finalUserType)
+    } else if (existingUserError && existingUserError.code !== 'PGRST116') {
+      console.warn('⚠️ [CALLBACK] Error checking existing user:', existingUserError.message)
+    } else {
+      console.log('✅ [CALLBACK] No existing user found with this email')
     }
 
     // Wait for database trigger to create user record
@@ -200,15 +254,27 @@ export async function GET(request: NextRequest) {
     }
 
     // Determine redirect destination
-    // Check for custom redirect target (from signup pages, e.g., property detail page)
-    const customRedirectTo = requestUrl.searchParams.get('redirect_to')
+    // ✅ CRITICAL: Read redirect path from cookie set by OAuth client BEFORE redirect
+    let customRedirectTo: string | null = null;
+    
+    try {
+      const cookieHeader = request.headers.get('cookie') || '';
+      // Look for our custom cookie with the path to redirect to
+      const redirectCookieMatch = cookieHeader.match(/nulo_redirect_path=([^;]+)/);
+      if (redirectCookieMatch) {
+        customRedirectTo = decodeURIComponent(redirectCookieMatch[1]);
+        console.log('🍪 [CALLBACK] Found redirect path in cookie:', customRedirectTo);
+      }
+    } catch (cookieError) {
+      console.warn('⚠️ [CALLBACK] Error reading cookie:', cookieError);
+    }
     
     let redirectTo = '/properties' // default fallback
     
     if (customRedirectTo) {
       // Use custom redirect if provided (e.g., property detail page)
-      redirectTo = decodeURIComponent(customRedirectTo)
-      console.log('🔀 [CALLBACK] Using custom redirect to:', redirectTo)
+      redirectTo = customRedirectTo
+      console.log('🔀 [CALLBACK] Using custom redirect from cookie:', redirectTo)
     } else if (finalUserType === 'landlord') {
       redirectTo = '/onboarding/landlord/step-1'
       console.log('🏠 [CALLBACK] Redirecting landlord to onboarding...')
@@ -218,13 +284,17 @@ export async function GET(request: NextRequest) {
         admin: '/admin',
       }
       redirectTo = redirectMap[finalUserType] || '/properties'
-      console.log('👤 [CALLBACK] Redirecting to:', redirectTo)
+      console.log('👤 [CALLBACK] Redirecting to default:', redirectTo)
     }
 
     console.log('🔀 [CALLBACK] Final redirect to:', redirectTo)
 
     // Create response with redirect
     const response = NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
+    
+    // ✅ CRITICAL: Clear the temporary cookies after use
+    response.cookies.delete('nulo_redirect_path')
+    response.cookies.delete('nulo_user_type')
     
     // Optional: Add security headers
     response.headers.set('X-Robots-Tag', 'noindex')
@@ -239,6 +309,7 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
 
 
 

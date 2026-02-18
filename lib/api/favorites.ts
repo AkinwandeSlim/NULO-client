@@ -20,7 +20,7 @@ export const favoritesAPI = {
    * Get all favorites for the current user
    */
   getAll: async (): Promise<FavoritesResponse> => {
-    const response = await apiClient.get<FavoritesResponse>('/api/v1/favorites')
+    const response = await apiClient.get<FavoritesResponse>('/api/v1/favorites/')
     return response.data
   },
 
@@ -28,7 +28,7 @@ export const favoritesAPI = {
    * Add a property to favorites
    */
   add: async (propertyId: string): Promise<{ success: boolean; message: string }> => {
-    const response = await apiClient.post('/api/v1/favorites', {
+    const response = await apiClient.post('/api/v1/favorites/', {
       property_id: propertyId
     })
     return response.data
@@ -38,7 +38,7 @@ export const favoritesAPI = {
    * Remove a property from favorites
    */
   remove: async (propertyId: string): Promise<{ success: boolean; message: string }> => {
-    const response = await apiClient.delete(`/api/v1/favorites/${propertyId}`)
+    const response = await apiClient.delete(`/api/v1/favorites/${propertyId}/`)
     return response.data
   },
 
@@ -46,7 +46,7 @@ export const favoritesAPI = {
    * Check if a property is favorited
    */
   check: async (propertyId: string): Promise<{ is_favorite: boolean }> => {
-    const response = await apiClient.get(`/api/v1/favorites/check/${propertyId}`)
+    const response = await apiClient.get(`/api/v1/favorites/check/${propertyId}/`)
     return response.data
   }
 }

@@ -15,6 +15,7 @@ import {
   FeaturedPropertiesSection
 } from "@/components/home"
 import { propertiesAPI } from "@/lib/api/properties"
+import { favoritesAPI } from "@/lib/api/favorites"
 import { toast } from "sonner"
 
 // ✅ REMOVED: Hardcoded cities - now fetched from API
@@ -285,8 +286,8 @@ export default function HomePage() {
 
       try {
         console.log('🔄 [FAVORITES] Auth confirmed, loading user favorites...')
-        const response = await propertiesAPI.getFavorites(1, 1000); // Load all favorites
-        const favoriteIds = (response.properties || []).map((fav: any) => fav.id);
+        const response = await favoritesAPI.getAll() // Use correct favoritesAPI with trailing slash
+        const favoriteIds = (response.favorites || []).map((fav: any) => fav.property_id);
         console.log(`✅ [FAVORITES] Loaded ${favoriteIds.length} favorites`, favoriteIds)
         setFavorites(favoriteIds)
       } catch (error: any) {

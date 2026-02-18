@@ -13,11 +13,19 @@ import { createClient } from '@/utils/supabase/client'
 export default function SignInPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get('callbackUrl') || '/properties'
+  // ✅ NEW: Support both 'redirect_to' (from property detail) and 'callbackUrl' (legacy)
+  // Also check localStorage in case redirect_to was stored during signup flow
+  const redirectFromUrl = searchParams.get('redirect_to') || searchParams.get('callbackUrl')
+  const redirectFromStorage = typeof window !== 'undefined' ? localStorage.getItem('signup_callback_url') : null
+  const callbackUrl = redirectFromUrl || redirectFromStorage || '/properties'
   const error = searchParams.get('error')
   const errorMessage = searchParams.get('message')
   const { signIn, signInWithGoogle, loading, user } = useAuth()
   const supabase = createClient()
+  
+  console.log('🔐 [SIGNIN] Loaded with redirect_to from URL:', redirectFromUrl)
+  console.log('🔐 [SIGNIN] Loaded with redirect_to from storage:', redirectFromStorage)
+  console.log('🔐 [SIGNIN] Using callback URL:', callbackUrl)
   
   const [formData, setFormData] = useState({
     email: "",
@@ -143,8 +151,9 @@ export default function SignInPage() {
 
   const handleGoogleSignIn = async () => {
     try {
-      // For Google sign-in, we'll handle redirection in callback
-      await signInWithGoogle()
+      console.log('🔐 [SIGNIN] Google sign-in with redirect_to:', callbackUrl)
+      // ✅ NEW: Pass callbackUrl to signInWithGoogle so it can be preserved
+      await signInWithGoogle(callbackUrl)
     } catch (error: any) {
       setApiError(error.message || 'Google sign-in failed')
       toast.error('Google Sign-In Failed', {

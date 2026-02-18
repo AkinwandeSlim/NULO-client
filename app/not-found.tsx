@@ -1,13 +1,20 @@
 "use client"
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Home, Search, ArrowLeft, Hammer, Wrench, Construction } from 'lucide-react'
 
 export default function NotFound() {
+  const [errorId, setErrorId] = useState('N/A')
+
   useEffect(() => {
+    // Set error ID only on client side to prevent hydration mismatch
+    if (typeof window !== 'undefined') {
+      setErrorId(btoa(window.location.pathname).slice(0, 8))
+    }
+    
     // Log 404 errors for monitoring
     console.log('404 Page Not Found:', {
       url: window.location.href,
@@ -151,7 +158,7 @@ export default function NotFound() {
             If you believe this is an error, please contact our support team
           </p>
           <p className="text-xs text-slate-400">
-            Error ID: {typeof window !== 'undefined' ? btoa(window.location.pathname).slice(0, 8) : 'N/A'}
+            Error ID: {errorId}
           </p>
         </div>
       </div>

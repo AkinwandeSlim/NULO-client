@@ -130,6 +130,7 @@ export function SearchBar({
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [filteredSuggestions, setFilteredSuggestions] = useState<LocationSuggestion[]>([])
   const [activeIndex, setActiveIndex] = useState<number>(-1)
+  const [dropdownPosition, setDropdownPosition] = useState<'bottom' | 'top'>('bottom')
   
   const suggestionsId = 'search-suggestions'
   const inputId = 'search-location-input'
@@ -140,7 +141,7 @@ export function SearchBar({
   const [minSize, setMinSize] = useState<string>('')
   const [selectedPriceRange, setSelectedPriceRange] = useState<string>('custom')
 
-  // ✅ ENHANCED: Fetch locations from new locations API
+  // ✅ ENHANCED: Show more cities by default and ensure good visibility
   useEffect(() => {
     const fetchPopularLocations = async () => {
       try {
@@ -157,7 +158,7 @@ export function SearchBar({
         }
         
         const selectedState = stateMap[defaultCity] || 'Lagos'
-        const endpoint = `${API_BASE_URL}/api/locations/cities?state=${encodeURIComponent(selectedState)}`
+        const endpoint = `${API_BASE_URL}/api/locations/cities?state=${encodeURIComponent(selectedState)}&limit=10`
         
         console.log(`📍 Fetching cities from: ${endpoint}`)
         
@@ -179,14 +180,16 @@ export function SearchBar({
           throw new Error('Invalid response format from API')
         }
         
-        // ✅ Transform API cities to our format
-        const transformedLocations: LocationSuggestion[] = data.cities.map((city: any) => ({
-          location: city.name,
-          state: data.state_code,
-          country: 'Nigeria',
-          property_count: 0,
-          display_name: `${city.name}, ${data.state_code}`
-        }))
+        // ✅ Transform API cities to our format and limit to top 8 for better visibility
+        const transformedLocations: LocationSuggestion[] = data.cities
+          .slice(0, 8)
+          .map((city: any) => ({
+            location: city.name,
+            state: data.state_code,
+            country: 'Nigeria',
+            property_count: 0,
+            display_name: `${city.name}, ${data.state_code}`
+          }))
         
         setPopularLocations(transformedLocations)
         setFilteredSuggestions(transformedLocations)
@@ -195,8 +198,8 @@ export function SearchBar({
       } catch (error) {
         console.error('❌ Failed to fetch locations:', error)
         
-        // ✅ Fallback to hardcoded city locations
-        const fallbackLocations = CITY_LOCATIONS[defaultCity] || CITY_LOCATIONS['default']
+        // ✅ Fallback to hardcoded city locations - show top 6 for better UX
+        const fallbackLocations = (CITY_LOCATIONS[defaultCity] || CITY_LOCATIONS['default']).slice(0, 6)
         setPopularLocations(fallbackLocations)
         setFilteredSuggestions(fallbackLocations)
         console.log(`📍 Using fallback locations for: ${defaultCity}`)
@@ -207,6 +210,14 @@ export function SearchBar({
 
     fetchPopularLocations()
   }, [defaultCity])
+
+  // ✅ ENHANCED: Auto-show suggestions when locations are loaded for better UX
+  useEffect(() => {
+    if (popularLocations.length > 0 && !location) {
+      // Small delay to ensure proper positioning
+      setTimeout(() => setShowSuggestions(true), 100)
+    }
+  }, [popularLocations, location])
 
   // Filter suggestions based on input
   useEffect(() => {
@@ -331,7 +342,15 @@ export function SearchBar({
   }, [])
 
   return (
-    <div className="relative max-w-4xl mx-auto">
+    <div className="relative max-w-5xl mx-auto">
+      {/* Backdrop when dropdown is shown - REMOVED to prevent blur */}
+      {/* {showSuggestions && (
+        <div 
+          className="fixed inset-0 bg-black/5 backdrop-blur-sm z-[50]" 
+          onClick={() => setShowSuggestions(false)}
+          aria-hidden="true"
+        />
+      )} */}
       {/* ✅ NEW: Error Banner */}
       {locationError && (
         <div className="mb-3 p-3 bg-orange-50 border border-orange-200 rounded-lg flex items-start gap-2">
@@ -344,17 +363,17 @@ export function SearchBar({
         </div>
       )}
 
-      <Card className="relative bg-white backdrop-blur-sm border-0 rounded-3xl shadow-2xl overflow-visible">
+      <Card className="relative bg-white backdrop-blur-sm border-0 rounded-2xl shadow-xl overflow-visible transform scale-100">
         
       <CardContent className="relative p-3">
         <div className="flex flex-col md:flex-row gap-2">
           {/* Location Input */}
           <div className="flex-1 relative group">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10">
               {loadingLocations ? (
-                <Loader2 className="h-5 w-5 text-orange-500 animate-spin" />
+                <Loader2 className="h-4 w-4 text-orange-500 animate-spin" />
               ) : (
-                <MapPin className="h-5 w-5 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+                <MapPin className="h-4 w-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
               )}
             </div>
             
@@ -370,11 +389,40 @@ export function SearchBar({
               type="text"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 250)}
+              onFocus={() => {
+                setShowSuggestions(true)
+                // Smart positioning based on available space
+                setTimeout(() => {
+                  const input = document.getElementById(inputId)
+                  const dropdown = document.getElementById(suggestionsId)
+                  
+                  if (input && dropdown) {
+                    const inputRect = input.getBoundingClientRect()
+                    const viewportHeight = window.innerHeight
+                    const spaceBelow = viewportHeight - inputRect.bottom
+                    const spaceAbove = inputRect.top
+                    
+                    // Show above if not enough space below
+                    if (spaceBelow < 200 && spaceAbove > 200) {
+                      setDropdownPosition('top')
+                      dropdown.style.top = 'auto'
+                      dropdown.style.bottom = '100%'
+                      dropdown.style.marginBottom = '12px'
+                      dropdown.style.marginTop = '0'
+                    } else {
+                      setDropdownPosition('bottom')
+                      dropdown.style.top = '100%'
+                      dropdown.style.bottom = 'auto'
+                      dropdown.style.marginTop = '12px'
+                      dropdown.style.marginBottom = '0'
+                    }
+                  }
+                }, 0)
+              }}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 300)}
               onKeyDown={handleKeyDown}
               placeholder="City, neighborhood, or address"
-              className="w-full h-14 pl-12 pr-10 rounded-xl border-0 bg-slate-50 text-slate-900 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium text-sm"
+              className="w-full h-12 pl-10 pr-8 rounded-lg border-0 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium text-sm"
               autoComplete="off"
               aria-label="Search location"
               disabled={loadingLocations}
@@ -398,13 +446,21 @@ export function SearchBar({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-200 z-[100]"
+                  className="absolute left-0 right-0 bg-white rounded-xl shadow-2xl border border-slate-200 z-[100]"
                   id={suggestionsId}
                   role="listbox"
                   ref={suggestionsRef}
+                  style={{
+                    top: dropdownPosition === 'bottom' ? '100%' : 'auto',
+                    bottom: dropdownPosition === 'top' ? '100%' : 'auto',
+                    marginTop: dropdownPosition === 'bottom' ? '12px' : '0',
+                    marginBottom: dropdownPosition === 'top' ? '12px' : '0',
+                    maxHeight: '320px',
+                    minWidth: '100%'
+                  }}
                 >
-                  <div className="p-2 max-h-80 overflow-y-auto">
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wide px-3 py-2">
+                  <div className="p-4 overflow-y-auto" style={{ maxHeight: '280px' }}>
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wide px-3 py-2 sticky top-0 bg-white z-10 border-b border-slate-100">
                       {location.trim() ? 'Matching Locations' : 'Popular Locations'}
                     </div>
                     {filteredSuggestions.map((loc, index) => (
@@ -451,7 +507,15 @@ export function SearchBar({
             </AnimatePresence>
 
             {showSuggestions && location.trim() && filteredSuggestions.length === 0 && !loadingLocations && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-[100]">
+              <div className="absolute left-0 right-0 bg-white rounded-xl shadow-2xl border border-slate-200 p-4 z-[100]"
+                   style={{
+                     top: dropdownPosition === 'bottom' ? '100%' : 'auto',
+                     bottom: dropdownPosition === 'top' ? '100%' : 'auto',
+                     marginTop: dropdownPosition === 'bottom' ? '12px' : '0',
+                     marginBottom: dropdownPosition === 'top' ? '12px' : '0',
+                     minWidth: '100%'
+                   }}
+              >
                 <p className="text-sm text-slate-600 text-center">
                   No locations found for "{location}"
                 </p>
@@ -463,14 +527,14 @@ export function SearchBar({
           </div>
 
           {/* Property Type Dropdown */}
-          <div className="md:w-48 relative group">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10">
-              <Home className="h-5 w-5 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+          <div className="md:w-40 relative group">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10">
+              <Home className="h-4 w-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
             </div>
             <select
               value={propertyType}
               onChange={(e) => setPropertyType(e.target.value)}
-              className="w-full h-14 pl-12 pr-10 rounded-xl border-0 bg-slate-50 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all appearance-none cursor-pointer font-medium text-sm"
+              className="w-full h-12 pl-10 pr-8 rounded-lg border-0 bg-slate-50 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all appearance-none cursor-pointer font-medium text-sm"
               aria-label="Select property type"
             >
               {NIGERIAN_PROPERTY_TYPES.map((type) => (
@@ -479,7 +543,7 @@ export function SearchBar({
                 </option>
               ))}
             </select>
-            <ChevronDown className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
 
           {/* Search Button */}
@@ -489,26 +553,26 @@ export function SearchBar({
           >
             <Button
               type="button"
-              className="w-full md:w-auto h-14 px-8 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-sm transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105"
+              className="w-full md:w-auto h-12 px-6 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold text-sm transition-all duration-200 shadow-md hover:shadow-lg"
               aria-label="Search for properties"
             >
-              <Search className="mr-2 h-5 w-5" />
+              <Search className="mr-2 h-4 w-4" />
               Search
             </Button>
           </Link>
         </div>
 
         {/* Advanced Filters Toggle */}
-        <div className="mt-3 flex items-center justify-center">
+        <div className="mt-2 flex items-center justify-center">
           <button
             onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 transition-all font-medium"
+            className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-500 hover:text-slate-700 transition-all font-medium"
             aria-expanded={showAdvanced}
             aria-controls="advanced-filters"
           >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
+            <SlidersHorizontal className="h-3 w-3" />
             <span>{showAdvanced ? 'Less' : 'More filters'}</span>
-            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-3 w-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
           </button>
         </div>
 

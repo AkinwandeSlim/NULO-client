@@ -1421,3 +1421,36 @@ html {
 .animate-shimmer {
   animation: shimmer 2s infinite;
 }
+
+/* ============================================
+   Navbar Spacing Control - Easy Adjustment
+   ============================================ */
+
+/* Adjust this value to control navbar spacing */
+:root {
+  --navbar-height: 3.5rem; /* Try: -0.5rem (tight), 0rem (no space), 1rem (small gap) */
+}
+
+/* Apply spacing to main content areas */
+.navbar-spacing {
+  padding-top: var(--navbar-height);
+}
+
+/* For pages that need navbar spacing */
+body.has-navbar {
+  padding-top: var(--navbar-height);
+}
+
+/* More aggressive - remove all margins from direct children */
+body.has-navbar > div {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* Also target main content areas */
+body.has-navbar main,
+body.has-navbar .main-content,
+body.has-navbar > div > div:first-child {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}

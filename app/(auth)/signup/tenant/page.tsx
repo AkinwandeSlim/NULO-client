@@ -11,16 +11,23 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { EmailExistsModal } from "@/components/auth/EmailExistsModal"
+import { checkEmailExists } from "@/lib/auth-check"
 
 export default function TenantSignupPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { signUpTenant, signUpTenantWithGoogle, user } = useAuth()
+  const { signUpTenant, signUpTenantWithGoogle, signInWithGoogle, user } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  
+  const [emailExistsModal, setEmailExistsModal] = useState({
+    isOpen: false,
+    email: "",
+    userType: undefined as 'landlord' | 'tenant' | 'admin' | undefined
+  })
+
   // ✅ Preserve callback URL if coming from property detail page
   const redirectParam = searchParams.get('redirect_to')
   useSignupCallbackUrl(redirectParam || undefined)
@@ -98,6 +105,20 @@ export default function TenantSignupPage() {
 
     setIsLoading(true)
     try {
+      // ✅ NEW: Check if email already exists
+      const emailCheck = await checkEmailExists(formData.email.trim())
+      
+      if (emailCheck.exists && emailCheck.userType) {
+        console.log('⚠️ Email already exists as:', emailCheck.userType)
+        setEmailExistsModal({
+            isOpen: true,
+            email: formData.email.trim(),
+            userType: emailCheck.userType
+        })
+        setIsLoading(false)
+        return
+      }
+      
       await signUpTenant(
         formData.firstName.trim(),
         formData.lastName.trim(),
@@ -124,6 +145,9 @@ export default function TenantSignupPage() {
   const handleGoogleSignup = async () => {
     setIsLoading(true)
     try {
+      // Note: With Google OAuth, we can't check email before redirect
+      // But checking during callback is done in /auth/callback
+      // So just proceed with signup
       await signUpTenantWithGoogle()
     } catch (error: any) {
       console.error('Google signup error:', error)
@@ -132,8 +156,40 @@ export default function TenantSignupPage() {
     }
   }
 
+  const handleSignInAsExisting = async () => {
+    try {
+      setIsLoading(true)
+      // Redirect to signin with pre-filled email
+      router.push(`/signin?email=${encodeURIComponent(emailExistsModal.email)}&from=signup`)
+    } catch (error) {
+      console.error('Error redirecting to signin:', error)
+      toast.error('Failed to redirect to sign in')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleTryDifferentEmail = () => {
+    setEmailExistsModal({
+      isOpen: false,
+      email: "",
+      userType: undefined
+    })
+    setFormData(prev => ({ ...prev, email: "" }))
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden bg-gradient-to-br from-slate-50 via-stone-50 to-orange-50">
+      {/* Email Exists Modal */}
+      <EmailExistsModal
+        isOpen={emailExistsModal.isOpen}
+        email={emailExistsModal.email}
+        existingUserType={emailExistsModal.userType || 'tenant'}
+        onSignIn={handleSignInAsExisting}
+        onTryDifferent={handleTryDifferentEmail}
+        isLoading={isLoading}
+      />
+
       {/* Background Elements */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-20 left-20 w-64 h-64 bg-orange-200/30 rounded-full blur-3xl animate-pulse"></div>
@@ -375,7 +431,7 @@ export default function TenantSignupPage() {
               <p className="text-slate-600">
                 Already have an account?{" "}
                 <Link 
-                  href="/signin" 
+                  href={redirectParam ? `/signin?redirect_to=${encodeURIComponent(redirectParam)}` : '/signin'} 
                   className="text-orange-600 hover:text-orange-700 font-semibold transition-colors duration-200 hover:underline"
                 >
                   Sign in here

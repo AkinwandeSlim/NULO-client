@@ -15,6 +15,7 @@ import Link from "next/link"
 import { favoritesAPI } from "@/lib/api/favorites"
 import { viewingRequestsAPI } from "@/lib/api/viewingRequests"
 import { messagesAPI } from "@/lib/api/messages"
+import { NotificationSummary } from "@/components/notifications/NotificationSummary"
 import { toast } from "sonner"
 
 // Placeholder image
@@ -404,6 +405,11 @@ export default function TenantDashboard() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Notifications Summary */}
+      <div className="mb-8">
+        <NotificationSummary />
       </div>
     </div>
   )

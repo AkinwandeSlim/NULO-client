@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
 import { Home, Building2, Sparkles, Search, CheckCircle } from 'lucide-react'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { SearchBar } from './SearchBar'
@@ -32,6 +33,7 @@ export function HeroSection({
   defaultCity = 'Abuja' // ✅ Default to Lagos, can be overridden
 }: HeroSectionProps) {
   const router = useRouter()
+  const { user } = useAuth()
   const [userType, setUserType] = useState<'tenant' | 'landlord'>('tenant')
   const [showWelcome, setShowWelcome] = useState(false)
   
@@ -74,7 +76,15 @@ export function HeroSection({
         setTimeout(() => setShowWelcome(false), 3000)
       }, 1200)
     } else {
-      router.push('/landlord/overview')
+      // ✅ NEW: Check if user is authenticated
+      if (user) {
+        // Authenticated user → go to landlord overview
+        router.push('/landlord/overview')
+      } else {
+        // Unauthenticated user → go directly to landlord signup (skip role selection)
+        console.log('👤 [HERO] User not authenticated → redirecting to /signup/landlord')
+        router.push('/signup/landlord')
+      }
     }
   }
 
@@ -103,7 +113,7 @@ export function HeroSection({
 
   return (
     <section 
-      className="relative min-h-[85vh] flex items-start justify-center overflow-hidden bg-gradient-to-br from-white via-orange-50 to-amber-50 pt-12" 
+      className="relative min-h-screen flex items-start justify-center overflow-visible bg-gradient-to-br from-white via-orange-50 to-amber-50 pt-6" 
       role="banner" 
       aria-label="Hero section"
     >
@@ -226,26 +236,26 @@ export function HeroSection({
 
       {/* Main Content */}
       <div className="relative z-10 w-full">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
-          <div className="max-w-5xl mx-auto">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-2 md:py-4">
+          <div className="w-full">
             
             {/* Enhanced Premium Badge */}
             <motion.div
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="flex justify-center mb-6 md:mb-8"
+              className="flex justify-center mb-3 md:mb-4"
             >
-              <div className="inline-flex items-center gap-3 px-6 py-3 bg-white/80 backdrop-blur-xl rounded-full border border-orange-200/60 shadow-lg shadow-orange-500/10 hover:shadow-xl hover:shadow-orange-500/20 transition-all duration-300">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-xl rounded-full border border-orange-200/60 shadow-lg shadow-orange-500/10 hover:shadow-xl hover:shadow-orange-500/20 transition-all duration-300">
                 <div className="relative">
-                  <Sparkles className="h-5 w-5 text-orange-600" />
+                  <Sparkles className="h-4 w-4 text-orange-600" />
                   <motion.div
                     className="absolute inset-0 bg-orange-400 rounded-full blur-md opacity-60"
                     animate={{ scale: [1, 1.5, 1], opacity: [0.6, 0.3, 0.6] }}
                     transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                   />
                 </div>
-                <span className="text-sm font-black text-slate-900 tracking-[0.15em] uppercase">
+                <span className="text-xs font-black text-slate-900 tracking-[0.15em] uppercase">
                   Africa's Premier Property Platform
                 </span>
               </div>
@@ -253,12 +263,12 @@ export function HeroSection({
 
             {/* Enhanced Premium Headline */}
             <motion.div 
-              className="text-center mb-6 md:mb-8"
+              className="text-center mb-3 md:mb-4"
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
             >
-              <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black leading-[0.95] tracking-tight mb-3 md:mb-5 px-4">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black leading-[0.95] tracking-tight mb-2 md:mb-3 px-4">
                 <span className="block text-slate-900 drop-shadow-sm">
                   Discover Your
                 </span>
@@ -268,9 +278,9 @@ export function HeroSection({
                     backgroundImage: [
                       'linear-gradient(135deg, #ea580c, #dc2626)',
                       'linear-gradient(135deg, #f97316, #fb923c)',
-                      'linear-gradient(135deg, #ea580c, #fbbf24)',
-                      'linear-gradient(135deg, #dc2626, #f97316, #fbbf24)',
-                      'linear-gradient(135deg, #ca8a04, #eab308)'
+                      'linear-gradient(135deg, #ea580c, #f97316)',
+                      'linear-gradient(135deg, #dc2626, #f97316, #fb923c)',
+                      'linear-gradient(135deg, #c2410c, #f97316)'
                     ]
                   }}
                   transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
@@ -283,7 +293,7 @@ export function HeroSection({
                 </motion.span>
               </h1>
 
-              <p className="text-sm sm:text-base md:text-lg lg:text-xl text-slate-700 font-bold max-w-4xl mx-auto leading-relaxed px-4 mb-4 md:mb-6">
+              <p className="text-sm sm:text-base md:text-lg lg:text-xl text-slate-700 font-bold max-w-4xl mx-auto leading-relaxed px-4 mb-3 md:mb-4">
                 Premium properties across <span className="text-orange-600 font-black bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent">Africa</span> — 
                 Find, rent, or list with <span className="font-black text-slate-900">confidence</span>
               </p>
@@ -294,7 +304,7 @@ export function HeroSection({
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.4 }}
-              className="mb-8 md:mb-12 px-4"
+              className="mb-3 md:mb-4 px-4"
             >
               <div className="flex flex-row items-center justify-center gap-2 sm:gap-2 max-w-3xl mx-auto overflow-x-auto">
                 {[
@@ -329,7 +339,7 @@ export function HeroSection({
 
             {/* Enhanced Toggle Pills */}
             <motion.div 
-              className="flex flex-col sm:flex-row justify-center gap-3 mb-8 md:mb-10 px-4"
+              className="flex flex-col sm:flex-row justify-center gap-2 mb-3 md:mb-4 px-4"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.6, delay: 0.5 }}
@@ -337,12 +347,12 @@ export function HeroSection({
               <div className="relative group">
                 <button
                   onClick={() => handleUserTypeClick('tenant')}
-                  className="w-full sm:w-auto px-4 sm:px-12 py-2 sm:py-4 rounded-2xl sm:rounded-3xl font-bold sm:font-black text-xs sm:text-sm transition-all duration-500 bg-gradient-to-r from-orange-500 via-orange-600 to-orange-700 hover:from-orange-600 hover:via-orange-700 hover:to-orange-800 text-white shadow-lg sm:shadow-2xl shadow-orange-500/20 sm:shadow-orange-500/30 hover:shadow-orange-600/40 hover:scale-105 hover:-translate-y-1 border border-orange-400/20"
+                  className="w-full sm:w-auto px-3 sm:px-8 py-1.5 sm:py-2.5 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm transition-all duration-500 bg-gradient-to-r from-orange-500 via-orange-600 to-orange-700 hover:from-orange-600 hover:via-orange-700 hover:to-orange-800 text-white shadow-lg sm:shadow-lg shadow-orange-500/20 hover:shadow-orange-600/40 hover:scale-105 hover:-translate-y-1 border border-orange-400/20"
                   aria-label="I'm a Tenant - Find verified homes and apartments"
                 >
-                  <div className="flex items-center justify-center gap-2 sm:gap-3">
+                  <div className="flex items-center justify-center gap-1.5 sm:gap-2">
                     <div className="relative">
-                      <Home className="h-4 w-4 sm:h-5 sm:w-5" />
+                      <Home className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       <motion.div
                         className="absolute -inset-2 bg-white/20 rounded-full blur-lg"
                         animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0.2, 0.5] }}
@@ -367,12 +377,12 @@ export function HeroSection({
               <div className="relative group">
                 <button
                   onClick={() => handleUserTypeClick('landlord')}
-                  className="px-4 sm:px-12 py-2 sm:py-4 rounded-2xl sm:rounded-3xl font-bold sm:font-black text-xs sm:text-sm transition-all duration-500 bg-white/90 backdrop-blur-xl text-slate-800 border-2 border-orange-200/60 hover:bg-gradient-to-r hover:from-orange-500 hover:via-orange-600 hover:to-orange-700 hover:text-white hover:border-orange-500 shadow-lg sm:shadow-xl hover:shadow-2xl hover:shadow-orange-500/30 hover:scale-105 hover:-translate-y-1"
+                  className="w-full sm:w-auto px-3 sm:px-8 py-1.5 sm:py-2.5 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm transition-all duration-500 bg-white/90 backdrop-blur-xl text-slate-800 border-2 border-orange-200/60 hover:bg-gradient-to-r hover:from-orange-500 hover:via-orange-600 hover:to-orange-700 hover:text-white hover:border-orange-500 shadow-lg hover:shadow-lg hover:shadow-orange-500/30 hover:scale-105 hover:-translate-y-1"
                   aria-label="I'm a Property Manager - List and manage rental properties"
                 >
-                  <div className="flex items-center justify-center gap-2 sm:gap-3">
+                  <div className="flex items-center justify-center gap-1.5 sm:gap-2">
                     <div className="relative">
-                      <Building2 className="h-4 w-4 sm:h-5 sm:w-5" />
+                      <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       <motion.div
                         className="absolute -inset-2 bg-orange-400/20 rounded-full blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                       />
@@ -400,7 +410,7 @@ export function HeroSection({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.3, ease: "easeOut" }}
-                className="max-w-2xl mx-auto mb-8 px-4"
+                className="max-w-2xl mx-auto mb-2 px-4"
               >
                 <div className="relative bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-orange-100/60 overflow-hidden">
                   <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-orange-500 via-orange-600 to-orange-700" />
@@ -413,7 +423,7 @@ export function HeroSection({
 
             {/* ✅ RESTORED: Search Bar Component */}
             <motion.div 
-              className="search-section max-w-4xl mx-auto"
+              className="search-section w-full"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.6 }}

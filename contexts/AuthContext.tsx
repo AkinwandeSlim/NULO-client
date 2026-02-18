@@ -1,8 +1,7 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState, } from 'react';
-import { useRouter} from 'next/navigation'
-import { notificationsAPI} from "@/lib/api/notifications"
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { toast } from 'sonner';
 import { 
@@ -11,9 +10,26 @@ import {
   AuthContextType,
   TenantProfile,
   LandlordProfile,
-  Admin,
-  AppNotification
+  Admin
 } from '@/types/auth';
+
+
+/**
+ * 🚀 OPTIMIZED USER CACHE STRATEGY
+ * 
+ * Flow:
+ * 1. Check localStorage cache first (instant, no network)
+ * 2. Validate cached user is still valid (check timestamp/version)
+ * 3. Use cached user while fetching fresh data in background
+ * 4. Update cache when fresh data arrives
+ * 
+ * Benefits:
+ * - Instant page loads (no await on verification)
+ * - Better UX (cached data shown while validating)
+ * - Fewer database calls (reuse valid cache)
+ * - Graceful fallback if network fails
+ */
+
 
 import {
   completePhase1Profile,
@@ -23,14 +39,8 @@ import {
   completeOnboarding,
   updateVerificationStatus
 } from '@/lib/profile-updates';
-import {
-  getLandlordProfile,
-  completeLandlordPhase1Profile,
-  completeLandlordPhase2Profile,
-  completeLandlordPhase3Profile,
-  completeLandlordOnboarding,
-  updateLandlordVerificationStatus
-} from '@/lib/profile-updates-landlord';
+
+
 
 const isClient = typeof window !== 'undefined';
 
@@ -96,11 +106,112 @@ const syncUserWithBackend = async (
 };
 
 
+// ============================================================================
+// LOCAL STORAGE CACHE UTILITIES
+// ============================================================================
+
+interface CachedUserData {
+  user: User | null
+  profile: UserProfile | null
+  tokens: {
+    accessToken: string
+    refreshToken: string
+    expiresAt: number
+  }
+  version: number          // Cache version for migrations
+  timestamp: number        // When cached
+  expiresIn: number        // TTL in milliseconds
+}
+
+const CACHE_KEY = 'auth_cache_v1'
+const CACHE_VERSION = 1
+const CACHE_TTL = 30 * 60 * 1000  // 30 minutes
+
+class AuthCacheManager {
+  private static instance: AuthCacheManager
+  
+  private constructor() {}
+  
+  static getInstance(): AuthCacheManager {
+    if (!AuthCacheManager.instance) {
+      AuthCacheManager.instance = new AuthCacheManager()
+    }
+    return AuthCacheManager.instance
+  }
+
+  /**
+   * Save user data to localStorage
+   */
+  saveUserCache(data: Omit<CachedUserData, 'timestamp' | 'version'>): void {
+    try {
+      const cached: CachedUserData = {
+        ...data,
+        version: CACHE_VERSION,
+        timestamp: Date.now(),
+      }
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cached))
+      console.log('💾 [AUTH CACHE] Saved user to cache')
+    } catch (err) {
+      console.warn('⚠️ [AUTH CACHE] Failed to save:', err)
+    }
+  }
+
+  /**
+   * Get cached user data from localStorage
+   * Returns null if expired or invalid
+   */
+  getUserCache(): CachedUserData | null {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY)
+      if (!cached) {
+        console.log('📭 [AUTH CACHE] No cache found')
+        return null
+      }
+
+      const parsed: CachedUserData = JSON.parse(cached)
+      
+      // Validate version
+      if (parsed.version !== CACHE_VERSION) {
+        console.log('⚠️ [AUTH CACHE] Cache version mismatch, clearing')
+        this.clearCache()
+        return null
+      }
+
+      // Check if expired
+      const cacheAge = Date.now() - parsed.timestamp
+      if (cacheAge > parsed.expiresIn) {
+        console.log(`⏰ [AUTH CACHE] Cache expired (${Math.round(cacheAge / 1000)}s old)`)
+        this.clearCache()
+        return null
+      }
+
+      console.log(`✅ [AUTH CACHE] Using cached user (${Math.round(cacheAge / 1000)}s old)`)
+      return parsed
+    } catch (err) {
+      console.warn('⚠️ [AUTH CACHE] Failed to parse cache:', err)
+      this.clearCache()
+      return null
+    }
+  }
+
+  /**
+   * Clear the cache
+   */
+  clearCache(): void {
+    try {
+      localStorage.removeItem(CACHE_KEY)
+      console.log('🧹 [AUTH CACHE] Cleared cache')
+    } catch (err) {
+      console.warn('⚠️ [AUTH CACHE] Failed to clear cache:', err)
+    }
+  }
+}
+
+// ============================================================================
+// AUTH CONTEXT & PROVIDER
+// ============================================================================
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-
-
-
 
 export function useAuth() {
   const context = useContext(AuthContext);
@@ -110,40 +221,268 @@ export function useAuth() {
   return context;
 }
 
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+ 
+ 
   const router = useRouter();
+  const supabase = createClient();
+  const cacheManager = AuthCacheManager.getInstance();
+
+  // Main auth state
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setProfile] = useState<UserProfile>(null);
-  const [loading, setLoading] = useState(true); // ✅ Loading during initial auth check ONLY
-  const [authInitialized, setAuthInitialized] = useState(false); // ✅ NEW: True after first auth check completes
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const supabase = createClient();
+  const [loading, setLoading] = useState(true);
+  const [authInitialized, setAuthInitialized] = useState(false);
+  
+  // Performance: Token cache
+  const tokenCache = useRef({
+    accessToken: null as string | null,
+    refreshToken: null as string | null,
+    expiresAt: null as number | null,
+    isValid: false
+  });
 
-  // Simple function to get user from database with fallback
-  const fetchUser = async (userId: string): Promise<User | null> => {
+  // Performance: User data cache with TTL
+  const userCache = useRef<Map<string, User>>(new Map());
+
+ 
+
+// ============================================================================
+  // INITIAL AUTH SETUP WITH LOCALSTORAGE CACHE
+  // ============================================================================
+
+  useEffect(() => {
+    let mounted = true;
+    
+    const initAuth = async () => {
+      try {
+        // 🚀 PHASE 1: Try localStorage cache first (instant, no network)
+        const cachedData = cacheManager.getUserCache();
+        if (cachedData?.user) {
+          console.log('⚡ [AUTH] FAST: Using cached user, showing immediately')
+          if (mounted) {
+            setUser(cachedData.user)
+            setProfile(cachedData.profile)
+            // Don't mark as loaded yet - we'll validate in background
+          }
+        }
+
+        // 🚀 PHASE 2: Check Supabase session (could be stale if tab inactive)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          console.warn('⚠️ [AUTH] Session error:', sessionError.message)
+        }
+
+        if (!session?.user) {
+          console.log('ℹ️ [AUTH] No session found')
+          if (mounted) {
+            setUser(null)
+            setProfile(null)
+            setLoading(false)
+            setAuthInitialized(true)
+          }
+          return
+        }
+
+        // 🚀 PHASE 3: Update token cache
+        tokenCache.current = {
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token,
+          expiresAt: session.expires_at ? new Date(session.expires_at).getTime() : null,
+          isValid: true
+        };
+
+        localStorage.setItem('sb-access-token', session.access_token);
+        if (session.refresh_token) {
+          localStorage.setItem('sb-refresh-token', session.refresh_token);
+        }
+
+        // 🚀 PHASE 4: Build quick user from session metadata
+        // Note: trust_score defaults to 50 in database schema (CHECK 0-100)
+        const quickUser: User = {
+          id: session.user.id,
+          email: session.user.email || '',
+          first_name: session.user.user_metadata?.first_name || '',
+          last_name: session.user.user_metadata?.last_name || '',
+          full_name: session.user.user_metadata?.full_name || `${session.user.user_metadata?.first_name || ''} ${session.user.user_metadata?.last_name || ''}`.trim() || 'User',
+          phone_number: session.user.user_metadata?.phone_number || null,
+          password_hash: null,
+          avatar_url: session.user.user_metadata?.avatar_url || null,
+          trust_score: session.user.user_metadata?.trust_score || 50, // DB default from schema
+          verification_status: 'pending',
+          user_type: (session.user.user_metadata?.user_type || 'tenant') as 'admin' | 'landlord' | 'tenant',
+          last_login_at: new Date().toISOString(),
+          created_at: session.user.created_at,
+          updated_at: new Date().toISOString(),
+          deleted_at: null,
+          phone_verified: false,
+          location: null,
+          onboarding_completed: session.user.user_metadata?.onboarding_completed || false,
+          email_verified: session.user.email_confirmed_at ? true : false,
+          onboarding_step: session.user.user_metadata?.onboarding_step || 1,
+          auth_provider: session.user.user_metadata?.auth_provider || 'email',
+          provider_id: null
+        };
+
+        if (mounted) {
+          setUser(quickUser)
+          setLoading(false)
+          setAuthInitialized(true)
+          
+          // 🚀 PHASE 5: Fetch fresh data in background (non-blocking)
+          console.log('🔄 [AUTH] Fetching fresh user data in background...')
+          
+          Promise.all([
+            fetchUserFresh(session.user.id),
+            fetchProfileFresh(session.user.id, quickUser.user_type)
+          ]).then(([freshUser, freshProfile]) => {
+            if (mounted) {
+              if (freshUser) {
+                console.log('✅ [AUTH] Updated user with fresh data')
+                setUser(freshUser)
+                // Cache the fresh data
+                cacheManager.saveUserCache({
+                  user: freshUser,
+                  profile: freshProfile,
+                  tokens: {
+                    accessToken: tokenCache.current.accessToken!,
+                    refreshToken: tokenCache.current.refreshToken!,
+                    expiresAt: tokenCache.current.expiresAt!
+                  },
+                  expiresIn: CACHE_TTL
+                })
+              }
+              if (freshProfile) {
+                console.log('✅ [AUTH] Updated profile with fresh data')
+                setProfile(freshProfile)
+              }
+            }
+          }).catch(err => {
+            console.warn('⚠️ [AUTH] Background refresh failed:', err.message)
+            // Keep using session data if background fetch fails
+          })
+        }
+        
+      } catch (error: any) {
+        console.error('❌ [AUTH] Init error:', error)
+        if (mounted) {
+          setLoading(false)
+          setAuthInitialized(true)
+        }
+      }
+    };
+
+    initAuth();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // ============================================================================
+  // TOKEN REFRESH
+  // ============================================================================
+
+  const isTokenValid = useCallback(() => {
+    const cache = tokenCache.current;
+    if (!cache.accessToken || !cache.expiresAt) return false;
+    return Date.now() < cache.expiresAt - 300000; // 5min buffer
+  }, []);
+
+  const refreshTokenIfNeeded = useCallback(async () => {
+    if (!isTokenValid() && tokenCache.current.refreshToken) {
+      try {
+        const { data, error } = await supabase.auth.refreshSession({
+          refresh_token: tokenCache.current.refreshToken
+        });
+        
+        if (!error && data.session) {
+          tokenCache.current = {
+            accessToken: data.session.access_token,
+            refreshToken: data.session.refresh_token,
+            expiresAt: data.session.expires_at ? new Date(data.session.expires_at).getTime() : null,
+            isValid: true
+          };
+          
+          localStorage.setItem('sb-access-token', data.session.access_token);
+          if (data.session.refresh_token) {
+            localStorage.setItem('sb-refresh-token', data.session.refresh_token);
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ [AUTH] Token refresh failed:', error);
+      }
+    }
+  }, [isTokenValid]);
+
+  // ============================================================================
+  // DATA FETCHING WITH CACHE
+  // ============================================================================
+
+  /**
+   * Fetch fresh user data from Supabase (skips cache)
+   */
+  const fetchUserFresh = async (userId: string): Promise<User | null> => {
     try {
-      // First try to get from users table (for complete profile data)
       const { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('id', userId)
         .single();
-
+      
       if (error) {
         if (error.code === 'PGRST116') {
-          console.log('ℹ️ [AUTH] User not found in database, will use auth metadata');
-          return null;
-        } else if (error.message?.includes('AbortError') || error.message?.includes('signal is aborted')) {
-          console.log('ℹ️ [AUTH] Supabase lock timeout, will retry...');
-          return null;
-        } else {
-          console.error('❌ [AUTH] Database error:', error);
+          console.log('ℹ️ [AUTH] User not found in database')
+          return null
+        }
+        throw error
+      }
+      
+      return data as User
+    } catch (error: any) {
+      console.error('❌ [AUTH] Error fetching user:', error.message)
+      return null
+    }
+  };
+
+  /**
+   * Fetch user data with caching (5-minute TTL)
+   */
+  const fetchUser = async (userId: string): Promise<User | null> => {
+    // Check cache first (5-minute TTL)
+    const cached = userCache.current.get(userId);
+    if (cached && cached.updated_at) {
+      const cacheAge = Date.now() - new Date(cached.updated_at).getTime();
+      if (cacheAge < 300000) { // 5 minutes
+        console.log('💾 [AUTH] Using cached user data');
+        return cached;
+      }
+    }
+
+    try {
+      console.log('🔍 [AUTH] Fetching fresh user data');
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      if (error) {
+        if (error.code === 'PGRST116') {
+          console.log('ℹ️ [AUTH] User not found in database');
           return null;
         }
+        throw error;
       }
-
-      console.log('✅ [AUTH] User fetched from database:', data);
+      
+      // Cache the result
+      if (data) {
+        userCache.current.set(userId, data);
+        console.log('💾 [AUTH] Cached user data');
+      }
+      
       return data as User;
     } catch (error: any) {
       if (error?.name === 'AbortError' || error?.message?.includes('signal is aborted')) {
@@ -155,79 +494,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Simple function to get profile based on user type
-  const fetchProfile = async (userId: string, userType: string): Promise<UserProfile> => {
+  /**
+   * Fetch fresh profile data from Supabase (skips cache)
+   */
+  const fetchProfileFresh = async (userId: string, userType: string): Promise<UserProfile> => {
     try {
-      if (!userType) {
-        console.warn('⚠️ [AUTH] No user type provided to fetchProfile');
-        return null;
-      }
+      if (!userType) return null
 
-      if (userType === 'tenant') {
-        const { data, error } = await supabase
-          .from('tenant_profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-        
-        if (error) {
-          // Handle AbortError gracefully
-          if (error.message?.includes('AbortError') || error.message?.includes('signal is aborted')) {
-            console.log('ℹ️ [AUTH] Supabase lock timeout in tenant profile fetch (expected)');
-            return null;
-          }
-          console.warn('⚠️ [AUTH] Tenant profile not found:', error.message);
-          return null;
-        }
-        return data as TenantProfile;
-      } else if (userType === 'landlord') {
-        const { data, error } = await supabase
-          .from('landlord_profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-        
-        if (error) {
-          // Handle AbortError gracefully
-          if (error.message?.includes('AbortError') || error.message?.includes('signal is aborted')) {
-            console.log('ℹ️ [AUTH] Supabase lock timeout in landlord profile fetch (expected)');
-            return null;
-          }
-          console.warn('⚠️ [AUTH] Landlord profile not found:', error.message);
-          return null;
-        }
-        return data as LandlordProfile;
-      } else if (userType === 'admin') {
-        const { data, error } = await supabase
-          .from('admins')
-          .select('*')
-          .eq('id', userId)
-          .single();
-        
-        if (error) {
-          // Handle AbortError gracefully
-          if (error.message?.includes('AbortError') || error.message?.includes('signal is aborted')) {
-            console.log('ℹ️ [AUTH] Supabase lock timeout in admin profile fetch (expected)');
-            return null;
-          }
-          console.warn('⚠️ [AUTH] Admin profile not found:', error.message);
-          return null;
-        }
-        return data as Admin;
+      const table = userType === 'tenant' ? 'tenant_profiles' : 'landlord_profiles'
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .eq('id', userId)
+        .single()
+      
+      if (error) {
+        console.warn(`⚠️ [AUTH] ${userType} profile not found:`, error.message)
+        return null
       }
       
-      console.warn(`⚠️ [AUTH] Unknown user type: ${userType}`);
-      return null;
+      return data
     } catch (error: any) {
-      // Handle AbortError
-      if (error?.name === 'AbortError' || error?.message?.includes('signal is aborted')) {
-        console.log('ℹ️ [AUTH] Supabase lock timeout in fetchProfile (expected)');
-        return null;
-      }
-      console.error('❌ [AUTH] Exception in fetchProfile:', error);
-      return null;
+      console.error(`❌ [AUTH] Error fetching ${userType} profile:`, error.message)
+      return null
     }
   };
+
+
+
+  // ============================================================================
+  // AUTH METHODS (sign up, sign in, sign out, etc.)
+  // ============================================================================
+
+  const signOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      if (user) {
+        setUser(null);
+        setProfile(null);
+        cacheManager.clearCache();
+        router.push('/');
+      }
+    } catch (error: any) {
+      console.error('❌ [AUTH] Sign out error:', error);
+      toast.error('Failed to sign out');
+    }
+  };
+
 
   // Admin signup
   const signUpAdmin = async (fullName: string, email: string, password: string, adminCode: string) => {
@@ -403,51 +718,7 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
 };
 
 
-  // const signUpTenant = async (firstName: string, lastName: string, email: string, password: string) => {
-  //   try {
-  //     console.log('👤 [AUTH] Starting tenant signup...');
-      
-  //     const { data, error } = await supabase.auth.signUp({
-  //       email,
-  //       password,
-  //       options: {
-  //         data: {
-  //           first_name: firstName,
-  //           last_name: lastName,
-  //           full_name: `${firstName} ${lastName}`,
-  //           user_type: 'tenant',
-  //           auth_provider: 'email'
-  //         },
-  //         emailRedirectTo: `${window.location.origin}/auth/callback`
-  //       }
-  //     });
 
-  //     if (error) {
-  //       console.error('❌ [AUTH] Tenant signup error:', error);
-  //       toast.error(error.message);
-  //       return { error };
-  //     }
-
-  //     console.log('✅ [AUTH] Tenant signup successful');
-  //     toast.success('Account created! Please check your email to verify your account.');
-      
-  //     // Store email for confirmation page
-  //     if (typeof window !== 'undefined') {
-  //       localStorage.setItem('signup_email', email);
-  //     }
-      
-  //     // Redirect to confirmation page
-  //     router.push('/signup/tenant/confirmation');
-      
-  //     return { data, error: null };
-  //   } catch (error: any) {
-  //     console.error('❌ [AUTH] Tenant signup error:', error);
-  //     toast.error(error.message || 'Failed to create account');
-  //     return { error };
-  //   }
-  // };
-
-  // Landlord signup
 
 const signUpLandlord = async (firstName: string, lastName: string, email: string, password: string) => {
   try {
@@ -528,70 +799,45 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
 
 
 
-
-
-  // const signUpLandlord = async (firstName: string, lastName: string, email: string, password: string) => {
-  //   try {
-  //     console.log('🏠 [AUTH] Starting landlord signup...');
-  //     console.log('🔍 [AUTH] SENDING TO SUPABASE:', {
-  //       user_type: 'landlord',  // Should print 'landlord'
-  //       first_name: firstName
-  //     });
-
-  //     const { data, error } = await supabase.auth.signUp({
-  //       email,
-  //       password,
-  //       options: {
-  //         data: {
-  //           first_name: firstName,
-  //           last_name: lastName,
-  //           full_name: `${firstName} ${lastName}`,
-  //           user_type: 'landlord',
-  //           auth_provider: 'email'
-  //         },
-  //         emailRedirectTo: `${window.location.origin}/auth/callback`
-  //       }
-  //     });
-
-      
-  //     if (error) {
-  //       console.error('❌ [AUTH] Landlord signup error:', error);
-  //       toast.error(error.message);
-  //       return { error };
-  //     }
-
-  //     console.log('✅ [AUTH] Landlord signup successful');
-  //     toast.success('Account created! Please check your email to verify your account.');
-      
-  //     // Store email for confirmation page
-  //     if (typeof window !== 'undefined') {
-  //       localStorage.setItem('signup_email', email);
-  //     }
-      
-  //     // Redirect to confirmation page
-  //     router.push('/signup/landlord/confirmation');
-      
-  //     return { data, error: null };
-  //   } catch (error: any) {
-  //     console.error('❌ [AUTH] Landlord signup error:', error);
-  //     toast.error(error.message || 'Failed to create account');
-  //     return { error };
-  //   }
-  // };
-
   // Google signup for tenant
   const signUpTenantWithGoogle = async () => {
     try {
       console.log('👤 [AUTH] Starting tenant Google signup...');
       
-      // Get callback URL if exists
+      // ✅ METHOD 1: Store user_type in localStorage (most reliable, persists through OAuth)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('nulo_oauth_user_type', 'tenant');
+        console.log('💾 [AUTH] Stored user_type in localStorage: tenant');
+      }
+      
+      // ✅ METHOD 2: Also set in cookie (fallback if localStorage fails)
+      if (typeof window !== 'undefined') {
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        document.cookie = `nulo_user_type=tenant; path=/; expires=${expirationDate.toUTCString()}; SameSite=None; Secure`;
+        console.log('🍪 [AUTH] Stored user_type in cookie: tenant');
+      }
+
+      // ✅ Get redirect URL from localStorage BEFORE OAuth
       const callbackUrl = typeof window !== 'undefined' ? localStorage.getItem('signup_callback_url') : null;
-      const redirectParam = callbackUrl ? `&redirect_to=${encodeURIComponent(callbackUrl)}` : '';
+      console.log('📍 [AUTH] Redirect URL from localStorage:', callbackUrl);
+      
+      // ✅ Store in cookie BEFORE redirecting to Google
+      if (callbackUrl && typeof window !== 'undefined') {
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        document.cookie = `nulo_redirect_path=${callbackUrl}; path=/; expires=${expirationDate.toUTCString()}; SameSite=None; Secure`;
+        console.log('🍪 [AUTH] Stored redirect path in cookie:', callbackUrl);
+      }
+      
+      // ✅ Callback URL with user_type as fallback
+      const baseCallbackUrl = `${window.location.origin}/auth/callback?user_type=tenant`;
+      console.log('🔀 [AUTH] Callback URL:', baseCallbackUrl);
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?user_type=tenant${redirectParam}`,
+          redirectTo: baseCallbackUrl,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -605,7 +851,7 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         return { error };
       }
 
-      console.log('✅ [AUTH] Google signup initiated');
+      console.log('✅ [AUTH] Tenant Google signup initiated');
       return { data, error: null };
     } catch (error: any) {
       console.error('❌ [AUTH] Google signup error:', error);
@@ -619,14 +865,43 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
     try {
       console.log('🏠 [AUTH] Starting landlord Google signup...');
       
-      // Get callback URL if exists
+      // ✅ METHOD 1: Store user_type in localStorage (most reliable, persists through OAuth)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('nulo_oauth_user_type', 'landlord');
+        console.log('💾 [AUTH] Stored user_type in localStorage: landlord');
+        console.log('💾 [AUTH] Verify localStorage:', localStorage.getItem('nulo_oauth_user_type'));
+      }
+      
+      // ✅ METHOD 2: Also set in cookie (fallback if localStorage fails)
+      if (typeof window !== 'undefined') {
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        document.cookie = `nulo_user_type=landlord; path=/; expires=${expirationDate.toUTCString()}; SameSite=None; Secure`;
+        console.log('🍪 [AUTH] Stored user_type in cookie: landlord');
+        console.log('🍪 [AUTH] All cookies:', document.cookie);
+      }
+
+      // ✅ Get redirect URL from localStorage BEFORE OAuth
       const callbackUrl = typeof window !== 'undefined' ? localStorage.getItem('signup_callback_url') : null;
-      const redirectParam = callbackUrl ? `&redirect_to=${encodeURIComponent(callbackUrl)}` : '';
+      console.log('📍 [AUTH] Redirect URL from localStorage:', callbackUrl);
+      
+      // ✅ Store in cookie BEFORE redirecting to Google
+      if (callbackUrl && typeof window !== 'undefined') {
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        document.cookie = `nulo_redirect_path=${callbackUrl}; path=/; expires=${expirationDate.toUTCString()}; SameSite=None; Secure`;
+        console.log('🍪 [AUTH] Stored redirect path in cookie:', callbackUrl);
+      }
+      
+      // ✅ Callback URL with user_type as fallback
+      const baseCallbackUrl = `${window.location.origin}/auth/callback?user_type=landlord`;
+      console.log('🔀 [AUTH] Callback URL being sent to Google:', baseCallbackUrl);
+      console.log('🔀 [AUTH] Window origin:', window.location.origin);
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?user_type=landlord${redirectParam}`,
+          redirectTo: baseCallbackUrl,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -640,8 +915,8 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         return { error };
       }
 
-      console.log('✅ [AUTH] Google signup initiated');
-      return { data, error: null };
+      console.log('✅ [AUTH] Landlord Google signup initiated');
+      console.log('✅ [AUTH] Google should now redirect to:', baseCallbackUrl);
     } catch (error: any) {
       console.error('❌ [AUTH] Google signup error:', error);
       toast.error(error.message || 'Failed to sign up with Google');
@@ -761,7 +1036,7 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         onboarding_completed: data.user.user_metadata?.onboarding_completed || false,
         onboarding_step: data.user.user_metadata?.onboarding_step || 1,
         verification_status: data.user.user_metadata?.verification_status || 'pending',
-        trust_score: 50,
+        trust_score: data.user.user_metadata?.trust_score || 50, // DB default from schema
         created_at: data.user.created_at || new Date().toISOString(),
         auth_provider: 'email',
         phone_number: null,
@@ -778,7 +1053,7 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
       setUser(userData);
       
       // Try to fetch profile asynchronously - don't block sign in
-      fetchProfile(userData.id, userData.user_type).then(profileData => {
+      fetchProfileFresh(userData.id, userData.user_type).then(profileData => {
         if (profileData) {
           setProfile(profileData);
         }
@@ -818,14 +1093,29 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
   };
 
 // ...
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (redirectUrl?: string) => {
     try {
       console.log('🔐 [AUTH] Starting Google sign in...');
+      
+      // ✅ CRITICAL: Store redirect URL in cookie BEFORE OAuth
+      // This is used by the server-side callback handler
+      if (redirectUrl && typeof window !== 'undefined') {
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        // Simple cookie without encoding - server will parse it
+        document.cookie = `nulo_redirect_path=${redirectUrl}; path=/; expires=${expirationDate.toUTCString()}; SameSite=Lax`;
+        console.log('🍪 [AUTH] Stored redirect path in cookie for Google signin:', redirectUrl);
+      }
+      
+      // ✅ CRITICAL: Use simple redirectTo WITHOUT query params
+      // Supabase will add its own query params (?code=..., etc.)
+      const baseCallbackUrl = `${window.location.origin}/auth/callback`;
+      console.log('🔀 [AUTH] Base callback URL for signin:', baseCallbackUrl);
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: baseCallbackUrl,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -839,7 +1129,7 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         return { error };
       }
 
-      console.log('✅ [AUTH] Google sign in initiated');
+      console.log('✅ [AUTH] Google sign in initiated, will use cookie for redirect');
       return { data, error: null };
     } catch (error: any) {
       console.error('❌ [AUTH] Google sign in error:', error);
@@ -848,65 +1138,65 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
     }
   };
 
-  // Sign out
-  const signOut = async () => {
-    try {
-      console.log('👋 [AUTH] Signing out...');
+  // // Sign out
+  // const signOut = async () => {
+  //   try {
+  //     console.log('👋 [AUTH] Signing out...');
       
-      // Sign out from Supabase immediately (don't wait to clear storage first)
-      supabase.auth.signOut().catch((error: any) => {
-        console.error('❌ [AUTH] Supabase sign out error:', error);
-      });
+  //     // Sign out from Supabase immediately (don't wait to clear storage first)
+  //     supabase.auth.signOut().catch((error: any) => {
+  //       console.error('❌ [AUTH] Supabase sign out error:', error);
+  //     });
       
-      // Clear auth-related storage keys only (preserve other app data)
-      try {
-        const keysToClear = [
-          'sb-access-token',  // 🔥 NEW: Clear cached API token
-          'sb-refresh-token', // 🔥 NEW: Clear cached refresh token
-          'sb-auth-token',
-          'sb-session',
-          'signup_email',
-          'pending_profile_completion'
-        ];
-        keysToClear.forEach(key => {
-          localStorage.removeItem(key);
-          sessionStorage.removeItem(key);
-        });
+  //     // Clear auth-related storage keys only (preserve other app data)
+  //     try {
+  //       const keysToClear = [
+  //         'sb-access-token',  // 🔥 NEW: Clear cached API token
+  //         'sb-refresh-token', // 🔥 NEW: Clear cached refresh token
+  //         'sb-auth-token',
+  //         'sb-session',
+  //         'signup_email',
+  //         'pending_profile_completion'
+  //       ];
+  //       keysToClear.forEach(key => {
+  //         localStorage.removeItem(key);
+  //         sessionStorage.removeItem(key);
+  //       });
         
-        // Also clear any Supabase auth keys (they have specific patterns)
-        const allKeys = Object.keys(localStorage);
-        allKeys.forEach(key => {
-          if (key.includes('supabase') || key.includes('auth') || key.includes('session')) {
-            localStorage.removeItem(key);
-          }
-        });
+  //       // Also clear any Supabase auth keys (they have specific patterns)
+  //       const allKeys = Object.keys(localStorage);
+  //       allKeys.forEach(key => {
+  //         if (key.includes('supabase') || key.includes('auth') || key.includes('session')) {
+  //           localStorage.removeItem(key);
+  //         }
+  //       });
         
-        console.log('🧹 [AUTH] Cleared auth-related storage including cached tokens');
-      } catch (e) {
-        console.error('Error clearing storage:', e);
-      }
+  //       console.log('🧹 [AUTH] Cleared auth-related storage including cached tokens');
+  //     } catch (e) {
+  //       console.error('Error clearing storage:', e);
+  //     }
       
-      // Clear auth state immediately
-      setUser(null);
-      setProfile(null);
-      setNotifications([]);
-      setUnreadCount(0);
-      console.log('🧹 [AUTH] Cleared auth state');
+  //     // Clear auth state immediately
+  //     setUser(null);
+  //     setProfile(null);
+  //     setNotifications([]);
+  //     setUnreadCount(0);
+  //     console.log('🧹 [AUTH] Cleared auth state');
       
-      console.log('✅ [AUTH] Sign out successful');
-      toast.success('Signed out successfully');
+  //     console.log('✅ [AUTH] Sign out successful');
+  //     toast.success('Signed out successfully');
       
-      // Force immediate page redirect - this is synchronous
-      window.location.href = '/';
+  //     // Force immediate page redirect - this is synchronous
+  //     window.location.href = '/';
       
-    } catch (error: any) {
-      console.error('❌ [AUTH] Sign out error:', error);
-      toast.error(error.message || 'Failed to sign out');
+  //   } catch (error: any) {
+  //     console.error('❌ [AUTH] Sign out error:', error);
+  //     toast.error(error.message || 'Failed to sign out');
       
-      // Force redirect even on error to ensure logout completes
-      window.location.href = '/';
-    }
-  };
+  //     // Force redirect even on error to ensure logout completes
+  //     window.location.href = '/';
+  //   }
+  // };
 
   // Reset password
   const resetPassword = async (email: string) => {
@@ -1004,160 +1294,6 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
     if (updatedUser) setUser(updatedUser);
   };
 
-  // Initialize auth state - SIMPLIFIED
-  useEffect(() => {
-    if (!isClient) return;
-    
-    let mounted = true;
-    
-    const initAuth = async () => {
-      try {
-        console.log('🔐 [AUTH] Initializing...');
-        
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!mounted) return;
-        
-        if (session?.user) {
-          console.log('✅ [AUTH] Session found');
-          
-          const userData = await fetchUser(session.user.id);
-          
-          if (!mounted) return;
-          
-          if (userData) {
-            setUser(userData);
-            const profileData = await fetchProfile(userData.id, userData.user_type);
-            setProfile(profileData);
-          }
-        }
-        
-        setLoading(false);
-        setAuthInitialized(true); // ✅ NEW: Mark auth as initialized after first check
-      } catch (error: any) {
-        // Ignore AbortError - harmless cleanup signal from Supabase lock mechanism
-        if (error?.name === 'AbortError' || error?.message?.includes('abort') || error?.message?.includes('signal is aborted')) {
-          console.log('ℹ️ [AUTH] Ignoring harmless AbortError during initialization');
-          setLoading(false);
-          setAuthInitialized(true); // ✅ NEW: Still mark as initialized even on error
-          return;
-        }
-        console.error('❌ [AUTH] Init error:', error);
-        setLoading(false);
-        setAuthInitialized(true); // ✅ NEW: Still mark as initialized even on error
-      }
-    };
-
-    initAuth();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: any, session: any) => {
-      if (!mounted) return;
-      
-      try {
-        console.log('🔄 [AUTH] State changed:', event);
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          const userData = await fetchUser(session.user.id);
-          if (userData && mounted) {
-            setUser(userData);
-            const profileData = await fetchProfile(userData.id, userData.user_type);
-            setProfile(profileData);
-          }
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setProfile(null);
-        }
-      } catch (error: any) {
-        // Ignore AbortError - harmless cleanup signal from Supabase lock mechanism
-        if (error?.name === 'AbortError' || error?.message?.includes('abort') || error?.message?.includes('signal is aborted')) {
-          return;
-        }
-        console.error('❌ [AUTH] Error in auth state change:', error);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
-
-// Notification functions
-const fetchNotifications = async () => {
-  try {
-    // Check if user is properly authenticated
-    if (!user) {
-      console.log('🔔 [AUTH] No user found - skipping notifications');
-      return;
-    }
-    
-    console.log('🔔 [AUTH] Fetching notifications...');
-    const data = await notificationsAPI.getNotifications();
-    setNotifications(data.notifications || []);
-    setUnreadCount(data.notifications?.filter((n: AppNotification) => !n.read).length || 0);
-    console.log('✅ [AUTH] Fetched notifications:', data.notifications?.length || 0);
-  } catch (error: any) {
-    console.error('❌ [AUTH] Error fetching notifications:', error);
-    // Don't fail the app - just set empty notifications
-    setNotifications([]);
-    setUnreadCount(0);
-    
-    // If it's a 404, disable further attempts
-    if (error.response?.status === 404) {
-      console.log('🔔 [AUTH] Notifications not available - feature disabled');
-    }
-  }
-};
-
-const markAsRead = async (notificationId: string) => {
-  try {
-    await notificationsAPI.markAsRead(notificationId);
-    setNotifications(prev => 
-      prev.map(n => n.id === notificationId ? { ...n, read: true, read_at: new Date().toISOString() } : n)
-    );
-    setUnreadCount(prev => Math.max(0, prev - 1));
-    console.log('✅ [AUTH] Marked as read:', notificationId);
-  } catch (error) {
-    console.error('❌ [AUTH] Error marking notification as read:', error);
-  }
-};
-
-const markAllAsRead = async () => {
-  try {
-    await notificationsAPI.markAllAsRead();
-    setNotifications(prev => 
-      prev.map(n => ({ ...n, read: true, read_at: new Date().toISOString() }))
-    );
-    setUnreadCount(0);
-    console.log('✅ [AUTH] Marked all as read');
-  } catch (error) {
-    console.error('❌ [AUTH] Error marking all notifications as read:', error);
-  }
-};
-
-// Real-time notifications subscription
-useEffect(() => {
-  if (!user) return;
-
-  const channel = supabase
-    .channel('notifications')
-    .on(
-      'postgres_changes' as const, 
-      { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
-      (payload: Record<string, any>) => {
-        console.log(' [NOTIFICATIONS] Real-time notification received:', payload);
-        const newNotification = payload.new as AppNotification;
-        setNotifications(prev => [newNotification, ...prev]);
-        setUnreadCount(prev => prev + 1);
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [user]);
 
 const value: AuthContextType = {
   user,
@@ -1181,11 +1317,6 @@ const value: AuthContextType = {
   updateEmailVerification: wrappedUpdateEmailVerification,
   updatePhoneVerification: wrappedUpdatePhoneVerification,
   completeOnboarding: wrappedCompleteOnboarding,
-  notifications, 
-  unreadCount,
-  fetchNotifications,
-  markAsRead,
-  markAllAsRead,
 };
 
 return (

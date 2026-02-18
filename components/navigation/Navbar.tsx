@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/contexts/AuthContext"
-import { NotificationBell } from "@/components/NotificationBell"
+import { NotificationBell } from "@/components/notifications/NotificationBell"
 import { toast } from "sonner"
 
 export function Navbar() {
@@ -141,7 +141,12 @@ export function Navbar() {
   }, [signOut])
 
   // ✅ OPTIMIZED: Memoize isActive and search handler
-  const isActive = useCallback((path: string) => pathname === path, [pathname])
+  const isActive = useCallback((path: string, isPrefix?: boolean) => {
+    if (isPrefix) {
+      return pathname === path || pathname?.startsWith(path + '/')
+    }
+    return pathname === path
+  }, [pathname])
 
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -183,7 +188,7 @@ export function Navbar() {
               <Link 
                 href="/properties" 
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                  isActive('/properties') 
+                  isActive('/properties', true) 
                     ? 'text-orange-600 bg-orange-50' 
                     : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                 }`}
@@ -257,17 +262,20 @@ export function Navbar() {
               <div className="h-9 w-32 bg-slate-100 animate-pulse rounded-lg" />
             ) : isAuthenticated ? (
               <>
-                {/* Notification Bell - Functional */}
+                {/* Notification Bell */}
                 <NotificationBell />
                 {/* Profile Dropdown Menu */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
                       <Avatar className="h-8 w-8 border-2 border-slate-200">
-                        <AvatarImage src={user?.avatar_url || undefined} />
-                        <AvatarFallback className="bg-orange-500 text-white text-xs font-semibold">
-                          {userInitials}
-                        </AvatarFallback>
+                        {user?.avatar_url ? (
+                          <AvatarImage src={user?.avatar_url} />
+                        ) : (
+                          <AvatarFallback className="bg-orange-500 text-white text-xs font-semibold">
+                            {userInitials}
+                          </AvatarFallback>
+                        )}
                       </Avatar>
                       <div className="hidden lg:block text-left">
                         <p className="text-sm font-medium text-slate-900">

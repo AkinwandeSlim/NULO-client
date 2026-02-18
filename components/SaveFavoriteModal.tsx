@@ -14,6 +14,7 @@ interface SaveFavoriteModalProps {
   onSaveWithEmail: (email: string) => void
   onContinueBrowsing: () => void
   propertyTitle: string
+  redirectTo?: string
 }
 
 export function SaveFavoriteModal({
@@ -21,7 +22,8 @@ export function SaveFavoriteModal({
   onClose,
   onSaveWithEmail,
   onContinueBrowsing,
-  propertyTitle
+  propertyTitle,
+  redirectTo
 }: SaveFavoriteModalProps) {
   const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -136,7 +138,10 @@ export function SaveFavoriteModal({
               onClick={() => {
                 onClose()
                 // Preselect tenant role when navigating to role selection
-                window.location.href = "/signup?role=tenant"
+                const signupUrl = redirectTo 
+                  ? `/signup?role=tenant&redirect_to=${encodeURIComponent(redirectTo)}`
+                  : "/signup?role=tenant"
+                window.location.href = signupUrl
               }}
               variant="outline"
               className="w-full h-11 border-2 border-slate-200 hover:border-orange-500 hover:bg-orange-50 hover:text-orange-600 font-semibold"

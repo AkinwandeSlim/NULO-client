@@ -16,7 +16,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { ViewingRequestModal, type ViewingRequestData } from "@/components/ViewingRequestModal"
+import ViewingRequestModal from "@/components/rental/ViewingRequestModal"
 import { ChatModal } from "@/components/ChatModal"
 import { viewingRequestsAPI, favoritesAPI } from "@/lib/api"
 import { propertiesAPI } from "@/lib/api/properties"
@@ -124,30 +124,14 @@ export default function PropertyDetailPage() {
       console.log('🔍 [PROPERTY DETAIL] Fetching property:', propertyId)
       setIsLoading(true)
       setError(null)
-      setShouldShowSkeleton(false) // ✅ Start without skeleton
-
-      // ✅ NEW: Show skeleton only if fetch takes longer than 200ms
-      // This prevents jarring loading flashes on fast networks
-      const skeletonTimeoutId = setTimeout(() => {
-        console.log('⏳ [PROPERTY DETAIL] Fetch taking longer than 200ms, showing skeleton')
-        setShouldShowSkeleton(true)
-      }, 200)
-
-      // Add timeout to prevent infinite loading
-      const timeoutId = setTimeout(() => {
-        console.warn('⏰ [PROPERTY DETAIL] Loading timeout - forcing error state')
-        setError('Loading timeout - please try again')
-        setIsLoading(false)
-        setShouldShowSkeleton(false)
-        toast.error('Loading timeout - please refresh the page')
-      }, 30000) // 30 second timeout for API + token retrieval
+      setShouldShowSkeleton(true) 
 
       try {
         const data = await propertiesAPI.getById(propertyId)
         console.log('✅ [PROPERTY DETAIL] Data received:', data)
-        
-        // Clear timeout on success
-        clearTimeout(timeoutId)
+        console.log('🔍 [FRONTEND DEBUG] Landlord data:', data.landlord)
+        console.log('🔍 [FRONTEND DEBUG] Landlord properties_count:', data.landlord?.properties_count)
+        console.log('🔍 [FRONTEND DEBUG] Landlord name:', data.landlord?.name)
         
         // Ensure minimum 5 images with placeholders
         if (data.images) {
@@ -160,9 +144,6 @@ export default function PropertyDetailPage() {
         setIsFavorite(data.is_favorited || false)
         console.log('✅ [PROPERTY DETAIL] Property data set successfully')
       } catch (err: any) {
-        // Clear timeout on error
-        clearTimeout(timeoutId)
-        
         console.error('❌ [PROPERTY DETAIL] Failed to fetch property:', err)
         console.error('❌ [PROPERTY DETAIL] Error details:', {
           message: err.message,
@@ -174,8 +155,7 @@ export default function PropertyDetailPage() {
         setError(errorMessage)
         toast.error(errorMessage)
       } finally {
-        // ✅ NEW: Clear both timeouts and skeleton state
-        clearTimeout(skeletonTimeoutId)
+        // ✅ Clear timeout and skeleton state
         console.log('🏁 [PROPERTY DETAIL] Fetch completed, setting loading to false')
         setIsLoading(false)
         setShouldShowSkeleton(false)
@@ -361,51 +341,17 @@ export default function PropertyDetailPage() {
     setShowReportModal(true)
   }
 
-  const confirmViewing = async (data: ViewingRequestData) => {
-    if (!user) {
-      // ✅ Redirect to signup with property callback URL
-      const currentPath = `/properties/${propertyId}`
-      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
-      toast.info('Please sign up to request a viewing. You\'ll return here after verification.')
-      router.push(signupUrl)
-      return
-    }
-
+  const confirmViewing = async (viewingRequest: any) => {
+    // Note: The rental modal handles API call and passes response here with viewing data
     try {
-      // Call backend API
-      await viewingRequestsAPI.create({
-        property_id: propertyData.id.toString(),
-        preferred_date: data.date,
-        time_slot: data.timeSlot,
-        contact_number: data.contactNumber,
-        tenant_name: data.name,
-        message: data.message
-      })
-
-      toast.success(
-        <div>
-          <p className="font-semibold">✅ Viewing Request Sent!</p>
-          <p className="text-xs text-slate-600 mt-1">
-            {propertyData.landlord?.name || 'The landlord'} will respond within 24 hours.
-          </p>
-        </div>,
-        { duration: 5000 }
-      )
+      // The modal automatically shows success screen with proper details
+      // This callback just ensures modal closes properly after user action
+      console.log('Viewing request confirmed:', viewingRequest)
       
-      setShowViewingModal(false)
+      // Update any local state or analytics here if needed
+      // The success toast is shown by the modal itself
     } catch (error: any) {
-      console.error('Failed to send viewing request:', error)
-      console.error('Error details:', error.response?.data)
-      
-      // Show detailed error message
-      const errorMsg = error.response?.data?.detail || 'Failed to send viewing request. Please try again.'
-      toast.error(
-        <div>
-          <p className="font-semibold">Failed to send request</p>
-          <p className="text-xs mt-1">{errorMsg}</p>
-        </div>,
-        { duration: 7000 }
-      )
+      console.error('Error handling viewing request response:', error)
     }
   }
 
@@ -517,7 +463,7 @@ export default function PropertyDetailPage() {
   }
 
   // Error state
-  if (error || !propertyData) {
+  if (error && !propertyData) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-4">
@@ -538,6 +484,18 @@ export default function PropertyDetailPage() {
     )
   }
 
+  // Guard against null propertyData during initial render
+  if (!propertyData) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto mb-4" />
+          <p className="text-slate-600">Loading property details...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Breadcrumb Navigation - Mobile Optimized */}
@@ -553,7 +511,7 @@ export default function PropertyDetailPage() {
             </Link>
             <ChevronRight className="h-3 md:h-4 w-3 md:w-4 text-slate-400 flex-shrink-0" />
             <span className="text-slate-900 font-semibold truncate max-w-[150px] md:max-w-[300px]">
-              {propertyData.title}
+              {propertyData?.title || 'Loading...'}
             </span>
           </nav>
         </div>
@@ -571,7 +529,7 @@ export default function PropertyDetailPage() {
             }}
           >
             <img
-              src={propertyData.images[0]}
+              src={propertyData?.images?.[0] || PLACEHOLDER_IMAGES[0]}
               alt="Main property"
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
             />
@@ -817,7 +775,7 @@ export default function PropertyDetailPage() {
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <Map className="h-4 w-4 mr-1" />
+                    {/* <Map className="h-4 w-4 mr-1" /> */}
                     Location
                   </button>
                 </div>
@@ -870,8 +828,8 @@ export default function PropertyDetailPage() {
                           </Avatar>
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-bold text-slate-900 text-lg">{propertyData.landlord.name}</h3>
-                              {propertyData.landlord.verifiedId && (
+                              <h3 className="font-bold text-slate-900 text-lg">{propertyData.landlord?.name || 'Property Owner'}</h3>
+                              {propertyData.landlord?.verifiedId && (
                                 <div className="bg-green-500 text-white text-xs font-semibold px-2 py-0.5 rounded flex items-center gap-1">
                                   <CheckCircle2 className="h-3 w-3" />
                                   ID Verified
@@ -916,7 +874,7 @@ export default function PropertyDetailPage() {
                             </p>
                             <Button
                               className="w-full bg-orange-500 hover:bg-orange-600"
-                              onClick={() => router.push('/signin')}
+                              onClick={() => router.push(`/signin?redirect_to=${encodeURIComponent(`/properties/${propertyId}`)}`)}
                             >
                               Sign In to View Contact Details
                             </Button>
@@ -1128,8 +1086,8 @@ export default function PropertyDetailPage() {
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-bold text-slate-900 text-base md:text-lg truncate">{propertyData.landlord.name}</h3>
-                        {propertyData.landlord.verified && (
+                        <h3 className="font-bold text-slate-900 text-base md:text-lg truncate">{propertyData.landlord?.name || 'Property Owner'}</h3>
+                        {propertyData.landlord?.verified && (
                           <div className="bg-green-500 text-white text-xs font-semibold px-2 py-0.5 rounded flex items-center gap-1">
                             <Check className="h-3 w-3" />
                             Verified
@@ -1175,7 +1133,7 @@ export default function PropertyDetailPage() {
                         <Button
                           size="sm"
                           className="w-full h-8 text-xs bg-orange-500 hover:bg-orange-600"
-                          onClick={() => router.push('/signin')}
+                          onClick={() => router.push(`/signin?redirect_to=${encodeURIComponent(`/properties/${propertyId}`)}`)}
                         >
                           Sign In to View Contact
                         </Button>
@@ -1275,9 +1233,9 @@ export default function PropertyDetailPage() {
       <ViewingRequestModal
         isOpen={showViewingModal}
         onClose={() => setShowViewingModal(false)}
-        onConfirm={confirmViewing}
-        propertyTitle={propertyData.title}
-        landlordName={propertyData.landlord?.name || 'Property Owner'}
+        onSuccess={confirmViewing}
+        property={propertyData}
+        user={user}
         landlordResponseTime="within 24 hours"
       />
 

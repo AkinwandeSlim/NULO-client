@@ -1,21 +1,24 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Calendar, Clock, MessageCircle, Phone, User, CheckCircle2, AlertCircle, Shield } from "lucide-react"
+import { Calendar, Clock, MessageCircle, Phone, User, CheckCircle2, AlertCircle, Shield, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { viewingRequestsAPI } from "@/lib/api/viewing-requests"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface ViewingRequestModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (data: ViewingRequestData) => void
+  onConfirm?: (data: ViewingRequestData) => void | Promise<void>
   propertyTitle: string
   landlordName: string
   landlordResponseTime: string
+  propertyId?: string
 }
 
 export interface ViewingRequestData {
@@ -32,23 +35,42 @@ export function ViewingRequestModal({
   onConfirm,
   propertyTitle,
   landlordName,
-  landlordResponseTime
+  landlordResponseTime,
+  propertyId
 }: ViewingRequestModalProps) {
+  const { user } = useAuth()
   const [selectedDate, setSelectedDate] = useState("")
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<'morning' | 'afternoon' | 'evening'>('afternoon')
   const [message, setMessage] = useState("")
-  const [contactNumber, setContactNumber] = useState("")
-  const [name, setName] = useState("")
+  const [contactNumber, setContactNumber] = useState(user?.phone_number || "")
+  const [name, setName] = useState(user?.full_name || "")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Get today's date in YYYY-MM-DD format
-  const today = new Date().toISOString().split('T')[0]
-  
+  // Update form when user data changes
+  useEffect(() => {
+    if (user) {
+      setContactNumber(user?.phone_number || "")
+      setName(user?.full_name || "")
+    }
+  }, [user, isOpen])
+
+  // Get tomorrow's date in YYYY-MM-DD format
+  const getMinDate = () => {
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    return tomorrow.toISOString().split('T')[0]
+  }
+
   // Get date 3 months from now
-  const maxDate = new Date()
-  maxDate.setMonth(maxDate.getMonth() + 3)
-  const maxDateStr = maxDate.toISOString().split('T')[0]
+  const getMaxDate = () => {
+    const maxDate = new Date()
+    maxDate.setMonth(maxDate.getMonth() + 3)
+    return maxDate.toISOString().split('T')[0]
+  }
+
+  const minDate = getMinDate()
+  const maxDate = getMaxDate()
 
   const timeSlots = [
     { value: 'morning', label: 'Morning', time: '9AM - 12PM', icon: '🌅' },
@@ -65,6 +87,10 @@ export function ViewingRequestModal({
 
     if (!selectedDate) {
       newErrors.date = "Please select a viewing date"
+    } else if (selectedDate < minDate) {
+      newErrors.date = "Date must be tomorrow or later"
+    } else if (selectedDate > maxDate) {
+      newErrors.date = "Date must be within 3 months"
     }
 
     if (!contactNumber.trim()) {
@@ -85,8 +111,7 @@ export function ViewingRequestModal({
 
     setIsSubmitting(true)
 
-    // Simulate API call
-    setTimeout(() => {
+    try {
       const requestData: ViewingRequestData = {
         date: selectedDate,
         timeSlot: selectedTimeSlot,
@@ -95,8 +120,13 @@ export function ViewingRequestModal({
         name: name.trim(),
       }
 
-      onConfirm(requestData)
-      setIsSubmitting(false)
+      // If onConfirm callback provided, call it (property detail page pattern)
+      if (onConfirm) {
+        await onConfirm(requestData)
+      } else {
+        // If no callback, show error
+        toast.error("Modal not properly configured")
+      }
       
       // Reset form
       setSelectedDate("")
@@ -105,7 +135,12 @@ export function ViewingRequestModal({
       setContactNumber("")
       setName("")
       setErrors({})
-    }, 1000)
+    } catch (error: any) {
+      console.error('Error submitting viewing request:', error)
+      toast.error(error?.message || "Failed to submit viewing request")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const formatDate = (dateStr: string) => {
@@ -176,8 +211,8 @@ export function ViewingRequestModal({
               <Input
                 id="date"
                 type="date"
-                min={today}
-                max={maxDateStr}
+                min={minDate}
+                max={maxDate}
                 value={selectedDate}
                 onChange={(e) => {
                   setSelectedDate(e.target.value)

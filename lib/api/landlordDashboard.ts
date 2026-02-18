@@ -10,8 +10,8 @@ import apiClient from './client';
 // ============================================================================
 
 export interface LandlordDashboardData {
-  profile: LandlordProfile
-  onboarding: LandlordOnboarding
+  profile: LandlordProfile | null
+  onboarding: LandlordOnboarding | null
   stats: LandlordStats
   properties: LandlordProperties[]
   recentActivity: RecentActivity[]
@@ -109,12 +109,15 @@ export interface RecentActivity {
 
 export interface Notification {
   id: string
-  type: 'info' | 'success' | 'warning' | 'error'
+  type: 'info' | 'success' | 'warning' | 'error' | 'visit' | 'message' | 'application'
   title: string
   message: string
-  action_url?: string
-  created_at: string
+  link?: string  // Changed from action_url to link to match database
   read: boolean
+  read_at?: string
+  data?: any
+  user_id: string
+  created_at: string
 }
 
 export interface OnboardingStep {
@@ -131,17 +134,60 @@ export interface OnboardingStep {
 
 /**
  * Get comprehensive landlord dashboard data
+ * 🚀 OPTIMIZED: 15-second timeout (not 90!) - show error quickly, let user retry
  */
 export const getLandlordDashboard = async (): Promise<LandlordDashboardData> => {
   try {
     console.log('📤 [LANDLORD DASHBOARD API] Fetching dashboard data...')
     
-    const response = await apiClient.get('/api/v1/landlord/dashboard')
+    // 🚀 15 second timeout - reasonable wait time
+    // If backend doesn't respond in 15s, show error so user can retry
+    const response = await apiClient.get('/api/v1/landlord/dashboard', {
+      timeout: 15000 // 15 seconds - show error quickly if slow
+    })
     
     console.log('✅ [LANDLORD DASHBOARD API] Dashboard data retrieved')
     return response.data
   } catch (error: any) {
     console.error('❌ [LANDLORD DASHBOARD API] Error fetching dashboard:', error)
+    
+    // 🚀 PERFORMANCE: Return fallback data on error instead of throwing
+    if (error.response?.status === 401) {
+      console.log('🔒 [LANDLORD DASHBOARD] Unauthorized - user may not be landlord')
+      throw new Error('You must be logged in as a landlord to access the dashboard')
+    }
+    
+    // Handle timeout errors - FAIL FAST instead of waiting forever
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      console.log('⏱️ [LANDLORD DASHBOARD] Request timeout after 15s - server is slow, showing error to user')
+      throw new Error('Dashboard is taking too long to load. Please try again.')
+    }
+    
+    if (error.response?.status === 500) {
+      console.log('🔥 [LANDLORD DASHBOARD] Server error - returning empty dashboard')
+      return {
+        profile: null,
+        onboarding: null,
+        stats: {
+          total_properties: 0,
+          active_listings: 0,
+          pending_viewings: 0,
+          unread_messages: 0,
+          total_views: 0,
+          occupancy_rate: 0,
+          monthly_revenue: 0,
+          avg_response_time: '0ms',
+          applications_pending: 0,
+          applications_approved: 0,
+          properties_vacant: 0,
+          properties_occupied: 0,
+        },
+        properties: [],
+        recentActivity: [],
+        notifications: [],
+      }
+    }
+    
     throw new Error(
       error.response?.data?.detail || 
       'Failed to fetch dashboard data'

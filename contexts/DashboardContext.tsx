@@ -235,6 +235,12 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
 
   const fetchLandlordDashboard = useCallback(
     async (forceRefresh = false) => {
+      // Prevent concurrent requests
+      if (landlordLoading && !forceRefresh) {
+        console.log('🚫 [LANDLORD DASHBOARD] Request already in progress, skipping...')
+        return
+      }
+
       const cache = getDashboardCache()
       const cacheKey = 'landlord:dashboard'
 

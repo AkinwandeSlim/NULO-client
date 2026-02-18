@@ -11,10 +11,13 @@ import { createClient, cleanupSupabaseClient } from '@/utils/supabase/client';
 // API Base URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// 🔧 FIX: Add default timeout of 30s for property fetches
+// 🔧 TIMEOUT STRATEGY: 
+// - Default: 30s (for most endpoints)
+// - Dashboard: 15s (show error quickly, let user retry)
+// - Heavy operations: 60s max (with early error feedback)
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000, // 30 seconds default timeout
+  timeout: 30000, // 30 seconds default
   headers: {
     'Content-Type': 'application/json',
   },

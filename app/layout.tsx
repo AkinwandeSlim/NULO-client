@@ -7,6 +7,7 @@ import { Toaster } from "sonner"
 import { AuthProvider } from "@/contexts/AuthContext"
 import { DashboardProvider } from "@/contexts/DashboardContext"
 import { PropertiesProvider } from "@/contexts/PropertiesContext"
+import { NotificationProvider } from "@/contexts/NotificationContext"
 import { initializeLoggerConfig } from "@/lib/logger-config"
 import { metadata } from "./metadata"
 import "./globals.css"
@@ -40,17 +41,18 @@ export default function RootLayout({
 
   return (
     <html lang="en" data-scroll-behavior="smooth">
-      <body className="font-sans antialiased">
+      <body className="font-sans antialiased has-navbar">
         <AuthProvider>
-          <DashboardProvider 
-            cacheConfig={{
-              dashboardStats: 5 * 60 * 1000,    // 5 minutes
-              recentActivity: 5 * 60 * 1000,    // 5 minutes
-              recentSignups: 10 * 60 * 1000,    // 10 minutes
-              maxEntries: 50,
-              cleanupInterval: 1 * 60 * 1000,
-            }}
-          >
+          <NotificationProvider>
+            <DashboardProvider 
+              cacheConfig={{
+                dashboardStats: 5 * 60 * 1000,    // 5 minutes
+                recentActivity: 5 * 60 * 1000,    // 5 minutes
+                recentSignups: 10 * 60 * 1000,    // 10 minutes
+                maxEntries: 50,
+                cleanupInterval: 1 * 60 * 1000,
+              }}
+            >
         <PropertiesProvider
           cacheConfig={{
             listings: 5 * 60 * 1000,        // 5 min
@@ -71,6 +73,7 @@ export default function RootLayout({
           />
         </PropertiesProvider>
         </DashboardProvider>
+          </NotificationProvider>
         </AuthProvider>
       </body>
     </html>
