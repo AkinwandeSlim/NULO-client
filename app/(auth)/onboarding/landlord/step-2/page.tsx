@@ -13,9 +13,11 @@ import { generateMockDocumentUrl, generateMockSelfieUrl, simulateUploadDelay } f
 
 export default function LandlordOnboardingStep2() {
   const router = useRouter()
-  const { user, loading } = useAuth()
-  const { saveStep2, isProcessing, currentStep, step1Data, step2Data } = useOnboarding()
-  
+  const { user } = useAuth()
+  // useOnboarding handles all auth/redirect guards — including the OAuth fix.
+  // isReady is true only after those checks pass. No need for a separate guard here.
+  const { isReady, saveStep2, isProcessing, step1Data, step2Data } = useOnboarding()
+
   const [documents, setDocuments] = useState({
     id_document: null as File | null,
     proof_of_address: null as File | null,
@@ -24,7 +26,6 @@ export default function LandlordOnboardingStep2() {
 
   const [selfie, setSelfie] = useState<File | null>(null)
 
-  // ✅ NEW: Track which files were uploaded (for persistence)
   const [uploadedFiles, setUploadedFiles] = useState({
     id_document: false,
     proof_of_address: false,
@@ -32,229 +33,104 @@ export default function LandlordOnboardingStep2() {
     selfie: false,
   })
 
-  // ✅ AUTO-SAVE: Save form data on every change
+  // ── Restore previously uploaded file status on mount ────────────────────────
   useEffect(() => {
-    const autoSaveData = {
-      id_document: documents.id_document?.name || '',
-      proof_of_address: documents.proof_of_address?.name || '',
-      cac_certificate: documents.cac_certificate?.name || '',
-      selfie: selfie?.name || '',
-      uploadedFiles: uploadedFiles
-    }
-    localStorage.setItem('onboarding_step2_autosave', JSON.stringify(autoSaveData))
-  }, [documents, selfie, uploadedFiles])
-
-  // ✅ RESTORE: Load auto-saved data on mount
-  useEffect(() => {
+    // Check autosave first
     const autoSaved = localStorage.getItem('onboarding_step2_autosave')
     if (autoSaved) {
       try {
         const data = JSON.parse(autoSaved)
-        console.log('📂 [STEP 2] Restoring auto-saved data:', data)
-        
-        // Restore uploaded files status
         setUploadedFiles(data.uploadedFiles || {
           id_document: !!data.id_document,
           proof_of_address: !!data.proof_of_address,
           cac_certificate: !!data.cac_certificate,
           selfie: !!data.selfie,
         })
-        
-        console.log('✅ [STEP 2] Auto-saved data restored')
-      } catch (error) {
-        console.error('❌ [STEP 2] Error restoring auto-saved data:', error)
-      }
+        return
+      } catch { /* ignore */ }
     }
-  }, [])
-
-  // ✅ LOAD SAVED STATE ON MOUNT
-  useEffect(() => {
-    // Load previously uploaded file status from localStorage
+    // Fallback: check hook storage key
     const savedStep2 = localStorage.getItem('nulo_onboarding_step2')
     if (savedStep2) {
       try {
         const data = JSON.parse(savedStep2)
-        console.log('📂 [STEP 2] Loading saved file status:', data)
-        
-        // Restore the "uploaded" status (we can't restore actual File objects)
         setUploadedFiles({
           id_document: !!data.id_document,
           proof_of_address: !!data.proof_of_address,
           cac_certificate: !!data.cac_certificate,
           selfie: data.uploaded || false,
         })
-        
-        console.log('✅ [STEP 2] Previous uploads restored')
-      } catch (error) {
-        console.error('❌ [STEP 2] Error loading saved state:', error)
-      }
+      } catch { /* ignore */ }
     }
   }, [])
 
-  // Redirect if not authenticated or not a landlord
+  // ── Autosave upload status on every change ───────────────────────────────────
   useEffect(() => {
-    if (!loading) {
-      if (!user) {
-        toast.error('Please sign in first')
-        router.push('/signin')
-        return
-      }
-      
-      if (user.user_type !== 'landlord') {
-        toast.error('This page is only for landlords')
-        router.push('/properties')
-        return
-      }
-      
-      if (!user.email_verified) {
-        toast.error('Please verify your email first')
-        router.push('/signup/landlord/confirmation')
-        return
-      }
-      
-      if (user.onboarding_completed) {
-        // Check if user actually completed onboarding by checking landlord_onboarding table
-        const checkOnboardingCompletion = async () => {
-          try {
-            const { createClient } = await import("@/utils/supabase/client")
-            const supabase = createClient()
-            
-            const { data: onboardingData } = await supabase
-              .from('landlord_onboarding')
-              .select('all_steps_completed, submitted_for_review')
-              .eq('landlord_id', user.id)
-              .single()
-            
-            // Only redirect if onboarding is actually completed
-            if (onboardingData?.all_steps_completed && onboardingData?.submitted_for_review) {
-              console.log('✅ [STEP 2] Onboarding actually completed, redirecting to overview')
-              router.push('/landlord/overview')
-              return
-            } else {
-              console.log('🔄 [STEP 2] Onboarding flag is stale, resetting and continuing...')
-              // Reset flag in users table since it's stale
-              await supabase
-                .from('users')
-                .update({ onboarding_completed: false })
-                .eq('id', user.id)
-            }
-          } catch (error) {
-            console.error('❌ [STEP 2] Error checking onboarding:', error)
-          }
-        }
-        
-        checkOnboardingCompletion()
-        return
-      }
+    const autoSaveData = {
+      id_document: documents.id_document?.name || '',
+      proof_of_address: documents.proof_of_address?.name || '',
+      cac_certificate: documents.cac_certificate?.name || '',
+      selfie: selfie?.name || '',
+      uploadedFiles,
     }
-  }, [user, loading, router])
+    localStorage.setItem('onboarding_step2_autosave', JSON.stringify(autoSaveData))
+  }, [documents, selfie, uploadedFiles])
 
-  // Handle document file selection
+  // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, docType: 'id_document' | 'proof_of_address' | 'cac_certificate') => {
     const file = e.target.files?.[0]
-    if (file) {
-      // Validate file size (max 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('File size must be less than 10MB')
-        return
-      }
+    if (!file) return
 
-      // Validate file type
-      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
-      if (!validTypes.includes(file.type)) {
-        toast.error('Only JPG, PNG, and PDF files are allowed')
-        return
-      }
+    if (file.size > 10 * 1024 * 1024) { toast.error('File size must be less than 10MB'); return }
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
+    if (!validTypes.includes(file.type)) { toast.error('Only JPG, PNG, and PDF files are allowed'); return }
 
-      // ✅ Update both File object AND upload status
-      setDocuments(prev => ({ ...prev, [docType]: file }))
-      setUploadedFiles(prev => ({ ...prev, [docType]: true }))
-      
-      toast.success(`${file.name} selected`)
-      console.log(`✅ [STEP 2] ${docType} selected:`, file.name)
-    }
+    setDocuments(prev => ({ ...prev, [docType]: file }))
+    setUploadedFiles(prev => ({ ...prev, [docType]: true }))
+    toast.success(`${file.name} selected`)
   }
 
-  // Handle selfie selection
   const handleSelfieChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      // Validate file size (max 5MB for selfie)
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Selfie file size must be less than 5MB')
-        return
-      }
+    if (!file) return
 
-      // Validate it's an image
-      if (!file.type.startsWith('image/')) {
-        toast.error('Selfie must be an image file')
-        return
-      }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Selfie file size must be less than 5MB'); return }
+    if (!file.type.startsWith('image/')) { toast.error('Selfie must be an image file'); return }
 
-      // ✅ Update both File object AND upload status
-      setSelfie(file)
-      setUploadedFiles(prev => ({ ...prev, selfie: true }))
-      
-      toast.success('Selfie captured!')
-      console.log('✅ [STEP 2] Selfie selected:', file.name)
-    }
+    setSelfie(file)
+    setUploadedFiles(prev => ({ ...prev, selfie: true }))
+    toast.success('Selfie captured!')
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    console.log('📤 [STEP 2] Submitting documents...')
 
-    // ✅ CHECK: Skip if documents already uploaded
-    if (step2Data && step2Data.id_document && step2Data.selfie) {
-      console.log('✅ [STEP 2] Documents already submitted, skipping...')
+    // Skip if already submitted
+    if (step2Data?.id_document && step2Data?.selfie) {
       toast.success('Documents already submitted!')
       router.push('/onboarding/landlord/step-3')
       return
     }
 
-    // ✅ VALIDATION: Check if files were uploaded
-    if (!documents.id_document) {
-      toast.error('Please upload your ID document')
-      return
-    }
-    
-    if (!documents.proof_of_address) {
-      toast.error('Please upload proof of address')
-      return
-    }
-
-    if (!selfie) {
-      toast.error('Please upload a selfie for verification')
-      return
-    }
-
-    // ✅ Check company documents if landlord is a company
+    if (!documents.id_document) { toast.error('Please upload your ID document'); return }
+    if (!documents.proof_of_address) { toast.error('Please upload proof of address'); return }
+    if (!selfie) { toast.error('Please upload a selfie for verification'); return }
     if (step1Data?.landlord_type === 'company' && !documents.cac_certificate) {
-      toast.error('Please upload company registration document')
-      return
+      toast.error('Please upload company registration document'); return
     }
 
     try {
-      // 🚀 MOCK UPLOAD: Generate fake URLs for MVP
-      console.log('📤 [STEP 2] Generating mock URLs for documents...')
-      
-      // Simulate upload delay for realistic UX
       await simulateUploadDelay(1500)
-      
-      // Generate mock URLs
+
       const mockUrls = {
         id_document: generateMockDocumentUrl(documents.id_document!.name, user!.id),
         proof_of_address: generateMockDocumentUrl(documents.proof_of_address!.name, user!.id),
         selfie: generateMockSelfieUrl(user!.id),
-        cac_certificate: step1Data?.landlord_type === 'company' && documents.cac_certificate 
+        cac_certificate: step1Data?.landlord_type === 'company' && documents.cac_certificate
           ? generateMockDocumentUrl(documents.cac_certificate.name, user!.id)
           : '',
       }
 
-      console.log('✅ [STEP 2] Mock URLs generated successfully')
-
-      // ✅ SAVE: Pass mock URLs to hook
       const success = await saveStep2({
         id_document: mockUrls.id_document,
         proof_of_address: mockUrls.proof_of_address,
@@ -263,13 +139,8 @@ export default function LandlordOnboardingStep2() {
       })
 
       if (success) {
-        console.log('✅ [STEP 2] Documents saved successfully')
-        toast.success('Documents uploaded and saved!')
-        
-        // Navigate to next step
+        toast.success('Step 2 completed!')
         router.push('/onboarding/landlord/step-3')
-      } else {
-        console.error('❌ [STEP 2] Failed to save documents')
       }
     } catch (error: any) {
       console.error('❌ [STEP 2] Error:', error)
@@ -277,6 +148,19 @@ export default function LandlordOnboardingStep2() {
     }
   }
 
+  // ── Loading gate ─────────────────────────────────────────────────────────────
+  if (!isReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden bg-gradient-to-br from-orange-50 via-white to-slate-50">
       {/* Background Elements */}
@@ -304,30 +188,22 @@ export default function LandlordOnboardingStep2() {
             </div>
             <div className="flex-1 h-1 bg-green-600 mx-2"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-semibold">
-                2
-              </div>
+              <div className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-semibold">2</div>
               <span className="ml-2 text-sm font-medium text-orange-600">Documents</span>
             </div>
             <div className="flex-1 h-1 bg-slate-200 mx-2"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">
-                3
-              </div>
+              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">3</div>
               <span className="ml-2 text-sm font-medium text-slate-500">Properties</span>
             </div>
             <div className="flex-1 h-1 bg-slate-200 mx-2"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">
-                4
-              </div>
+              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">4</div>
               <span className="ml-2 text-sm font-medium text-slate-500">Bank Details</span>
             </div>
             <div className="flex-1 h-1 bg-slate-200 mx-2"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">
-                5
-              </div>
+              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">5</div>
               <span className="ml-2 text-sm font-medium text-slate-500">Review</span>
             </div>
           </div>
@@ -351,36 +227,25 @@ export default function LandlordOnboardingStep2() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Document Upload Areas */}
               <div className="space-y-6">
-                
+
                 {/* ID Document */}
                 <div className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
-                  uploadedFiles.id_document || documents.id_document 
-                    ? 'border-green-400 bg-green-50/30' 
+                  uploadedFiles.id_document || documents.id_document
+                    ? 'border-green-400 bg-green-50/30'
                     : 'border-slate-300 hover:border-orange-400'
                 }`}>
                   <div className="text-center">
-                    {uploadedFiles.id_document || documents.id_document ? (
-                      <Check className="h-12 w-12 text-green-600 mx-auto mb-3" />
-                    ) : (
-                      <Upload className="h-12 w-12 text-slate-400 mx-auto mb-3" />
-                    )}
+                    {uploadedFiles.id_document || documents.id_document
+                      ? <Check className="h-12 w-12 text-green-600 mx-auto mb-3" />
+                      : <Upload className="h-12 w-12 text-slate-400 mx-auto mb-3" />
+                    }
                     <h3 className="text-lg font-semibold text-slate-800 mb-2">ID Document *</h3>
                     <p className="text-sm text-slate-600 mb-4">
                       Upload a valid government-issued ID (National ID, Driver's License, or Passport)
                     </p>
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      onChange={(e) => handleFileChange(e, 'id_document')}
-                      className="hidden"
-                      id="id_document"
-                    />
-                    <label 
-                      htmlFor="id_document"
-                      className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 cursor-pointer transition-colors"
-                    >
+                    <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileChange(e, 'id_document')} className="hidden" id="id_document" />
+                    <label htmlFor="id_document" className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 cursor-pointer transition-colors">
                       <Upload className="h-4 w-4 mr-2" />
                       {uploadedFiles.id_document ? 'Change File' : 'Choose File'}
                     </label>
@@ -395,31 +260,21 @@ export default function LandlordOnboardingStep2() {
 
                 {/* Proof of Address */}
                 <div className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
-                  uploadedFiles.proof_of_address || documents.proof_of_address 
-                    ? 'border-green-400 bg-green-50/30' 
+                  uploadedFiles.proof_of_address || documents.proof_of_address
+                    ? 'border-green-400 bg-green-50/30'
                     : 'border-slate-300 hover:border-orange-400'
                 }`}>
                   <div className="text-center">
-                    {uploadedFiles.proof_of_address || documents.proof_of_address ? (
-                      <Check className="h-12 w-12 text-green-600 mx-auto mb-3" />
-                    ) : (
-                      <Upload className="h-12 w-12 text-slate-400 mx-auto mb-3" />
-                    )}
+                    {uploadedFiles.proof_of_address || documents.proof_of_address
+                      ? <Check className="h-12 w-12 text-green-600 mx-auto mb-3" />
+                      : <Upload className="h-12 w-12 text-slate-400 mx-auto mb-3" />
+                    }
                     <h3 className="text-lg font-semibold text-slate-800 mb-2">Proof of Address *</h3>
                     <p className="text-sm text-slate-600 mb-4">
                       Upload a recent utility bill, bank statement, or tenancy agreement
                     </p>
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      onChange={(e) => handleFileChange(e, 'proof_of_address')}
-                      className="hidden"
-                      id="proof_of_address"
-                    />
-                    <label 
-                      htmlFor="proof_of_address"
-                      className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 cursor-pointer transition-colors"
-                    >
+                    <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileChange(e, 'proof_of_address')} className="hidden" id="proof_of_address" />
+                    <label htmlFor="proof_of_address" className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 cursor-pointer transition-colors">
                       <Upload className="h-4 w-4 mr-2" />
                       {uploadedFiles.proof_of_address ? 'Change File' : 'Choose File'}
                     </label>
@@ -432,38 +287,25 @@ export default function LandlordOnboardingStep2() {
                   </div>
                 </div>
 
-                {/* Selfie - Liveness Check */}
+                {/* Selfie */}
                 <div className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
-                  uploadedFiles.selfie || selfie 
-                    ? 'border-green-400 bg-green-50/30' 
+                  uploadedFiles.selfie || selfie
+                    ? 'border-green-400 bg-green-50/30'
                     : 'border-orange-300 bg-orange-50/30 hover:border-orange-400'
                 }`}>
                   <div className="text-center">
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 ${
                       uploadedFiles.selfie || selfie ? 'bg-green-100' : 'bg-orange-100'
                     }`}>
-                      {uploadedFiles.selfie || selfie ? (
-                        <Check className="h-6 w-6 text-green-600" />
-                      ) : (
-                        <Camera className="h-6 w-6 text-orange-600" />
-                      )}
+                      {uploadedFiles.selfie || selfie
+                        ? <Check className="h-6 w-6 text-green-600" />
+                        : <Camera className="h-6 w-6 text-orange-600" />
+                      }
                     </div>
                     <h3 className="text-lg font-semibold text-slate-800 mb-2">Selfie Verification *</h3>
-                    <p className="text-sm text-slate-600 mb-4">
-                      Take a clear selfie for identity verification
-                    </p>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="user"
-                      onChange={handleSelfieChange}
-                      className="hidden"
-                      id="selfie"
-                    />
-                    <label 
-                      htmlFor="selfie"
-                      className="inline-flex items-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 cursor-pointer transition-colors"
-                    >
+                    <p className="text-sm text-slate-600 mb-4">Take a clear selfie for identity verification</p>
+                    <input type="file" accept="image/*" capture="user" onChange={handleSelfieChange} className="hidden" id="selfie" />
+                    <label htmlFor="selfie" className="inline-flex items-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 cursor-pointer transition-colors">
                       <Camera className="h-4 w-4 mr-2" />
                       {uploadedFiles.selfie ? 'Retake Selfie' : 'Take/Upload Selfie'}
                     </label>
@@ -476,34 +318,24 @@ export default function LandlordOnboardingStep2() {
                   </div>
                 </div>
 
-                {/* Company Registration (Conditional) */}
+                {/* Company Registration (conditional) */}
                 {step1Data?.landlord_type === 'company' && (
                   <div className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
-                    uploadedFiles.cac_certificate || documents.cac_certificate 
-                      ? 'border-green-400 bg-green-50/30' 
+                    uploadedFiles.cac_certificate || documents.cac_certificate
+                      ? 'border-green-400 bg-green-50/30'
                       : 'border-slate-300 hover:border-orange-400'
                   }`}>
                     <div className="text-center">
-                      {uploadedFiles.cac_certificate || documents.cac_certificate ? (
-                        <Check className="h-12 w-12 text-green-600 mx-auto mb-3" />
-                      ) : (
-                        <Upload className="h-12 w-12 text-slate-400 mx-auto mb-3" />
-                      )}
+                      {uploadedFiles.cac_certificate || documents.cac_certificate
+                        ? <Check className="h-12 w-12 text-green-600 mx-auto mb-3" />
+                        : <Upload className="h-12 w-12 text-slate-400 mx-auto mb-3" />
+                      }
                       <h3 className="text-lg font-semibold text-slate-800 mb-2">Company Registration *</h3>
                       <p className="text-sm text-slate-600 mb-4">
                         Upload your CAC certificate or business registration document
                       </p>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => handleFileChange(e, 'cac_certificate')}
-                        className="hidden"
-                        id="cac_certificate"
-                      />
-                      <label 
-                        htmlFor="cac_certificate"
-                        className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 cursor-pointer transition-colors"
-                      >
+                      <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileChange(e, 'cac_certificate')} className="hidden" id="cac_certificate" />
+                      <label htmlFor="cac_certificate" className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 cursor-pointer transition-colors">
                         <Upload className="h-4 w-4 mr-2" />
                         {uploadedFiles.cac_certificate ? 'Change File' : 'Choose File'}
                       </label>
@@ -529,14 +361,14 @@ export default function LandlordOnboardingStep2() {
                       <li>All documents must be clear and readable</li>
                       <li>Maximum file size: 10MB for documents, 5MB for selfie</li>
                       <li>Accepted formats: JPG, PNG, PDF</li>
-                      <li>You can navigate back - your uploads are saved</li>
+                      <li>You can navigate back — your uploads are saved</li>
                     </ul>
                   </div>
                 </div>
               </div>
 
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full bg-orange-600 hover:bg-orange-700 text-white"
                 disabled={isProcessing}
               >

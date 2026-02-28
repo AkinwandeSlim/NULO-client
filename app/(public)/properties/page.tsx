@@ -1,5 +1,3 @@
-"use client"
-
 /**
  * 🚀 OPTIMIZED PROPERTIES PAGE - ENHANCED VERSION
  * 
@@ -19,8 +17,9 @@
  * - Search repeat: <200ms
  * - Favorites load: Parallel (no blocking)
  */
+"use client"
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import {useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import React from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
@@ -664,6 +663,12 @@ export default function PropertiesPage() {
       return
     }
 
+    // Skip for non-tenants — admins/landlords don't have favorites
+    if (user?.user_type !== 'tenant') {
+      setFavorites([])
+      return
+    }
+
     // Skip if recently loaded (cache favorites for 2 seconds)
     const now = Date.now()
     if (now - lastFavoritesCheckRef.current < 2000) {
@@ -984,4 +989,3 @@ export default function PropertiesPage() {
     </>
   )
 }
- 

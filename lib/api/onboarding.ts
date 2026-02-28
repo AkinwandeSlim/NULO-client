@@ -70,7 +70,8 @@ export const submitCompleteOnboarding = async (
     console.log(' [API] Payload:', payload)
     
     // Use FastAPI backend instead of direct Supabase
-    const response = await apiClient.post('/api/v1/onboarding/submit', {
+    
+    const response = await apiClient.post('/api/v1/onboarding/submit-complete', {
       // Backend expects minimal data - it will handle the updates
       landlord_id: payload.landlord_id,
       email: payload.email,

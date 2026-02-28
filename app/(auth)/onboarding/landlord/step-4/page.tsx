@@ -4,80 +4,19 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
-import { ArrowLeft, CheckCircle, Building, User, FileText, Home, Star, Shield, Check } from "lucide-react"
+import { ArrowLeft, CheckCircle, Check, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useAuth } from "@/contexts/AuthContext"
 import { useOnboarding } from "@/hooks/useOnboarding"
 
 export default function LandlordOnboardingStep4() {
   const router = useRouter()
-  const { user, loading } = useAuth()
-  const { submitCompleteOnboarding: submitCompleteOnboardingData, saveStep4, isProcessing, currentStep, step3Data } = useOnboarding()
-
-  // Redirect if not authenticated or not a landlord
-  useEffect(() => {
-    if (!loading) {
-      if (!user) {
-        toast.error('Please sign in first')
-        router.push('/signin')
-        return
-      }
-      
-      if (user.user_type !== 'landlord') {
-        toast.error('This page is only for landlords')
-        router.push('/properties')
-        return
-      }
-      
-      // Check if email is verified
-      if (!user.email_verified) {
-        toast.error('Please verify your email first')
-        router.push('/signup/landlord/confirmation')
-        return
-      }
-      
-      // Check if step 3 is completed using hook
-      
-      // Check if onboarding is already completed
-      if (user.onboarding_completed) {
-        // Check if user actually completed onboarding by checking landlord_onboarding table
-        const checkOnboardingCompletion = async () => {
-          try {
-            const { createClient } = await import("@/utils/supabase/client")
-            const supabase = createClient()
-            
-            const { data: onboardingData } = await supabase
-              .from('landlord_onboarding')
-              .select('all_steps_completed, submitted_for_review')
-              .eq('landlord_id', user.id)
-              .single()
-            
-            // Only redirect if onboarding is actually completed
-            if (onboardingData?.all_steps_completed && onboardingData?.submitted_for_review) {
-              console.log('✅ [STEP 4] Onboarding actually completed, redirecting to overview')
-              router.push('/landlord/overview')
-              return
-            } else {
-              console.log('🔄 [STEP 4] Onboarding flag is stale, resetting and continuing...')
-              // Reset flag in users table since it's stale
-              await supabase
-                .from('users')
-                .update({ onboarding_completed: false })
-                .eq('id', user.id)
-            }
-          } catch (error) {
-            console.error('❌ [STEP 4] Error checking onboarding:', error)
-          }
-        }
-        
-        checkOnboardingCompletion()
-        return
-      }
-    }
-  }, [user, loading, router, currentStep, step3Data])
+  // useOnboarding handles ALL auth/redirect guards internally, including the
+  // OAuth fix. isReady is true only after those checks pass.
+  // DO NOT add a separate auth guard useEffect here.
+  const { isReady, saveStep4, isProcessing } = useOnboarding()
 
   const [formData, setFormData] = useState({
     bank_account_number: '',
@@ -87,47 +26,34 @@ export default function LandlordOnboardingStep4() {
     bank_statement_url: '',
   })
 
+  // ── Restore draft on mount ───────────────────────────────────────────────────
+  useEffect(() => {
+    const draft = localStorage.getItem('onboarding_step4_draft')
+    if (draft) {
+      try {
+        setFormData(JSON.parse(draft))
+      } catch { /* ignore */ }
+    }
+  }, [])
+
+  // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
-    
-    // Auto-save to localStorage for better UX
-    const updatedData = { ...formData, [name]: value }
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('onboarding_step4_draft', JSON.stringify(updatedData))
-    }
+    setFormData(prev => {
+      const updated = { ...prev, [name]: value }
+      localStorage.setItem('onboarding_step4_draft', JSON.stringify(updated))
+      return updated
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('🚀 [STEP-4] Submit button clicked!')
-    console.log('📝 [STEP-4] Form data:', formData)
-    
-    // Enhanced validation
-    if (!formData.bank_account_number?.trim()) {
-      toast.error('Bank account number is required')
-      return
-    }
-    
-    if (!formData.bank_name?.trim()) {
-      toast.error('Bank name is required')
-      return
-    }
-    
-    if (!formData.account_name?.trim()) {
-      toast.error('Account name is required')
-      return
-    }
 
-    console.log('🚀 [STEP-4] Validation passed, saving step 4...')
+    if (!formData.bank_account_number?.trim()) { toast.error('Bank account number is required'); return }
+    if (!formData.bank_name?.trim()) { toast.error('Bank name is required'); return }
+    if (!formData.account_name?.trim()) { toast.error('Account name is required'); return }
 
-    // Clear draft data on successful submission
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('onboarding_step4_draft')
-    }
-
-    // Save step 4 data first
-    await saveStep4({
+    const success = await saveStep4({
       bank_name: formData.bank_name,
       bank_account_number: formData.bank_account_number,
       bank_account_name: formData.account_name,
@@ -135,13 +61,26 @@ export default function LandlordOnboardingStep4() {
       bank_statement_url: formData.bank_statement_url || '',
     })
 
-    console.log('✅ [STEP-4] Bank details saved successfully!')
-    toast.success('Bank details saved!')
-    
-    // Navigate to review page
-    router.push('/onboarding/landlord/step-5')
+    if (success) {
+      localStorage.removeItem('onboarding_step4_draft')
+      toast.success('Step 4 completed!')
+      router.push('/onboarding/landlord/step-5')
+    }
   }
 
+  // ── Loading gate ─────────────────────────────────────────────────────────────
+  if (!isReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden bg-gradient-to-br from-orange-50 via-white to-slate-50">
       {/* Background Elements */}
@@ -183,16 +122,12 @@ export default function LandlordOnboardingStep4() {
             </div>
             <div className="flex-1 h-1 bg-green-600 mx-2"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-semibold">
-                4
-              </div>
+              <div className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-semibold">4</div>
               <span className="ml-2 text-sm font-medium text-orange-600">Bank Details</span>
             </div>
             <div className="flex-1 h-1 bg-slate-200 mx-2"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">
-                5
-              </div>
+              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">5</div>
               <span className="ml-2 text-sm font-medium text-slate-500">Review</span>
             </div>
           </div>
@@ -207,76 +142,72 @@ export default function LandlordOnboardingStep4() {
           <p className="text-slate-600">Step 4: Provide your bank information for payments</p>
         </div>
 
-        {/* Bank Details Form */}
-        <Card className="shadow-lg border-2 border-slate-200 max-w-2xl mx-auto">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Shield className="h-5 w-5 text-orange-600" />
-              Bank Account Details
-            </CardTitle>
-            <CardDescription>
-              Please provide your bank account information for payments
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="bank_account_number">Bank Account Number *</Label>
-              <Input
-                id="bank_account_number"
-                name="bank_account_number"
-                type="text"
-                value={formData.bank_account_number}
-                onChange={handleInputChange}
-                placeholder="Enter your bank account number"
-                className="w-full"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="bank_name">Bank Name *</Label>
-              <Input
-                id="bank_name"
-                name="bank_name"
-                type="text"
-                value={formData.bank_name}
-                onChange={handleInputChange}
-                placeholder="e.g., GTBank, Access Bank, First Bank"
-                className="w-full"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="account_name">Account Name *</Label>
-              <Input
-                id="account_name"
-                name="account_name"
-                type="text"
-                value={formData.account_name}
-                onChange={handleInputChange}
-                placeholder="Name on the bank account"
-                className="w-full"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="payment_reference">Payment Reference (Optional)</Label>
-              <Input
-                id="payment_reference"
-                name="payment_reference"
-                type="text"
-                value={formData.payment_reference}
-                onChange={handleInputChange}
-                placeholder="Reference for payment identification"
-                className="w-full"
-              />
-            </div>
-          </CardContent>
-        </Card>
+        {/* Form wraps BOTH the card inputs AND the submit button */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <Card className="shadow-lg border-2 border-slate-200">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Shield className="h-5 w-5 text-orange-600" />
+                Bank Account Details
+              </CardTitle>
+              <CardDescription>
+                Please provide your bank account information for payments
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="bank_account_number">Bank Account Number *</Label>
+                <Input
+                  id="bank_account_number"
+                  name="bank_account_number"
+                  type="text"
+                  value={formData.bank_account_number}
+                  onChange={handleInputChange}
+                  placeholder="Enter your bank account number"
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bank_name">Bank Name *</Label>
+                <Input
+                  id="bank_name"
+                  name="bank_name"
+                  type="text"
+                  value={formData.bank_name}
+                  onChange={handleInputChange}
+                  placeholder="e.g., GTBank, Access Bank, First Bank"
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="account_name">Account Name *</Label>
+                <Input
+                  id="account_name"
+                  name="account_name"
+                  type="text"
+                  value={formData.account_name}
+                  onChange={handleInputChange}
+                  placeholder="Name on the bank account"
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="payment_reference">Payment Reference (Optional)</Label>
+                <Input
+                  id="payment_reference"
+                  name="payment_reference"
+                  type="text"
+                  value={formData.payment_reference}
+                  onChange={handleInputChange}
+                  placeholder="Reference for payment identification"
+                  className="w-full"
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* Submit Button */}
-        <form onSubmit={handleSubmit}>
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 text-lg"
             disabled={isProcessing}
           >

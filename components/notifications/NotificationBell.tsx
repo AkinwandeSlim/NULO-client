@@ -3,10 +3,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bell, Check, CheckCheck, X, ExternalLink } from 'lucide-react';
 import { useNotifications } from '@/contexts/NotificationContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 
 export function NotificationBell() {
   const { state, markAsRead, markAllAsRead } = useNotifications();
+  const { user } = useAuth();
+
+  // Route to the correct notifications page based on user type
+  const notificationsPath =
+    user?.user_type === 'landlord' ? '/landlord/notifications'
+    : user?.user_type === 'admin'  ? '/admin/notifications'
+    : '/tenant/notifications';
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -193,8 +201,7 @@ export function NotificationBell() {
             <div className="p-3 border-t border-gray-200 bg-gray-50">
               <button
                 onClick={() => {
-                  // Navigate to full notifications page
-                  window.location.href = '/tenant/notifications';
+                  window.location.href = notificationsPath;
                 }}
                 className="w-full text-center text-sm text-orange-600 hover:text-orange-700 font-medium"
               >

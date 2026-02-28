@@ -85,9 +85,16 @@ const NIGERIAN_LOCATIONS: Location[] = [
   { name: 'Auchi', state: 'Edo State', country: 'Nigeria' },
 ]
 
+export interface StateData {
+  id: string
+  name: string
+  state_code: string
+  cities_count?: number
+}
+
 export interface StatesResponse {
   success: boolean
-  states: string[]
+  states: StateData[]
   total_states: number
 }
 
@@ -103,16 +110,153 @@ export interface CitiesResponse {
   total_cities: number
 }
 
-// Predefined Nigerian states
-const NIGERIAN_STATES = [
-  'Abia State', 'Adamawa State', 'Akwa Ibom State', 'Anambra State', 'Bauchi State',
-  'Bayelsa State', 'Benue State', 'Borno State', 'Cross River State', 'Delta State',
-  'Ebonyi State', 'Edo State', 'Ekiti State', 'Enugu State', 'FCT', 'Gombe State',
-  'Imo State', 'Jigawa State', 'Kaduna State', 'Kano State', 'Katsina State',
-  'Kebbi State', 'Kogi State', 'Kwara State', 'Lagos State', 'Nasarawa State',
-  'Niger State', 'Ogun State', 'Ondo State', 'Osun State', 'Oyo State',
-  'Plateau State', 'Rivers State', 'Sokoto State', 'Taraba State', 'Yobe State', 'Zamfara State'
+// Predefined Nigerian states as properly shaped objects (fallback when API is unavailable)
+const NIGERIAN_STATES_DATA: StateData[] = [
+  { id: 'abia', name: 'Abia', state_code: 'AB' },
+  { id: 'adamawa', name: 'Adamawa', state_code: 'AD' },
+  { id: 'akwa-ibom', name: 'Akwa Ibom', state_code: 'AK' },
+  { id: 'anambra', name: 'Anambra', state_code: 'AN' },
+  { id: 'bauchi', name: 'Bauchi', state_code: 'BA' },
+  { id: 'bayelsa', name: 'Bayelsa', state_code: 'BY' },
+  { id: 'benue', name: 'Benue', state_code: 'BE' },
+  { id: 'borno', name: 'Borno', state_code: 'BO' },
+  { id: 'cross-river', name: 'Cross River', state_code: 'CR' },
+  { id: 'delta', name: 'Delta', state_code: 'DE' },
+  { id: 'ebonyi', name: 'Ebonyi', state_code: 'EB' },
+  { id: 'edo', name: 'Edo', state_code: 'ED' },
+  { id: 'ekiti', name: 'Ekiti', state_code: 'EK' },
+  { id: 'enugu', name: 'Enugu', state_code: 'EN' },
+  { id: 'fct', name: 'FCT (Abuja)', state_code: 'FC' },
+  { id: 'gombe', name: 'Gombe', state_code: 'GO' },
+  { id: 'imo', name: 'Imo', state_code: 'IM' },
+  { id: 'jigawa', name: 'Jigawa', state_code: 'JI' },
+  { id: 'kaduna', name: 'Kaduna', state_code: 'KD' },
+  { id: 'kano', name: 'Kano', state_code: 'KN' },
+  { id: 'katsina', name: 'Katsina', state_code: 'KT' },
+  { id: 'kebbi', name: 'Kebbi', state_code: 'KE' },
+  { id: 'kogi', name: 'Kogi', state_code: 'KO' },
+  { id: 'kwara', name: 'Kwara', state_code: 'KW' },
+  { id: 'lagos', name: 'Lagos', state_code: 'LA' },
+  { id: 'nasarawa', name: 'Nasarawa', state_code: 'NA' },
+  { id: 'niger', name: 'Niger', state_code: 'NI' },
+  { id: 'ogun', name: 'Ogun', state_code: 'OG' },
+  { id: 'ondo', name: 'Ondo', state_code: 'ON' },
+  { id: 'osun', name: 'Osun', state_code: 'OS' },
+  { id: 'oyo', name: 'Oyo', state_code: 'OY' },
+  { id: 'plateau', name: 'Plateau', state_code: 'PL' },
+  { id: 'rivers', name: 'Rivers', state_code: 'RI' },
+  { id: 'sokoto', name: 'Sokoto', state_code: 'SO' },
+  { id: 'taraba', name: 'Taraba', state_code: 'TA' },
+  { id: 'yobe', name: 'Yobe', state_code: 'YO' },
+  { id: 'zamfara', name: 'Zamfara', state_code: 'ZA' },
 ]
+
+// Fallback cities per state (used when API is unavailable)
+const NIGERIAN_CITIES_FALLBACK: Record<string, Array<{ id: string; name: string; state_code: string }>> = {
+  'Lagos': [
+    { id: 'lekki', name: 'Lekki', state_code: 'LA' },
+    { id: 'victoria-island', name: 'Victoria Island', state_code: 'LA' },
+    { id: 'ikoyi', name: 'Ikoyi', state_code: 'LA' },
+    { id: 'ikeja', name: 'Ikeja', state_code: 'LA' },
+    { id: 'surulere', name: 'Surulere', state_code: 'LA' },
+    { id: 'yaba', name: 'Yaba', state_code: 'LA' },
+    { id: 'ajah', name: 'Ajah', state_code: 'LA' },
+    { id: 'lagos-island', name: 'Lagos Island', state_code: 'LA' },
+    { id: 'apapa', name: 'Apapa', state_code: 'LA' },
+    { id: 'badagry', name: 'Badagry', state_code: 'LA' },
+    { id: 'ikorodu', name: 'Ikorodu', state_code: 'LA' },
+    { id: 'epe', name: 'Epe', state_code: 'LA' },
+    { id: 'mushin', name: 'Mushin', state_code: 'LA' },
+    { id: 'oshodi', name: 'Oshodi', state_code: 'LA' },
+    { id: 'alimosho', name: 'Alimosho', state_code: 'LA' },
+    { id: 'banana-island', name: 'Banana Island', state_code: 'LA' },
+  ],
+  'FCT (Abuja)': [
+    { id: 'maitama', name: 'Maitama', state_code: 'FC' },
+    { id: 'asokoro', name: 'Asokoro', state_code: 'FC' },
+    { id: 'garki', name: 'Garki', state_code: 'FC' },
+    { id: 'wuse', name: 'Wuse', state_code: 'FC' },
+    { id: 'jabi', name: 'Jabi', state_code: 'FC' },
+    { id: 'gwarinpa', name: 'Gwarinpa', state_code: 'FC' },
+    { id: 'kubwa', name: 'Kubwa', state_code: 'FC' },
+    { id: 'abuja-cbd', name: 'Central Business District', state_code: 'FC' },
+    { id: 'gwagwalada', name: 'Gwagwalada', state_code: 'FC' },
+    { id: 'kuje', name: 'Kuje', state_code: 'FC' },
+  ],
+  'Rivers': [
+    { id: 'port-harcourt', name: 'Port Harcourt', state_code: 'RI' },
+    { id: 'gra-ph', name: 'GRA Port Harcourt', state_code: 'RI' },
+    { id: 'elekahia', name: 'Elekahia', state_code: 'RI' },
+    { id: 'trans-amadi', name: 'Trans Amadi', state_code: 'RI' },
+    { id: 'rumuokwuta', name: 'Rumuokwuta', state_code: 'RI' },
+    { id: 'd-line', name: 'D-Line', state_code: 'RI' },
+    { id: 'bonny', name: 'Bonny', state_code: 'RI' },
+    { id: 'ahoada', name: 'Ahoada', state_code: 'RI' },
+  ],
+  'Kano': [
+    { id: 'kano-city', name: 'Kano City', state_code: 'KN' },
+    { id: 'wudil', name: 'Wudil', state_code: 'KN' },
+    { id: 'bichi', name: 'Bichi', state_code: 'KN' },
+    { id: 'gaya', name: 'Gaya', state_code: 'KN' },
+    { id: 'rano', name: 'Rano', state_code: 'KN' },
+  ],
+  'Oyo': [
+    { id: 'ibadan', name: 'Ibadan', state_code: 'OY' },
+    { id: 'ogbomosho', name: 'Ogbomosho', state_code: 'OY' },
+    { id: 'oyo-town', name: 'Oyo', state_code: 'OY' },
+    { id: 'iseyin', name: 'Iseyin', state_code: 'OY' },
+    { id: 'saki', name: 'Saki', state_code: 'OY' },
+  ],
+  'Kaduna': [
+    { id: 'kaduna-city', name: 'Kaduna', state_code: 'KD' },
+    { id: 'zaria', name: 'Zaria', state_code: 'KD' },
+    { id: 'kafanchan', name: 'Kafanchan', state_code: 'KD' },
+  ],
+  'Enugu': [
+    { id: 'enugu-city', name: 'Enugu', state_code: 'EN' },
+    { id: 'nsukka', name: 'Nsukka', state_code: 'EN' },
+    { id: 'agbani', name: 'Agbani', state_code: 'EN' },
+    { id: 'awgu', name: 'Awgu', state_code: 'EN' },
+  ],
+  'Edo': [
+    { id: 'benin-city', name: 'Benin City', state_code: 'ED' },
+    { id: 'auchi', name: 'Auchi', state_code: 'ED' },
+    { id: 'ekpoma', name: 'Ekpoma', state_code: 'ED' },
+    { id: 'uromi', name: 'Uromi', state_code: 'ED' },
+  ],
+  'Ogun': [
+    { id: 'abeokuta', name: 'Abeokuta', state_code: 'OG' },
+    { id: 'sagamu', name: 'Sagamu', state_code: 'OG' },
+    { id: 'ijebu-ode', name: 'Ijebu-Ode', state_code: 'OG' },
+    { id: 'ota', name: 'Ota', state_code: 'OG' },
+  ],
+  'Anambra': [
+    { id: 'awka', name: 'Awka', state_code: 'AN' },
+    { id: 'onitsha', name: 'Onitsha', state_code: 'AN' },
+    { id: 'nnewi', name: 'Nnewi', state_code: 'AN' },
+  ],
+  'Delta': [
+    { id: 'asaba', name: 'Asaba', state_code: 'DE' },
+    { id: 'warri', name: 'Warri', state_code: 'DE' },
+    { id: 'sapele', name: 'Sapele', state_code: 'DE' },
+    { id: 'ughelli', name: 'Ughelli', state_code: 'DE' },
+  ],
+  'Imo': [
+    { id: 'owerri', name: 'Owerri', state_code: 'IM' },
+    { id: 'orlu', name: 'Orlu', state_code: 'IM' },
+    { id: 'okigwe', name: 'Okigwe', state_code: 'IM' },
+  ],
+  'Kwara': [
+    { id: 'ilorin', name: 'Ilorin', state_code: 'KW' },
+    { id: 'offa', name: 'Offa', state_code: 'KW' },
+    { id: 'jebba', name: 'Jebba', state_code: 'KW' },
+  ],
+  'Plateau': [
+    { id: 'jos', name: 'Jos', state_code: 'PL' },
+    { id: 'bukuru', name: 'Bukuru', state_code: 'PL' },
+    { id: 'shendam', name: 'Shendam', state_code: 'PL' },
+  ],
+}
 
 export const locationsAPI = {
   /**
@@ -139,14 +283,14 @@ export const locationsAPI = {
   async getStates(): Promise<StatesResponse> {
     try {
       const response = await apiClient.get('/locations/states')
+      // Backend returns objects with {id, name, state_code} — use as-is
       return response.data
     } catch (error) {
       console.warn('Failed to fetch states from API, using fallback data')
-      // Return fallback data
       return {
         success: true,
-        states: NIGERIAN_STATES,
-        total_states: NIGERIAN_STATES.length
+        states: NIGERIAN_STATES_DATA,
+        total_states: NIGERIAN_STATES_DATA.length
       }
     }
   },
@@ -160,20 +304,12 @@ export const locationsAPI = {
       return response.data
     } catch (error) {
       console.warn('Failed to fetch cities from API, using fallback data')
-      // Filter fallback data by state and format correctly
-      const citiesInState = NIGERIAN_LOCATIONS
-        .filter(location => location.state === state)
-        .map((location, index) => ({
-          id: `${state.toLowerCase().replace(/\s+/g, '-')}-${location.name.toLowerCase().replace(/\s+/g, '-')}-${index}`,
-          name: location.name,
-          state_code: state.replace(' State', '').toUpperCase()
-        }))
-        .filter((city, index, arr) => arr.findIndex(c => c.name === city.name) === index) // Remove duplicates
-      
+      // Use the pre-built fallback cities map, or generate basic entries
+      const fallback = NIGERIAN_CITIES_FALLBACK[state] || []
       return {
         success: true,
-        cities: citiesInState,
-        total_cities: citiesInState.length
+        cities: fallback,
+        total_cities: fallback.length
       }
     }
   },

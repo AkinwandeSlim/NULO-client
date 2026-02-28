@@ -6,455 +6,302 @@ import { useAuth } from "@/contexts/AuthContext"
 import { useSignupCallbackUrl } from "@/hooks/useSignupCallbackUrl"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { 
+import {
   MapPin, Bed, Bath, Square, Heart, Share2, ChevronRight, X,
-  Home, Wifi, Car, Dumbbell, Shield, Wind, Tv, Coffee, Check, 
-  Phone, Mail, Calendar, Star, MessageCircle, Eye, Grid, Maximize2,
-  CheckCircle2, TrendingDown, Video, Users, Clock, Map, ArrowRight
+  Home, Wifi, Car, Dumbbell, Shield, Wind, Tv, Coffee, Check,
+  Phone, Mail, Calendar, Star, MessageCircle, Eye, Grid,
+  CheckCircle2, Video, Clock, ArrowRight, FileText, Lock,
+  TrendingDown, Users, ZapIcon, AlertTriangle
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import ViewingRequestModal from "@/components/rental/ViewingRequestModal"
 import { ChatModal } from "@/components/ChatModal"
-import { viewingRequestsAPI, favoritesAPI } from "@/lib/api"
+import { favoritesAPI } from "@/lib/api/favorites"
+import { viewingRequestsAPI } from "@/lib/api/viewingRequestsTenant"
 import { propertiesAPI } from "@/lib/api/properties"
 import { Loader2 } from "lucide-react"
 import dynamic from "next/dynamic"
 
-// Dynamically import map component to avoid SSR issues
-const PropertyMap = dynamic(() => import('@/components/PropertyMap'), {
+// ── Dynamic map import ─────────────────────────────────────────────────────────
+const PropertyMap = dynamic(() => import("@/components/PropertyMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-64 bg-slate-100 rounded-lg flex items-center justify-center">
+    <div className="w-full h-64 bg-slate-100 rounded-xl flex items-center justify-center">
       <div className="text-center">
         <Loader2 className="h-6 w-6 animate-spin text-orange-500 mx-auto mb-2" />
-        <p className="text-slate-600 text-sm">Loading map...</p>
+        <p className="text-slate-500 text-sm">Loading map...</p>
       </div>
     </div>
-  )
+  ),
 })
 
-// Placeholder images for properties with missing photos
+// ── Constants ─────────────────────────────────────────────────────────────────
 const PLACEHOLDER_IMAGES = [
-  'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop', // Modern apartment
-  'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&h=600&fit=crop', // Living room
-  'https://images.unsplash.com/photo-1556912173-3bb406ef7e77?w=800&h=600&fit=crop', // Bedroom
-  'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=800&h=600&fit=crop', // Kitchen
-  'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=800&h=600&fit=crop', // Bathroom
+  "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop",
+  "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&h=600&fit=crop",
+  "https://images.unsplash.com/photo-1556912173-3bb406ef7e77?w=800&h=600&fit=crop",
+  "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=800&h=600&fit=crop",
+  "https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=800&h=600&fit=crop",
 ]
 
-// Helper to ensure minimum 5 images with placeholders
 const ensureMinimumImages = (images: string[] = []): string[] => {
-  const validImages = images.filter(img => img && img.trim() !== '')
-  if (validImages.length >= 5) return validImages
-  
-  const needed = 5 - validImages.length
-  return [...validImages, ...PLACEHOLDER_IMAGES.slice(0, needed)]
+  const valid = images.filter(img => img && img.trim() !== "")
+  if (valid.length >= 5) return valid
+  return [...valid, ...PLACEHOLDER_IMAGES.slice(0, 5 - valid.length)]
 }
 
-// Amenity icon mapping
-const amenityIcons: Record<string, any> = {
-  'wifi': Wifi,
-  'parking': Car,
-  'gym': Dumbbell,
-  'security': Shield,
-  'ac': Wind,
-  'smart_home': Tv,
-  'kitchen': Coffee,
-  'balcony': Home,
-}
-
+// ── Amenity icon helper ────────────────────────────────────────────────────────
 const getAmenityIcon = (amenity: string) => {
-  const key = amenity.toLowerCase().replace(/[^a-z]/g, '')
-  if (key.includes('wifi') || key.includes('internet')) return Wifi
-  if (key.includes('park')) return Car
-  if (key.includes('gym') || key.includes('fitness')) return Dumbbell
-  if (key.includes('security') || key.includes('guard')) return Shield
-  if (key.includes('air') || key.includes('ac')) return Wind
-  if (key.includes('smart') || key.includes('tv')) return Tv
-  if (key.includes('kitchen')) return Coffee
-  if (key.includes('balcony') || key.includes('terrace')) return Home
-  return Home // default icon
+  const k = amenity.toLowerCase().replace(/[^a-z]/g, "")
+  if (k.includes("wifi") || k.includes("internet")) return Wifi
+  if (k.includes("park"))                            return Car
+  if (k.includes("gym") || k.includes("fitness"))   return Dumbbell
+  if (k.includes("security") || k.includes("guard")) return Shield
+  if (k.includes("air") || k.includes("ac"))        return Wind
+  if (k.includes("smart") || k.includes("tv"))      return Tv
+  if (k.includes("kitchen"))                         return Coffee
+  if (k.includes("balcony") || k.includes("terrace")) return Home
+  return Home
 }
 
-export default function PropertyDetailPage() {
-  const [activeTab, setActiveTab] = useState<'description' | 'amenities' | 'landlord' | 'location'>('description')
-  const [showImageModal, setShowImageModal] = useState(false)
-  const [selectedImage, setSelectedImage] = useState(0)
-  const [showViewingModal, setShowViewingModal] = useState(false)
-  const [viewingType, setViewingType] = useState<'physical' | 'virtual'>('physical')
-  const [showChatModal, setShowChatModal] = useState(false)
-  const [showGallery, setShowGallery] = useState(false)
-  const [showReportModal, setShowReportModal] = useState(false)
-  const [isFavorite, setIsFavorite] = useState(false)
-  const [isTogglingFavorite, setIsTogglingFavorite] = useState(false)
-  const [propertyData, setPropertyData] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [shouldShowSkeleton, setShouldShowSkeleton] = useState(false) // ✅ NEW: Only show skeleton for slow fetches
-  const [error, setError] = useState<string | null>(null)
-  const [hasViewedVideo, setHasViewedVideo] = useState(false)
+// ── Tab type ──────────────────────────────────────────────────────────────────
+type Tab = "description" | "amenities" | "landlord" | "location"
 
-  const router = useRouter()
-  const params = useParams()
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
+export default function PropertyDetailPage() {
+  const [activeTab,           setActiveTab]           = useState<Tab>("description")
+  const [selectedImage,       setSelectedImage]       = useState(0)
+  const [showGallery,         setShowGallery]         = useState(false)
+  const [showViewingModal,    setShowViewingModal]    = useState(false)
+  const [viewingType,         setViewingType]         = useState<"PHYSICAL" | "VIRTUAL" | "LIVE_VIDEO">("PHYSICAL")
+  const [showChatModal,       setShowChatModal]       = useState(false)
+  const [showReportModal,     setShowReportModal]     = useState(false)
+  const [isFavorite,          setIsFavorite]          = useState(false)
+  const [isTogglingFavorite,  setIsTogglingFavorite]  = useState(false)
+  const [propertyData,        setPropertyData]        = useState<any>(null)
+  const [isLoading,           setIsLoading]           = useState(true)
+  const [shouldShowSkeleton,  setShouldShowSkeleton]  = useState(false)
+  const [error,               setError]               = useState<string | null>(null)
+  const [hasViewedVideo,      setHasViewedVideo]      = useState(false)
+  const [completedViewingId,  setCompletedViewingId]  = useState<string | null>(null)
+  const [hasExistingViewing,  setHasExistingViewing]  = useState(false)
+  const [isCheckingViewings,  setIsCheckingViewings]  = useState(false)
+
+  const router     = useRouter()
+  const params     = useParams()
   const { user, loading: authLoading } = useAuth()
   const propertyId = params.id as string
-  
-  // ✅ Auto-preserve property URL for signup redirect
+
   useSignupCallbackUrl()
 
-  // Redirect landlords to their dashboard
+  // ── Redirect landlords ───────────────────────────────────────────────────
   useEffect(() => {
-    if (user?.user_type === 'landlord') {
-      router.replace('/landlord/overview')
-    }
+    if (user?.user_type === "landlord") router.replace("/landlord/overview")
   }, [user, router])
 
-  // Fetch property data
+  // ── Fetch property ───────────────────────────────────────────────────────
   useEffect(() => {
+    let isMounted = true
     const fetchProperty = async () => {
-      if (!propertyId) {
-        console.error('No property ID provided')
-        setError('No property ID provided')
-        setIsLoading(false)
+      if (!propertyId || !isMounted) {
+        if (isMounted) { setError("No property ID provided"); setIsLoading(false) }
         return
       }
-
-      console.log('🔍 [PROPERTY DETAIL] Fetching property:', propertyId)
-      setIsLoading(true)
-      setError(null)
-      setShouldShowSkeleton(true) 
-
+      if (isMounted) { setIsLoading(true); setError(null); setShouldShowSkeleton(true) }
       try {
         const data = await propertiesAPI.getById(propertyId)
-        console.log('✅ [PROPERTY DETAIL] Data received:', data)
-        console.log('🔍 [FRONTEND DEBUG] Landlord data:', data.landlord)
-        console.log('🔍 [FRONTEND DEBUG] Landlord properties_count:', data.landlord?.properties_count)
-        console.log('🔍 [FRONTEND DEBUG] Landlord name:', data.landlord?.name)
-        
-        // Ensure minimum 5 images with placeholders
-        if (data.images) {
-          data.images = ensureMinimumImages(data.images)
-        } else {
-          data.images = PLACEHOLDER_IMAGES
-        }
-        
+        if (!isMounted) return
+        data.images = data.images ? ensureMinimumImages(data.images) : PLACEHOLDER_IMAGES
         setPropertyData(data)
         setIsFavorite(data.is_favorited || false)
-        console.log('✅ [PROPERTY DETAIL] Property data set successfully')
       } catch (err: any) {
-        console.error('❌ [PROPERTY DETAIL] Failed to fetch property:', err)
-        console.error('❌ [PROPERTY DETAIL] Error details:', {
-          message: err.message,
-          response: err.response?.data,
-          status: err.response?.status
-        })
-        
-        const errorMessage = err.response?.data?.detail || err.message || 'Failed to load property'
-        setError(errorMessage)
-        toast.error(errorMessage)
+        if (!isMounted) return
+        let msg = err.message || "Failed to load property"
+        if (msg.includes("taking too long"))           msg = "Property details are taking too long. Please check your connection."
+        else if (msg.includes("Network connection"))   msg = "Network connection lost. Please check your internet."
+        else if (msg.includes("Cannot reach"))         msg = "Cannot reach the property server. Please try again."
+        setError(msg)
+        toast.error(msg)
       } finally {
-        // ✅ Clear timeout and skeleton state
-        console.log('🏁 [PROPERTY DETAIL] Fetch completed, setting loading to false')
-        setIsLoading(false)
-        setShouldShowSkeleton(false)
+        if (isMounted) { setIsLoading(false); setShouldShowSkeleton(false) }
       }
     }
-
     fetchProperty()
+    return () => { isMounted = false }
   }, [propertyId])
 
-  // Format price helper
-  const formatPrice = (value: number) => {
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: 'NGN',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
+  // ── Check if user already has a pending/confirmed viewing ──────────────────
+  useEffect(() => {
+    if (!user || !propertyId) return
+    let isMounted = true
+    const checkExistingViewings = async () => {
+      setIsCheckingViewings(true)
+      try {
+        const result = await viewingRequestsAPI.getMyRequests()
+        if (!isMounted) return
+        if (result.success && result.data && Array.isArray(result.data)) {
+          const found = result.data.some(
+            (req: any) =>
+              req.property_id === propertyId &&
+              ["pending", "confirmed"].includes(req.status)
+          )
+          setHasExistingViewing(found)
+        }
+      } catch (err) {
+        console.warn("Could not check existing viewing requests:", err)
+      } finally {
+        if (isMounted) setIsCheckingViewings(false)
+      }
+    }
+    checkExistingViewings()
+    return () => { isMounted = false }
+  }, [user, propertyId])
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const formatPrice = (value: number) =>
+    new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+
+  const authRedirect = (msg: string) => {
+    toast.info(msg)
+    router.push(`/signup/tenant?redirect_to=${encodeURIComponent(`/properties/${propertyId}`)}`)
   }
 
+  // ── Handlers ─────────────────────────────────────────────────────────────
   const toggleFavorite = async () => {
-    // Prevent multiple simultaneous calls
     if (isTogglingFavorite) return
-    
-    if (!user) {
-      // ✅ Redirect to signup with property callback URL
-      const currentPath = `/properties/${propertyId}`
-      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
-      toast.info('Please sign up to save favorites. You\'ll return here after verification.')
-      router.push(signupUrl)
-      return
-    }
-
-    // Ensure property data is loaded
-    if (!propertyData || !propertyData.id) {
-      toast.error('Property data not loaded yet')
-      return
-    }
-
+    if (!user) { authRedirect("Sign up to save favorites. You'll return here after verification."); return }
+    if (!propertyData?.id) { toast.error("Property data not loaded yet"); return }
     try {
       setIsTogglingFavorite(true)
-      const propertyIdStr = String(propertyData.id)
-      
-      console.log('Toggling favorite for property:', propertyIdStr)
-      console.log('Current favorite state:', isFavorite)
-      
+      const id = String(propertyData.id)
       if (isFavorite) {
-        // Remove from favorites
-        console.log('Removing from favorites...')
-        await favoritesAPI.remove(propertyIdStr)
+        await favoritesAPI.remove(id)
         setIsFavorite(false)
-        
         toast.success(
           <div className="flex items-center justify-between gap-4">
             <span>Removed from favorites</span>
-            <button
-              onClick={async () => {
-                try {
-                  await favoritesAPI.add(propertyData.id.toString())
-                  setIsFavorite(true)
-                  toast.dismiss()
-                  toast.success("Added back to favorites!")
-                } catch (error) {
-                  toast.error("Failed to add back")
-                }
-              }}
-              className="text-xs font-semibold underline"
-            >
-              Undo
-            </button>
+            <button onClick={async () => { await favoritesAPI.add(id); setIsFavorite(true); toast.dismiss(); toast.success("Added back!") }} className="text-xs font-semibold underline">Undo</button>
           </div>,
           { duration: 5000 }
         )
       } else {
-        // Add to favorites
-        console.log('Adding to favorites...')
-        await favoritesAPI.add(propertyIdStr)
+        await favoritesAPI.add(id)
         setIsFavorite(true)
-        console.log('Successfully added to favorites')
-        toast.success("✅ Saved to Favorites!")
+        toast.success("Saved to Favorites!")
       }
-    } catch (error: any) {
-      console.error('Failed to toggle favorite:', error)
-      console.error('Error details:', error.response?.data)
-      
-      // Revert optimistic update
-      setIsFavorite(!isFavorite)
-      
-      // Show detailed error message
-      const errorMsg = error.response?.data?.detail || 'Failed to update favorites'
-      
-      // Handle specific error cases
-      if (errorMsg.includes('already in favorites')) {
-        toast.info('This property is already in your favorites')
-        setIsFavorite(true)
-      } else if (errorMsg.includes('not found')) {
-        toast.error('Property not found')
-      } else if (error.response?.status === 401) {
-        toast.error('Please sign in to add favorites')
-      } else if (error.response?.status === 403 || errorMsg.includes('Only tenants')) {
-        toast.error(
-          <div>
-            <p className="font-semibold">⚠️ Tenants Only Feature</p>
-            <p className="text-xs mt-1">Only tenants can save favorites. Please sign in with a tenant account.</p>
-          </div>,
-          { duration: 7000 }
-        )
-      } else {
-        toast.error(
-          <div>
-            <p className="font-semibold">Failed to update favorites</p>
-            <p className="text-xs mt-1">{errorMsg}</p>
-          </div>,
-          { duration: 7000 }
-        )
-      }
+    } catch (err: any) {
+      setIsFavorite(prev => !prev)
+      const msg = err.response?.data?.detail || "Failed to update favorites"
+      if (msg.includes("already in favorites"))    { toast.info("Already in favorites"); setIsFavorite(true) }
+      else if (err.response?.status === 401)       toast.error("Please sign in to add favorites")
+      else if (err.response?.status === 403)       toast.error("Only tenants can save favorites")
+      else                                          toast.error(msg)
     } finally {
       setIsTogglingFavorite(false)
     }
   }
 
-  const handleRequestViewing = (type: 'physical' | 'virtual' = 'physical') => {
-    if (!user) {
-      // ✅ Redirect to signup with property callback URL
-      const currentPath = `/properties/${propertyId}`
-      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
-      toast.info('Please sign up to request a viewing. You\'ll return here after verification.')
-      router.push(signupUrl)
+  const handleRequestViewing = (type: "PHYSICAL" | "VIRTUAL" | "LIVE_VIDEO" = "PHYSICAL") => {
+    if (!user) { authRedirect("Sign up to request a viewing. You'll return here after verification."); return }
+
+    if (hasExistingViewing) {
+      toast.info("You already have a viewing request for this property.", {
+        description: "Check your dashboard, or go ahead and apply.",
+        duration: 5000,
+      })
       return
     }
+
+    // VIRTUAL needs a pre-recorded URL; LIVE_VIDEO is a live call so always available
+    if (type === "VIRTUAL" && !propertyData.video_tour_url) {
+      toast.info("No recorded virtual tour available for this property. Try Physical or Live Video instead.")
+      return
+    }
+
     setViewingType(type)
-    
-    // For virtual viewing, check if video is available
-    if (type === 'virtual' && !propertyData.video_tour_url) {
-      toast.info('Virtual tour video is not available for this property. Please schedule a physical viewing.')
-      return
-    }
-    
     setShowViewingModal(true)
   }
 
   const handleVirtualTour = () => {
-    if (!user) {
-      // ✅ Redirect to signup with property callback URL
-      const currentPath = `/properties/${propertyId}`
-      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
-      toast.info('Please sign up to view virtual tour. You\'ll return here after verification.')
-      router.push(signupUrl)
-      return
-    }
-
-    if (!propertyData.video_tour_url) {
-      toast.info('Virtual tour video is not available for this property.')
-      return
-    }
-
-    // Mark video as viewed and open video modal
+    if (!user) { authRedirect("Sign up to view virtual tour. You'll return here after verification."); return }
+    if (!propertyData.video_tour_url) { toast.info("Virtual tour not available."); return }
     setHasViewedVideo(true)
-    setShowImageModal(true)
-    toast.success('Virtual tour started! Marked as viewed.')
+    toast.success("Virtual tour started!")
   }
 
   const handleChatLandlord = () => {
-    if (!user) {
-      // ✅ Redirect to signup with property callback URL
-      const currentPath = `/properties/${propertyId}`
-      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
-      toast.info('Please sign up to message the landlord. You\'ll return here after verification.')
-      router.push(signupUrl)
-      return
-    }
+    if (!user) { authRedirect("Sign up to message the landlord."); return }
     setShowChatModal(true)
   }
 
   const handleReportConcern = () => {
-    if (!user) {
-      // ✅ Redirect to signup with property callback URL
-      const currentPath = `/properties/${propertyId}`
-      const signupUrl = `/signup/tenant?redirect_to=${encodeURIComponent(currentPath)}`
-      toast.info('Please sign up to report concerns. You\'ll return here after verification.')
-      router.push(signupUrl)
-      return
-    }
+    if (!user) { authRedirect("Sign up to report concerns."); return }
     setShowReportModal(true)
   }
 
-  const confirmViewing = async (viewingRequest: any) => {
-    // Note: The rental modal handles API call and passes response here with viewing data
-    try {
-      // The modal automatically shows success screen with proper details
-      // This callback just ensures modal closes properly after user action
-      console.log('Viewing request confirmed:', viewingRequest)
-      
-      // Update any local state or analytics here if needed
-      // The success toast is shown by the modal itself
-    } catch (error: any) {
-      console.error('Error handling viewing request response:', error)
-    }
-  }
-
-  const sendMessage = (message: string) => {
-    toast.success('Message sent securely via Nulo escrow chat')
-    setShowChatModal(false)
-    // Protected chat logging
-  }
-
-  const submitReport = (reason: string) => {
-    toast.success('Report submitted. Our trust & safety team will review within 24 hours.')
-    setShowReportModal(false)
-    // Flag for admin review
+  const confirmViewing = (viewingRequest: any) => {
+    // Capture the viewing ID for smart apply CTA
+    if (viewingRequest?.id) setCompletedViewingId(viewingRequest.id)
   }
 
   const shareProperty = () => {
     if (navigator.share) {
-      navigator.share({
-        title: propertyData.title,
-        text: `Check out this property: ${propertyData.title}`,
-        url: window.location.href,
-      })
+      navigator.share({ title: propertyData.title, text: `Check out: ${propertyData.title}`, url: window.location.href })
     } else {
       navigator.clipboard.writeText(window.location.href)
-      toast.success('Link copied to clipboard!')
+      toast.success("Link copied to clipboard!")
     }
   }
 
-  // Show loading while checking auth or fetching property data
+  const handleApply = () => {
+    if (!user) {
+      toast.info("Sign up to apply for this property.")
+      router.push(`/signup/tenant?redirect_to=${encodeURIComponent(`/properties/${propertyId}/apply`)}`)
+      return
+    }
+    const applyUrl = completedViewingId
+      ? `/properties/${propertyId}/apply?viewing_id=${completedViewingId}`
+      : `/properties/${propertyId}/apply`
+    router.push(applyUrl)
+  }
+
+  // ── Loading state ────────────────────────────────────────────────────────
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto px-4">
-          <Loader2 className="h-12 w-12 animate-spin text-orange-500 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium mb-2">Verifying account...</p>
-          <p className="text-slate-500 text-sm">Please wait while we verify your account</p>
-          
-          <Button 
-            variant="outline" 
-            className="mt-4"
-            onClick={() => router.push('/properties')}
-          >
-            Back to Properties
-          </Button>
+        <div className="text-center">
+          <Loader2 className="h-10 w-10 animate-spin text-orange-500 mx-auto mb-3" />
+          <p className="text-slate-600 font-medium text-sm">Verifying account...</p>
         </div>
       </div>
     )
   }
 
-  // ✅ IMPROVED: Show skeleton loaders ONLY for slower fetches (> 200ms)
-  // This provides better UX - fast networks show content immediately, slow networks see loading skeleton
   if (isLoading && shouldShowSkeleton) {
     return (
       <div className="min-h-screen bg-slate-50">
-        {/* Skeleton Breadcrumb */}
         <div className="bg-white border-b border-slate-200 sticky top-16 z-40">
-          <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-3">
+          <div className="max-w-7xl mx-auto px-4 md:px-6 py-3">
             <div className="flex items-center gap-2">
-              <div className="h-4 w-20 bg-slate-200 rounded animate-pulse" />
-              <div className="h-4 w-20 bg-slate-200 rounded animate-pulse" />
-              <div className="h-4 w-32 bg-slate-200 rounded animate-pulse" />
+              {[20, 24, 40].map(w => <div key={w} className={`h-3.5 w-${w} bg-slate-200 rounded animate-pulse`} />)}
             </div>
           </div>
         </div>
-
-        {/* Skeleton Gallery */}
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-1 md:gap-2 h-[300px] md:h-[500px] rounded-xl md:rounded-2xl overflow-hidden bg-slate-200 animate-pulse" />
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-4">
+          <div className="h-[300px] md:h-[500px] rounded-2xl bg-slate-200 animate-pulse" />
         </div>
-
-        {/* Skeleton Content */}
-        <div className="max-w-7xl mx-auto px-4 md:px-6 pb-8 md:pb-12">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8">
-            {/* Main Content Skeleton */}
+        <div className="max-w-7xl mx-auto px-4 md:px-6 pb-12">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-4">
-              {/* Title & Price Skeleton */}
-              <div className="bg-white rounded-lg p-6 space-y-4">
-                <div className="h-8 w-3/4 bg-slate-200 rounded animate-pulse" />
-                <div className="h-4 w-1/2 bg-slate-200 rounded animate-pulse" />
-                <div className="h-10 w-1/4 bg-orange-200 rounded animate-pulse" />
-              </div>
-
-              {/* Features Skeleton */}
-              <div className="bg-white rounded-lg p-6">
-                <div className="grid grid-cols-2 gap-4">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="h-12 bg-slate-200 rounded animate-pulse" />
-                  ))}
-                </div>
-              </div>
-
-              {/* Description Skeleton */}
-              <div className="bg-white rounded-lg p-6 space-y-3">
-                <div className="h-4 w-full bg-slate-200 rounded animate-pulse" />
-                <div className="h-4 w-5/6 bg-slate-200 rounded animate-pulse" />
-                <div className="h-4 w-4/6 bg-slate-200 rounded animate-pulse" />
-              </div>
+              {[96, 48, 72].map(h => <div key={h} className={`h-${h} bg-white rounded-xl animate-pulse`} />)}
             </div>
-
-            {/* Sidebar Skeleton */}
             <div className="space-y-4">
-              <div className="bg-white rounded-lg p-6 h-64 bg-slate-200 animate-pulse" />
-              <div className="bg-white rounded-lg p-6 h-40 bg-slate-200 animate-pulse" />
+              <div className="h-80 bg-white rounded-xl animate-pulse" />
+              <div className="h-40 bg-white rounded-xl animate-pulse" />
             </div>
           </div>
         </div>
@@ -462,829 +309,875 @@ export default function PropertyDetailPage() {
     )
   }
 
-  // Error state
   if (error && !propertyData) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-4">
-          <Home className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Property Not Found</h2>
-          <p className="text-slate-600 mb-6">{error || 'The property you are looking for does not exist or has been removed.'}</p>
-          
+          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Home className="h-8 w-8 text-slate-400" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Property Not Available</h2>
+          <p className="text-slate-500 text-sm mb-6">{error}</p>
           <div className="flex gap-3 justify-center">
-            <Button onClick={() => window.location.reload()} className="bg-orange-500 hover:bg-orange-600">
-              Try Again
+            <Button onClick={() => window.location.reload()} className="bg-orange-500 hover:bg-orange-600" disabled={isLoading}>
+              {isLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Retrying…</> : "Try Again"}
             </Button>
-            <Button variant="outline" onClick={() => router.push('/properties')}>
-              Browse All Properties
-            </Button>
+            <Button variant="outline" onClick={() => router.push("/properties")}>Browse All</Button>
           </div>
         </div>
       </div>
     )
   }
 
-  // Guard against null propertyData during initial render
   if (!propertyData) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto mb-4" />
-          <p className="text-slate-600">Loading property details...</p>
-        </div>
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
       </div>
     )
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // MAIN RENDER
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Breadcrumb Navigation - Mobile Optimized */}
+    <div className="min-h-screen bg-[#F8F7F4]">
+
+      {/* ── Breadcrumb ──────────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-slate-200 sticky top-16 z-40">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-3">
-          <nav className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm overflow-x-auto scrollbar-hide">
-            <Link href="/" className="text-slate-600 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">
-              Home
-            </Link>
-            <ChevronRight className="h-3 md:h-4 w-3 md:w-4 text-slate-400 flex-shrink-0" />
-            <Link href="/properties" className="text-slate-600 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">
-              Properties
-            </Link>
-            <ChevronRight className="h-3 md:h-4 w-3 md:w-4 text-slate-400 flex-shrink-0" />
-            <span className="text-slate-900 font-semibold truncate max-w-[150px] md:max-w-[300px]">
-              {propertyData?.title || 'Loading...'}
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-2.5">
+          <nav className="flex items-center gap-1.5 text-xs md:text-sm overflow-x-auto scrollbar-hide">
+            <Link href="/" className="text-slate-500 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">Home</Link>
+            <ChevronRight className="h-3.5 w-3.5 text-slate-300 flex-shrink-0" />
+            <Link href="/properties" className="text-slate-500 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">Properties</Link>
+            <ChevronRight className="h-3.5 w-3.5 text-slate-300 flex-shrink-0" />
+            {/* <span className="text-slate-900 font-semibold truncate max-w-[160px] md:max-w-[320px]"> */}
+            <span className="text-orange-600 font-semibold whitespace-nowrap">
+              {propertyData.title}
             </span>
           </nav>
         </div>
       </div>
 
-      {/* Modern Image Gallery - Mobile Responsive */}
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-1 md:gap-2 h-[300px] md:h-[500px] rounded-xl md:rounded-2xl overflow-hidden">
-          {/* Main Large Image */}
-          <div 
-            className="col-span-2 row-span-2 relative group cursor-pointer overflow-hidden bg-slate-100"
-            onClick={() => {
-              setSelectedImage(0)
-              setShowGallery(true)
-            }}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      {/* ── Gallery ─────────────────────────────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 md:px-6 pt-5 pb-3">
+        <div className="grid grid-cols-4 gap-1.5 h-[260px] md:h-[480px] rounded-2xl overflow-hidden">
+          {/* Main image — left 50% */}
+          <div
+            className="col-span-2 row-span-2 relative group cursor-pointer overflow-hidden bg-slate-200"
+            onClick={() => { setSelectedImage(0); setShowGallery(true) }}
           >
             <img
-              src={propertyData?.images?.[0] || PLACEHOLDER_IMAGES[0]}
-              alt="Main property"
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+              src={propertyData.images[0]}
+              alt="Main"
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-            <div className="absolute top-3 left-3 flex flex-col gap-2">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+            {/* Badges */}
+            <div className="absolute top-3 left-3 flex flex-col gap-1.5">
               {propertyData.featured && (
-                <div className="bg-orange-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md">
-                  ⭐ Featured
-                </div>
+                <span className="bg-orange-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg shadow-md">⭐ Featured</span>
               )}
               {propertyData.landlord?.verified && (
-                <div className="bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md flex items-center gap-1">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Verified Listing
-                </div>
+                <span className="bg-emerald-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg shadow-md flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" /> Verified
+                </span>
               )}
+            </div>
+
+            {/* Share / Save overlay top-right */}
+            <div className="absolute top-3 right-3 flex gap-1.5">
+              <button
+                onClick={e => { e.stopPropagation(); shareProperty() }}
+                className="w-8 h-8 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-md transition-all hover:scale-105"
+              >
+                <Share2 className="h-3.5 w-3.5 text-slate-700" />
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); toggleFavorite() }}
+                disabled={isTogglingFavorite}
+                className="w-8 h-8 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-md transition-all hover:scale-105 disabled:opacity-50"
+              >
+                <Heart className={`h-3.5 w-3.5 transition-colors ${isFavorite ? "fill-red-500 text-red-500" : "text-slate-700"} ${isTogglingFavorite ? "animate-pulse" : ""}`} />
+              </button>
             </div>
           </div>
 
-          {/* Grid of Smaller Images */}
-          {propertyData.images.slice(1, 5).map((image: any,index: any) => (
+          {/* 4 smaller images — right 50% in a 2×2 grid */}
+          {propertyData.images.slice(1, 5).map((img: string, i: number) => (
             <div
-              key={index}
-              className="relative group cursor-pointer overflow-hidden"
-              onClick={() => {
-                setSelectedImage(index + 1)
-                setShowGallery(true)
-              }}
+              key={i}
+              className="relative group cursor-pointer overflow-hidden bg-slate-200"
+              onClick={() => { setSelectedImage(i + 1); setShowGallery(true) }}
             >
               <img
-                src={image}
-                alt={`Property ${index + 2}`}
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                src={img}
+                alt={`View ${i + 2}`}
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
               />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-              
-              {/* Show All Photos Button on Last Image */}
-              {index === 3 && (
-                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                  <Button
-                    variant="secondary"
-                    className="bg-white hover:bg-slate-100 text-slate-900 font-semibold"
-                  >
-                    <Grid className="h-4 w-4 mr-2" />
-                    View All {propertyData.images.length} Photos
-                  </Button>
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
+              {i === 3 && (
+                <div className="absolute inset-0 bg-black/55 flex items-center justify-center">
+                  <button className="bg-white hover:bg-slate-50 text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md transition-all hover:scale-105">
+                    <Grid className="h-3.5 w-3.5" />
+                    All {propertyData.images.length} photos
+                  </button>
                 </div>
               )}
             </div>
           ))}
         </div>
-
-        {/* Action Buttons Overlay - Mobile Optimized */}
-        <div className="flex items-center justify-end gap-2 -mt-12 md:-mt-16 relative z-10 px-2 md:px-4">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={shareProperty}
-            className="bg-white hover:bg-slate-100 shadow-lg"
-          >
-            <Share2 className="h-4 w-4 mr-2" />
-            Share
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={toggleFavorite}
-            disabled={isTogglingFavorite}
-            className="bg-white hover:bg-slate-100 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Heart className={`h-4 w-4 mr-2 ${isFavorite ? 'fill-red-500 text-red-500' : ''} ${isTogglingFavorite ? 'animate-pulse' : ''}`} />
-            Save
-          </Button>
-        </div>
       </div>
 
-      {/* Property Details - Mobile First Layout */}
-      <div className="max-w-7xl mx-auto px-4 md:px-6 pb-8 md:pb-12">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-4 md:space-y-6">
-            {/* Title & Price - Mobile Optimized */}
-            <Card>
-              <CardContent className="p-4 md:p-6">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
-                  <div className="flex-1">
-                    <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-2 leading-tight">
+      {/* ── Main content grid ────────────────────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 md:px-6 pb-28 md:pb-12">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-8 items-start">
+
+          {/* ════════════════════════════════════════════════════════════════
+              LEFT / MAIN CONTENT  (2/3)
+          ════════════════════════════════════════════════════════════════ */}
+          <div className="lg:col-span-2 space-y-4">
+
+            {/* Title & price card */}
+            <Card className="border-0 shadow-sm rounded-2xl overflow-hidden">
+              <CardContent className="p-5 md:p-7">
+
+                {/* Title row */}
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
+                  <div className="flex-1 min-w-0">
+                    <h1 className="text-2xl md:text-[1.75rem] font-bold text-slate-900 leading-tight mb-2">
                       {propertyData.title}
                     </h1>
-                    <div className="flex items-center gap-2 text-slate-600 mb-3">
-                      <MapPin className="h-4 w-4 flex-shrink-0" />
-                      <span className="text-sm md:text-base">{propertyData.location}</span>
+                    <div className="flex items-center gap-1.5 text-slate-500 text-sm mb-3">
+                      <MapPin className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                      <span>{propertyData.location}</span>
                     </div>
-                    {/* Enhanced Verification Badges - Phase 1 Requirements */}
-                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                      {/* Verified Property Badge */}
-                      <div className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>✓ Verified Property</span>
-                      </div>
-                      
-                      {/* Verified Landlord Badge */}
-                      {propertyData.landlord?.verified && (
-                        <div className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-                          <Shield className="h-3.5 w-3.5" />
-                          <span>✓ Verified Landlord</span>
-                        </div>
-                      )}
-                      
-                      {/* Verified Documents Badge */}
-                      <div className="inline-flex items-center gap-1.5 bg-purple-50 border border-purple-200 text-purple-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-                        <Check className="h-3.5 w-3.5" />
-                        <span>✓ Verified Documents</span>
-                      </div>
-                      
-                      {/* Active Listing Badge */}
-                      <div className="inline-flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-                        <Eye className="h-3.5 w-3.5" />
-                        <span>✓ Active Listing</span>
-                      </div>
-                      
-                      {/* Availability Status */}
-                      <div className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>{propertyData.availability || 'Available Now'}</span>
-                      </div>
+
+                    {/* Verification badges */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { label: "Verified Property",   color: "bg-emerald-50 border-emerald-200 text-emerald-700",  icon: CheckCircle2 },
+                        ...(propertyData.landlord?.verified ? [{ label: "Verified Landlord", color: "bg-blue-50 border-blue-200 text-blue-700", icon: Shield }] : []),
+                        { label: "Verified Documents",  color: "bg-purple-50 border-purple-200 text-purple-700", icon: Check },
+                        { label: propertyData.availability || "Available Now", color: "bg-orange-50 border-orange-200 text-orange-700", icon: Eye },
+                      ].map(({ label, color, icon: Icon }) => (
+                        <span key={label} className={`inline-flex items-center gap-1 border text-[11px] font-semibold px-2 py-0.5 rounded-md ${color}`}>
+                          <Icon className="h-3 w-3" />{label}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                  <div className="text-left md:text-right">
-                    <div className="text-2xl md:text-3xl font-bold text-orange-600">
+
+                  {/* Price */}
+                  <div className="shrink-0 text-left md:text-right">
+                    <div className="text-3xl md:text-4xl font-bold text-orange-600 leading-none">
                       {formatPrice(propertyData.price)}
                     </div>
-                    <div className="text-sm text-slate-600">
-                      /month
-                    </div>
+                    <div className="text-slate-500 text-sm mt-1">/month</div>
                   </div>
                 </div>
 
-                {/* Pricing Breakdown - Phase 1 Requirements */}
-                <div className="bg-gradient-to-r from-orange-50 to-blue-50 border border-orange-200 rounded-lg p-4 md:p-5">
-                  <h3 className="text-lg font-bold text-slate-900 mb-4">💰 Pricing Breakdown</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Monthly Rent:</span>
-                      <span className="font-bold text-slate-900">{formatPrice(propertyData.price)}</span>
+                {/* Key specs row */}
+                <div className="flex flex-wrap gap-x-6 gap-y-2 py-4 border-t border-b border-slate-100 mb-4">
+                  {[
+                    { icon: Bed,    val: propertyData.beds || propertyData.bedrooms || 0,            label: "Beds"  },
+                    { icon: Bath,   val: propertyData.baths || propertyData.bathrooms || 0,          label: "Baths" },
+                    { icon: Square, val: propertyData.sqft || propertyData.square_feet || 0,         label: "sqft"  },
+                    { icon: Home,   val: propertyData.type || "Apartment",                            label: "Type"  },
+                  ].map(({ icon: Icon, val, label }) => (
+                    <div key={label} className="flex items-center gap-2">
+                      <Icon className="h-4.5 w-4.5 text-slate-400" />
+                      <span className="font-semibold text-slate-900">{val}</span>
+                      <span className="text-slate-500 text-sm">{label}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Service Charge:</span>
-                      <span className="font-bold text-green-600">₦0 (Zero service charge!)</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Caution Deposit:</span>
-                      <span className="font-bold text-slate-900">₦0 (1 month rent)</span>
-                    {/* <span className="font-bold text-slate-900">{formatPrice(propertyData.price)} (1 month rent)</span> */}
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Agency Fee:</span>
-                      <span className="font-bold text-green-600">₦0 (Zero agency fee!)</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Platform Fee:</span>
-                      <span className="font-bold text-slate-900">{formatPrice(propertyData.price)} + {formatPrice(propertyData.price * 0.1)}</span>
-                    </div>
-                    <div className="border-t border-slate-300 pt-3 mt-3">
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-slate-900">Total Move-in Cost:</span>
-                        <span className="text-xl font-bold text-orange-600">
-                          {formatPrice(propertyData.price + (propertyData.price * 0.1))}
-                        </span>
+                  ))}
+                </div>
+
+                {/* Pricing breakdown */}
+                <div className="bg-gradient-to-r from-orange-50/70 to-blue-50/70 border border-orange-100 rounded-xl p-4 md:p-5">
+                  <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <TrendingDown className="h-4 w-4 text-green-600" />
+                    Cost Breakdown
+                    <span className="ml-auto text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Zero Agency Fee</span>
+                  </h3>
+                  <div className="space-y-2">
+                    {[
+                      { label: "Monthly Rent",    val: formatPrice(propertyData.price),                        highlight: false },
+                      { label: "Agency Fee",      val: "₦0 — Waived",                                          highlight: true  },
+                      { label: "Service Charge",  val: "₦0 — Waived",                                          highlight: true  },
+                      { label: "Caution Deposit", val: "1 month rent",                                         highlight: false },
+                      { label: "Platform Fee",    val: `${formatPrice(propertyData.price * 0.1)} (10%)`,        highlight: false },
+                    ].map(({ label, val, highlight }) => (
+                      <div key={label} className="flex justify-between items-center text-sm">
+                        <span className="text-slate-600">{label}</span>
+                        <span className={`font-semibold ${highlight ? "text-green-600" : "text-slate-900"}`}>{val}</span>
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        (First month rent + Caution deposit + Platform fee)
-                      </p>
+                    ))}
+                    <div className="border-t border-slate-200 pt-2.5 mt-1 flex justify-between items-center">
+                      <span className="font-bold text-slate-900 text-sm">Total Move-in Cost</span>
+                      <span className="text-lg font-bold text-orange-600">
+                        {formatPrice(propertyData.price * 2.1)}
+                      </span>
                     </div>
-                  </div>
-                </div>
-
-                {/* Key Features - Mobile Grid */}
-                <div className="grid grid-cols-2 md:flex md:items-center gap-4 md:gap-6 pt-4 border-t border-slate-200">
-                  <div className="flex items-center gap-2">
-                    <Bed className="h-5 w-5 text-slate-400" />
-                    <span className="font-semibold text-slate-900">{propertyData.beds || propertyData.bedrooms || 0}</span>
-                    <span className="text-slate-600 text-sm">Beds</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Bath className="h-5 w-5 text-slate-400" />
-                    <span className="font-semibold text-slate-900">{propertyData.baths || propertyData.bathrooms || 0}</span>
-                    <span className="text-slate-600 text-sm">Baths</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Square className="h-5 w-5 text-slate-400" />
-                    <span className="font-semibold text-slate-900">{propertyData.sqft || propertyData.square_feet || 0}</span>
-                    <span className="text-slate-600 text-sm">sqft</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Home className="h-5 w-5 text-slate-400" />
-                    <span className="font-semibold text-slate-900">{propertyData.type}</span>
+                    <p className="text-[11px] text-slate-400 text-right">First month + caution deposit + platform fee</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Tabbed Content */}
-            <Card>
+            {/* Tabbed content card */}
+            <Card className="border-0 shadow-sm rounded-2xl overflow-hidden">
               <CardContent className="p-0">
-                {/* Tab Navigation */}
-                <div className="flex border-b border-slate-200 overflow-x-auto">
-                  <button
-                    onClick={() => setActiveTab('description')}
-                    className={`px-4 md:px-6 py-3 md:py-4 text-sm md:text-base font-semibold whitespace-nowrap transition-colors ${
-                      activeTab === 'description'
-                        ? 'text-orange-600 border-b-2 border-orange-600'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Description
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('amenities')}
-                    className={`px-4 md:px-6 py-3 md:py-4 text-sm md:text-base font-semibold whitespace-nowrap transition-colors ${
-                      activeTab === 'amenities'
-                        ? 'text-orange-600 border-b-2 border-orange-600'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Amenities
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('landlord')}
-                    className={`px-4 md:px-6 py-3 md:py-4 text-sm md:text-base font-semibold whitespace-nowrap transition-colors ${
-                      activeTab === 'landlord'
-                        ? 'text-orange-600 border-b-2 border-orange-600'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Landlord Info
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('location')}
-                    className={`px-4 md:px-6 py-3 md:py-4 text-sm md:text-base font-semibold whitespace-nowrap transition-colors ${
-                      activeTab === 'location'
-                        ? 'text-orange-600 border-b-2 border-orange-600'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {/* <Map className="h-4 w-4 mr-1" /> */}
-                    Location
-                  </button>
+
+                {/* Tab bar */}
+                <div className="flex border-b border-slate-100 overflow-x-auto scrollbar-hide">
+                  {(["description", "amenities", "landlord", "location"] as Tab[]).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className={`px-5 py-3.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-all capitalize ${
+                        activeTab === tab
+                          ? "text-orange-600 border-orange-600 bg-orange-50/50"
+                          : "text-slate-500 border-transparent hover:text-slate-900 hover:bg-slate-50"
+                      }`}
+                    >
+                      {tab === "landlord" ? "Landlord" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </button>
+                  ))}
                 </div>
 
-                {/* Tab Content */}
-                <div className="p-4 md:p-6">
-                  {activeTab === 'description' && (
+                <div className="p-5 md:p-7">
+
+                  {/* ── Description ── */}
+                  {activeTab === "description" && (
                     <div>
-                      <h2 className="text-xl font-bold text-slate-900 mb-4">About this property</h2>
-                      <p className="text-slate-600 leading-relaxed whitespace-pre-line">
+                      <h2 className="text-lg font-bold text-slate-900 mb-3">About this property</h2>
+                      <p className="text-slate-600 leading-relaxed text-sm whitespace-pre-line">
                         {propertyData.description}
                       </p>
-                      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p className="text-sm text-blue-700">
-                          <strong>✓ Verified:</strong> This listing was verified {propertyData.lastVerified}. Landlord cannot edit details after verification.
+                      <div className="mt-5 flex items-start gap-2.5 p-3.5 bg-blue-50 border border-blue-100 rounded-xl">
+                        <CheckCircle2 className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <p className="text-xs text-blue-700">
+                          <strong>Verified listing:</strong> This property was verified{propertyData.lastVerified ? ` on ${propertyData.lastVerified}` : ""}. Landlord details are locked after verification.
                         </p>
                       </div>
                     </div>
                   )}
 
-                  {activeTab === 'amenities' && (
+                  {/* ── Amenities ── */}
+                  {activeTab === "amenities" && (
                     <div>
-                      <h2 className="text-xl font-bold text-slate-900 mb-4">Amenities & Features</h2>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {(propertyData.amenities || []).map((amenity: string, index: number) => {
-                          const Icon = getAmenityIcon(amenity)
-                          return (
-                            <div key={index} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
-                              <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
-                                <Icon className="h-5 w-5 text-orange-600" />
+                      <h2 className="text-lg font-bold text-slate-900 mb-4">Amenities & Features</h2>
+                      {(propertyData.amenities || []).length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {(propertyData.amenities || []).map((amenity: string, i: number) => {
+                            const Icon = getAmenityIcon(amenity)
+                            return (
+                              <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 hover:bg-orange-50 border border-slate-100 hover:border-orange-200 rounded-xl transition-colors">
+                                <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                                  <Icon className="h-4.5 w-4.5 text-orange-600" />
+                                </div>
+                                <span className="text-slate-700 text-sm font-medium">{amenity}</span>
                               </div>
-                              <span className="text-slate-700 font-medium">{amenity}</span>
-                            </div>
-                          )
-                        })}
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-slate-500 text-sm">No amenities listed for this property.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Landlord ── */}
+                  {activeTab === "landlord" && (
+                    <div className="space-y-4">
+                      <h2 className="text-lg font-bold text-slate-900">Landlord Information</h2>
+
+                      {/* Profile */}
+                      <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <Avatar className="h-16 w-16 ring-2 ring-orange-100">
+                          <AvatarImage src={propertyData.landlord?.avatar_url} />
+                          <AvatarFallback className="bg-orange-500 text-white text-xl font-bold">
+                            {propertyData.landlord?.name?.[0] || "L"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <h3 className="font-bold text-slate-900">{propertyData.landlord?.name || "Property Owner"}</h3>
+                            {propertyData.landlord?.verifiedId && (
+                              <span className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                <CheckCircle2 className="h-2.5 w-2.5" /> ID Verified
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mb-2">Member since {propertyData.landlord?.joined_year || 2024}</p>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span><strong className="text-slate-900">{Math.max(1, propertyData.landlord?.properties_count || 0)}</strong> <span className="text-slate-500">properties</span></span>
+                            <span><strong className="text-green-600">{propertyData.landlord?.trust_score || 50}%</strong> <span className="text-slate-500">trust</span></span>
+                          </div>
+                          <div className="flex mt-1.5">
+                            {[...Array(5)].map((_, i) => (
+                              <Star key={i} className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
+                            ))}
+                            <span className="text-xs text-slate-500 ml-1">(4.9)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Contact */}
+                      {user ? (
+                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                          <h4 className="text-sm font-semibold text-slate-800 mb-2">Contact Information</h4>
+                          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+                            <Phone className="h-4 w-4 text-slate-400" />
+                            <span>{propertyData.landlord?.phone || "Contact via chat"}</span>
+                          </div>
+                          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+                            <Mail className="h-4 w-4 text-slate-400" />
+                            <span className="truncate">{propertyData.landlord?.email || "Contact via chat"}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Lock className="h-4 w-4 text-orange-600" />
+                            <p className="text-sm font-semibold text-orange-900">Contact Details Protected</p>
+                          </div>
+                          <p className="text-xs text-orange-700 mb-3">Sign in to view the landlord's phone and email. This protects both parties from spam and fraud.</p>
+                          <Button size="sm" className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg"
+                            onClick={() => router.push(`/signin?redirect_to=${encodeURIComponent(`/properties/${propertyId}`)}`)}
+                          >
+                            Sign In to View Contact
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Trust */}
+                      <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
+                        <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-1.5">
+                          <Shield className="h-4 w-4" /> Trust & Safety
+                        </h4>
+                        <ul className="space-y-1">
+                          {["Identity verified by Nulo Africa", "Responds within 24 hours", "Messages protected by escrow system", "Fair use policy enforced"].map(item => (
+                            <li key={item} className="flex items-center gap-2 text-xs text-blue-700">
+                              <Check className="h-3 w-3 flex-shrink-0" />{item}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     </div>
                   )}
 
-                  {activeTab === 'landlord' && (
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-900 mb-4">Landlord Information</h2>
-                      <div className="space-y-4">
-                        <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-lg">
-                          <Avatar className="h-16 w-16">
-                            <AvatarImage src={propertyData.landlord?.avatar_url} />
-                            <AvatarFallback className="bg-orange-500 text-white text-xl font-semibold">
-                              {propertyData.landlord?.name?.[0] || 'L'}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-bold text-slate-900 text-lg">{propertyData.landlord?.name || 'Property Owner'}</h3>
-                              {propertyData.landlord?.verifiedId && (
-                                <div className="bg-green-500 text-white text-xs font-semibold px-2 py-0.5 rounded flex items-center gap-1">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  ID Verified
-                                </div>
-                              )}
-                            </div>
-                            <p className="text-sm text-slate-600 mb-2">Member since {propertyData.landlord?.joined_year || 2024}</p>
-                            <div className="flex items-center gap-4 text-sm">
-                              <div>
-                                <span className="font-semibold text-slate-900">{Math.max(1, propertyData.landlord?.properties_count || 0)}</span>
-                                <span className="text-slate-600"> properties</span>
-                              </div>
-                              <div>
-                                <span className="font-semibold text-green-600">{propertyData.landlord?.trust_score || 50}%</span>
-                                <span className="text-slate-600"> trust score</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* Contact Details - Protected */}
-                        {user ? (
-                          <div className="p-4 bg-slate-50 rounded-lg space-y-2">
-                            <h4 className="font-semibold text-slate-900 mb-3">📞 Contact Information</h4>
-                            <div className="flex items-center gap-2 text-sm text-slate-700">
-                              <Phone className="h-4 w-4 text-slate-400" />
-                              <span>{propertyData.landlord?.phone || 'Contact via chat'}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-slate-700">
-                              <Mail className="h-4 w-4 text-slate-400" />
-                              <span>{propertyData.landlord?.email || 'Contact via chat'}</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-4 bg-orange-50 border-2 border-orange-200 rounded-lg">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Shield className="h-5 w-5 text-orange-600" />
-                              <h4 className="font-semibold text-orange-900">Contact Details Protected</h4>
-                            </div>
-                            <p className="text-sm text-orange-700 mb-3">
-                              Sign in to view landlord phone number and email address. This protects both tenants and landlords from spam and fraud.
-                            </p>
-                            <Button
-                              className="w-full bg-orange-500 hover:bg-orange-600"
-                              onClick={() => router.push(`/signin?redirect_to=${encodeURIComponent(`/properties/${propertyId}`)}`)}
-                            >
-                              Sign In to View Contact Details
-                            </Button>
-                          </div>
-                        )}
-                        
-                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                          <h4 className="font-semibold text-blue-900 mb-2">🛡️ Trust & Safety</h4>
-                          <ul className="space-y-1 text-sm text-blue-700">
-                            <li>✓ Identity verified by Nulo Africa</li>
-                            <li>✓ Responds within 24 hours</li>
-                            <li>✓ All messages protected by escrow system</li>
-                            <li>✓ Fair use policy enforced</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  {/* ── Location ── */}
+                  {activeTab === "location" && (
+                    <div className="space-y-4">
+                      <h2 className="text-lg font-bold text-slate-900">Location & Neighbourhood</h2>
 
-                  {activeTab === 'location' && (
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-900 mb-4">Location & Neighborhood</h2>
-                      
-                      {/* Property Address */}
-                      <div className="p-4 bg-slate-50 rounded-lg mb-4">
-                        <div className="flex items-start gap-3">
-                          <MapPin className="h-5 w-5 text-orange-500 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <h3 className="font-semibold text-slate-900 mb-1">📍 Address</h3>
-                            <p className="text-slate-600">{propertyData.full_address || propertyData.location}</p>
-                            <p className="text-sm text-slate-500 mt-1">{propertyData.city}, {propertyData.state}</p>
-                          </div>
+                      {/* Address */}
+                      <div className="flex items-start gap-3 p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
+                        <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <MapPin className="h-4 w-4 text-orange-600" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm">{propertyData.full_address || propertyData.location}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{propertyData.city}, {propertyData.state}, Nigeria</p>
                         </div>
                       </div>
 
-                      {/* Static Landscape Map */}
-                      <div className="mb-6">
-                        <h3 className="font-semibold text-slate-900 mb-3">🗺️ Property Location</h3>
-                        <div className="rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
-                          <div className="relative w-full h-64 md:h-80 bg-gradient-to-br from-blue-100 via-green-50 to-orange-100">
-                            {/* Beautiful placeholder map with location info */}
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="text-center">
-                                {/* Location Icon */}
-                                <div className="w-16 h-16 bg-orange-500 rounded-full border-4 border-white shadow-xl flex items-center justify-center mx-auto mb-4">
-                                  <MapPin className="h-8 w-8 text-white" />
-                                </div>
-                                
-                                {/* Location Text */}
-                                <div className="bg-white/95 backdrop-blur px-4 py-2 rounded-lg shadow-lg">
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {propertyData.location || propertyData.full_address || 'Property Location'}
-                                  </p>
-                                  <p className="text-xs text-slate-600">
-                                    {propertyData.city || 'Lagos'}, {propertyData.state || 'Nigeria'}
-                                  </p>
-                                </div>
-                              </div>
+                      {/* Map placeholder */}
+                      <div className="relative h-56 md:h-72 rounded-xl overflow-hidden border border-slate-200 bg-gradient-to-br from-blue-50 via-green-50 to-orange-50">
+                        {/* Grid pattern */}
+                        <div className="absolute inset-0 opacity-20 grid grid-cols-10 grid-rows-8">
+                          {[...Array(80)].map((_, i) => <div key={i} className="border border-slate-300/40" />)}
+                        </div>
+                        {/* Pin */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="text-center">
+                            <div className="w-14 h-14 bg-orange-500 rounded-full border-4 border-white shadow-2xl flex items-center justify-center mx-auto mb-3">
+                              <MapPin className="h-7 w-7 text-white" />
                             </div>
-                            
-                            {/* Map Pattern Overlay */}
-                            <div className="absolute inset-0 opacity-20">
-                              <div className="grid grid-cols-8 grid-rows-6 h-full">
-                                {[...Array(48)].map((_, i) => (
-                                  <div key={i} className="border border-slate-300/30" />
-                                ))}
-                              </div>
-                            </div>
-                            
-                            {/* Compass Indicator */}
-                            <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-2 py-1 rounded-full shadow-lg">
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs font-bold text-slate-700">N</span>
-                                <div className="w-4 h-4 border-2 border-slate-700 rounded-full relative">
-                                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0.5 h-1.5 bg-red-500" />
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Coordinates Display */}
-                            <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs text-slate-600">
-                              📍 {propertyData.latitude?.toFixed(4) || '6.5244'}°N, {propertyData.longitude?.toFixed(4) || '3.3792'}°E
-                            </div>
-                            
-                            {/* Map Attribution */}
-                            <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs text-slate-600">
-                              🗺️ {propertyData.city || 'Lagos'}, Nigeria
+                            <div className="bg-white/95 backdrop-blur px-4 py-2 rounded-xl shadow-lg">
+                              <p className="text-sm font-bold text-slate-900">{propertyData.location || "Property Location"}</p>
+                              <p className="text-xs text-slate-500">{propertyData.city || "Lagos"}, Nigeria</p>
                             </div>
                           </div>
+                        </div>
+                        {/* Coords */}
+                        <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur px-2 py-1 rounded-lg text-xs text-slate-500">
+                          {propertyData.latitude?.toFixed(4) || "6.5244"}°N, {propertyData.longitude?.toFixed(4) || "3.3792"}°E
                         </div>
                       </div>
 
-                      {/* Neighborhood Information */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                        {/* Nearby Transport */}
-                        <div className="p-4 bg-slate-50 rounded-lg">
-                          <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                            <span className="text-purple-600">�</span>
-                            Nearby Transport
-                          </h3>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-slate-600">Lekki Bus Stop</span>
-                              <span className="text-xs text-green-600 font-medium">5 min walk</span>
+                      {/* Nearby */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
+                          <h4 className="text-sm font-semibold text-slate-800 mb-2.5">🚌 Transport</h4>
+                          {[["Lekki Bus Stop","5 min walk"],["Eko Hotel","10 min drive"],["Victoria Island","15 min drive"]].map(([name,time]) => (
+                            <div key={name} className="flex justify-between items-center py-1">
+                              <span className="text-xs text-slate-600">{name}</span>
+                              <span className="text-xs text-green-600 font-medium">{time}</span>
                             </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-slate-600">Eko Hotel</span>
-                              <span className="text-xs text-green-600 font-medium">10 min drive</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-slate-600">Victoria Island</span>
-                              <span className="text-xs text-green-600 font-medium">15 min drive</span>
-                            </div>
-                          </div>
+                          ))}
                         </div>
-
-                        {/* Schools & Services */}
-                        <div className="p-4 bg-slate-50 rounded-lg">
-                          <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                            <span className="text-blue-600">🏫</span>
-                            Schools & Services
-                          </h3>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-slate-600">Corona School</span>
-                              <span className="text-xs text-green-600 font-medium">2 km</span>
+                        <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
+                          <h4 className="text-sm font-semibold text-slate-800 mb-2.5">🏫 Nearby</h4>
+                          {[["Corona School","2 km"],["Shoprite Mall","1.5 km"],["Lekki Clinic","3 km"]].map(([name,dist]) => (
+                            <div key={name} className="flex justify-between items-center py-1">
+                              <span className="text-xs text-slate-600">{name}</span>
+                              <span className="text-xs text-green-600 font-medium">{dist}</span>
                             </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-slate-600">Shoprite Mall</span>
-                              <span className="text-xs text-green-600 font-medium">1.5 km</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-slate-600">Lekki Clinic</span>
-                              <span className="text-xs text-green-600 font-medium">3 km</span>
-                            </div>
-                          </div>
+                          ))}
                         </div>
                       </div>
 
-                      {/* Area Ratings */}
-                      <div className="p-4 bg-green-50 border border-green-200 rounded-lg mb-6">
-                        <h3 className="font-semibold text-green-900 mb-3 flex items-center gap-2">
-                          <span>⚡</span>
-                          Area Ratings
-                        </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-sm text-green-700">Energy Efficiency:</span>
-                              <div className="flex gap-0.5">
-                                {[...Array(4)].map((_, i) => (
-                                  <div key={i} className="w-8 h-2 bg-green-500 rounded" />
-                                ))}
-                                <div className="w-8 h-2 bg-slate-200 rounded" />
-                              </div>
-                              <span className="text-xs text-green-600 font-semibold">A</span>
-                            </div>
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-green-700">Security Rating:</span>
-                              <div className="flex gap-0.5">
-                                {[...Array(5)].map((_, i) => (
-                                  <div key={i} className="w-8 h-2 bg-green-500 rounded" />
-                                ))}
-                              </div>
-                              <span className="text-xs text-green-600 font-semibold">A+</span>
-                            </div>
-                          </div>
+                      {/* Similar properties CTA */}
+                      <div className="flex items-center justify-between p-4 bg-orange-50 border border-orange-100 rounded-xl">
+                        <div>
+                          <p className="text-sm font-semibold text-orange-900">Explore similar properties</p>
+                          <p className="text-xs text-orange-600">In {propertyData.city || "this area"}</p>
                         </div>
-                      </div>
-
-                      {/* View Other Properties Button */}
-                      <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="font-semibold text-orange-900 mb-1">🏠 Explore More Properties</h3>
-                            <p className="text-sm text-orange-700">Discover similar properties in {propertyData.city || 'this area'}</p>
-                          </div>
-                          <Link href="/properties">
-                            <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-                              <ArrowRight className="h-4 w-4 mr-1" />
-                              Browse Properties
-                            </Button>
-                          </Link>
-                        </div>
+                        <Link href="/properties">
+                          <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white rounded-lg">
+                            <ArrowRight className="h-3.5 w-3.5 mr-1" /> Browse
+                          </Button>
+                        </Link>
                       </div>
                     </div>
                   )}
                 </div>
               </CardContent>
             </Card>
-
           </div>
 
-          {/* Sidebar - Mobile First */}
-          <div className="space-y-4 md:space-y-6">
-            {/* Contact Owner - Premium Design */}
-            <Card className="lg:sticky lg:top-32 border-0 shadow-xl">
-              <CardContent className="p-5 md:p-6">
-                {/* Owner Info - Clean Card */}
-                <div className="bg-slate-50 rounded-xl p-4 md:p-5 mb-5 border border-slate-200">
-                  <div className="flex items-start gap-3 md:gap-4 mb-4">
-                    <Avatar className="h-14 w-14 md:h-16 md:w-16">
+          {/* ════════════════════════════════════════════════════════════════
+              RIGHT / SIDEBAR  (1/3) — sticky on desktop
+          ════════════════════════════════════════════════════════════════ */}
+          <div className="hidden lg:block lg:col-span-1">
+            <div className="sticky top-32 space-y-4">
+
+              {/* ── Main action card ─────────────────────────────────── */}
+              <Card className="border-0 shadow-lg rounded-2xl overflow-hidden">
+                <CardContent className="p-5">
+
+                  {/* Landlord mini-profile */}
+                  <div className="flex items-center gap-3 pb-4 mb-4 border-b border-slate-100">
+                    <Avatar className="h-11 w-11 ring-2 ring-orange-100">
                       <AvatarImage src={propertyData.landlord?.avatar_url} />
-                      <AvatarFallback className="bg-orange-500 text-white text-lg md:text-xl font-semibold">
-                        {propertyData.landlord?.name?.[0] || 'L'}
+                      <AvatarFallback className="bg-orange-500 text-white font-bold text-sm">
+                        {propertyData.landlord?.name?.[0] || "L"}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-bold text-slate-900 text-base md:text-lg truncate">{propertyData.landlord?.name || 'Property Owner'}</h3>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-semibold text-slate-900 text-sm truncate">{propertyData.landlord?.name || "Property Owner"}</p>
                         {propertyData.landlord?.verified && (
-                          <div className="bg-green-500 text-white text-xs font-semibold px-2 py-0.5 rounded flex items-center gap-1">
-                            <Check className="h-3 w-3" />
-                            Verified
-                          </div>
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
                         )}
                       </div>
-                      <p className="text-xs md:text-sm text-slate-600 font-medium">
-                        {propertyData.landlord?.properties_count || 0} properties listed
-                      </p>
-                      <div className="flex items-center gap-1 mt-1.5">
-                        <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-                        <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-                        <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-                        <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-                        <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-                        <span className="text-xs text-slate-600 ml-1">(4.9)</span>
-                      </div>
+                      <p className="text-xs text-slate-500">{propertyData.landlord?.properties_count || 0} properties listed</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-bold text-orange-600">{formatPrice(propertyData.price)}</div>
+                      <div className="text-[10px] text-slate-400">/month</div>
                     </div>
                   </div>
-                  
-                  {/* Quick Contact Info - Protected */}
-                  <div className="space-y-2 pt-3 border-t border-slate-200">
-                    {user ? (
-                      <>
-                        <div className="flex items-center gap-2 text-sm text-slate-700">
-                          <Phone className="h-4 w-4 text-slate-400 flex-shrink-0" />
-                          <span className="font-medium">{propertyData.landlord?.phone || 'Contact via chat'}</span>
+
+                  {/* Protected contact */}
+                  {user ? (
+                    <div className="space-y-1.5 pb-4 mb-4 border-b border-slate-100">
+                      <div className="flex items-center gap-2 text-xs text-slate-600">
+                        <Phone className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                        {propertyData.landlord?.phone || "Contact via chat"}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-slate-600">
+                        <Mail className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                        <span className="truncate">{propertyData.landlord?.email || "Contact via chat"}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 mb-4">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Lock className="h-3.5 w-3.5 text-orange-600" />
+                        <p className="text-xs font-semibold text-orange-900">Contact Protected</p>
+                      </div>
+                      <p className="text-[11px] text-orange-700 mb-2">Sign in to view contact details</p>
+                      <Button size="sm" className="w-full h-8 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-lg"
+                        onClick={() => router.push(`/signin?redirect_to=${encodeURIComponent(`/properties/${propertyId}`)}`)}
+                      >
+                        Sign In to View
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* ── PRIMARY CTAs ─────────────────────────────────── */}
+                  <div className="space-y-2.5">
+
+                    {/* Already-requested banner */}
+                    {hasExistingViewing && (
+                      <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                        <CheckCircle2 className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-semibold text-blue-800">Viewing Request Sent</p>
+                          <p className="text-[11px] text-blue-600 mt-0.5">
+                            Awaiting landlord confirmation. You can apply while you wait.
+                          </p>
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-slate-700">
-                          <Mail className="h-4 w-4 text-slate-400 flex-shrink-0" />
-                          <span className="font-medium truncate">{propertyData.landlord?.email || 'Contact via chat'}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Shield className="h-4 w-4 text-orange-600" />
-                          <p className="text-xs font-semibold text-orange-900">Contact Details Protected</p>
-                        </div>
-                        <p className="text-xs text-orange-700 mb-2">
-                          Sign in to view landlord contact information
-                        </p>
-                        <Button
-                          size="sm"
-                          className="w-full h-8 text-xs bg-orange-500 hover:bg-orange-600"
-                          onClick={() => router.push(`/signin?redirect_to=${encodeURIComponent(`/properties/${propertyId}`)}`)}
-                        >
-                          Sign In to View Contact
-                        </Button>
                       </div>
                     )}
+
+                    {/* Viewing type — 3-option segmented control */}
+                    <div>
+                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                        Viewing Type
+                      </p>
+                      <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+
+                        {/* Physical — always available */}
+                        <button
+                          onClick={() => !hasExistingViewing && setViewingType("PHYSICAL")}
+                          className={`flex-1 flex items-center justify-center gap-1 h-9 text-[11px] font-bold rounded-lg transition-all ${
+                            hasExistingViewing
+                              ? "text-slate-300 cursor-not-allowed"
+                              : viewingType === "PHYSICAL"
+                                ? "bg-white text-orange-600 shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
+                          Physical
+                        </button>
+
+                        {/* Virtual — only if video_tour_url exists */}
+                        <button
+                          onClick={() => !hasExistingViewing && propertyData.video_tour_url && setViewingType("VIRTUAL")}
+                          disabled={!propertyData.video_tour_url || hasExistingViewing}
+                          title={!propertyData.video_tour_url ? "No recorded tour available for this property" : undefined}
+                          className={`flex-1 flex flex-col items-center justify-center gap-0 h-9 text-[11px] font-bold rounded-lg transition-all ${
+                            hasExistingViewing || !propertyData.video_tour_url
+                              ? "text-slate-300 cursor-not-allowed"
+                              : viewingType === "VIRTUAL"
+                                ? "bg-white text-blue-600 shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1">
+                            <Video className="h-3.5 w-3.5 flex-shrink-0" />
+                            Virtual
+                          </div>
+                          {!propertyData.video_tour_url && (
+                            <span className="text-[9px] font-normal leading-none -mt-0.5">(N/A)</span>
+                          )}
+                        </button>
+
+                        {/* Live Video — always available (scheduled call) */}
+                        <button
+                          onClick={() => !hasExistingViewing && setViewingType("LIVE_VIDEO")}
+                          className={`flex-1 flex items-center justify-center gap-1 h-9 text-[11px] font-bold rounded-lg transition-all ${
+                            hasExistingViewing
+                              ? "text-slate-300 cursor-not-allowed"
+                              : viewingType === "LIVE_VIDEO"
+                                ? "bg-white text-purple-600 shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          <Video className="h-3.5 w-3.5 flex-shrink-0" />
+                          Live
+                        </button>
+
+                      </div>
+                    </div>
+
+                    {/* Single action button — tracks selected type */}
+                    <Button
+                      disabled={hasExistingViewing || isCheckingViewings}
+                      className={`w-full h-12 text-sm font-bold text-white rounded-xl shadow-md transition-all group
+                        ${hasExistingViewing || isCheckingViewings
+                          ? "bg-slate-300 cursor-not-allowed shadow-none"
+                          : viewingType === "PHYSICAL"
+                            ? "bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-orange-100 hover:shadow-lg"
+                            : viewingType === "VIRTUAL"
+                              ? "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-blue-100 hover:shadow-lg"
+                              : "bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 shadow-purple-100 hover:shadow-lg"
+                        }`}
+                      onClick={() => handleRequestViewing(viewingType)}
+                    >
+                      {isCheckingViewings ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Checking…
+                        </>
+                      ) : hasExistingViewing ? (
+                        <>
+                          <CheckCircle2 className="h-4.5 w-4.5 mr-2" />
+                          Viewing Already Requested
+                        </>
+                      ) : viewingType === "PHYSICAL" ? (
+                        <>
+                          <Calendar className="h-4.5 w-4.5 mr-2 group-hover:scale-110 transition-transform" />
+                          Schedule Physical Viewing
+                        </>
+                      ) : viewingType === "VIRTUAL" ? (
+                        <>
+                          <Video className="h-4.5 w-4.5 mr-2 group-hover:scale-110 transition-transform" />
+                          Request Virtual Tour
+                        </>
+                      ) : (
+                        <>
+                          <Video className="h-4.5 w-4.5 mr-2 group-hover:scale-110 transition-transform" />
+                          Request Live Video Tour
+                        </>
+                      )}
+                    </Button>
+
+                    {/* Secondary row: Chat + Save */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant="outline"
+                        className="h-10 text-xs font-semibold border-2 border-blue-200 text-blue-700 hover:border-blue-400 hover:bg-blue-50 rounded-xl group transition-all"
+                        onClick={handleChatLandlord}
+                      >
+                        <MessageCircle className="h-3.5 w-3.5 mr-1.5 group-hover:scale-110 transition-transform" />
+                        Chat
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className={`h-10 text-xs font-semibold border-2 rounded-xl group transition-all disabled:opacity-50 ${
+                          isFavorite
+                            ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                            : "border-slate-200 text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                        }`}
+                        onClick={toggleFavorite}
+                        disabled={isTogglingFavorite}
+                      >
+                        <Heart className={`h-3.5 w-3.5 mr-1.5 group-hover:scale-110 transition-transform ${isFavorite ? "fill-red-500 text-red-500" : ""} ${isTogglingFavorite ? "animate-pulse" : ""}`} />
+                        {isFavorite ? "Saved" : "Save"}
+                      </Button>
+                    </div>
+
+                    {/* ══════════════════════════════════════════════════
+                        APPLY NOW — from apply-button-sidebar.tsx
+                        Separated by divider to signal a different intent
+                    ══════════════════════════════════════════════════ */}
+                    <div className="pt-2 border-t border-slate-100">
+
+                      {/* Smart banner when viewing already scheduled */}
+                      {completedViewingId && user && (
+                        <div className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-2.5">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-xs font-semibold text-emerald-800">Viewing Scheduled!</p>
+                            <p className="text-[11px] text-emerald-700">Ready to take the next step?</p>
+                          </div>
+                        </div>
+                      )}
+
+                      <Button
+                        className="w-full h-12 font-bold text-sm bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white rounded-xl shadow-md shadow-emerald-100 group transition-all hover:shadow-lg"
+                        onClick={handleApply}
+                      >
+                        <FileText className="h-4.5 w-4.5 mr-2 group-hover:scale-110 transition-transform" />
+                        Apply for This Property
+                      </Button>
+                      <p className="text-center text-[11px] text-slate-400 mt-1.5">
+                        {completedViewingId ? "Viewing linked to your application" : "Viewing recommended before applying"}
+                      </p>
+                    </div>
+
+                    {/* Report — ghost, low prominence */}
+                    <Button
+                      variant="ghost"
+                      className="w-full h-8 text-xs text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg group transition-all"
+                      onClick={handleReportConcern}
+                    >
+                      <AlertTriangle className="h-3 w-3 mr-1.5 group-hover:scale-110 transition-transform" />
+                      Report Concern
+                    </Button>
                   </div>
-                </div>
 
-                {/* Tenant Action Buttons - Enhanced with Viewing Options */}
-                <div className="space-y-3">
-                  {/* Virtual Tour Button (if video available) */}
-                  {propertyData.video_tour_url && (
-                    <Button 
-                      className="w-full h-12 text-sm font-bold bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl group"
-                      onClick={handleVirtualTour}
-                    >
-                      <Video className="h-5 w-5 mr-2.5 group-hover:scale-110 transition-transform" />
-                      {hasViewedVideo ? 'Watch Virtual Tour Again' : 'Watch Virtual Tour'}
-                      {hasViewedVideo && <Check className="h-4 w-4 ml-2" />}
-                    </Button>
-                  )}
-
-                  {/* Physical Viewing Button */}
-                  <Button 
-                    className="w-full h-12 md:h-14 text-sm md:text-base font-bold bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl group"
-                    onClick={() => handleRequestViewing('physical')}
-                  >
-                    <Calendar className="h-5 w-5 mr-2.5 group-hover:scale-110 transition-transform" />
-                    Schedule Physical Viewing
-                  </Button>
-
-                  {/* Virtual Viewing Button (if no video) */}
-                  {!propertyData.video_tour_url && (
-                    <Button 
-                      className="w-full h-12 text-sm font-bold bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl group"
-                      onClick={() => handleRequestViewing('virtual')}
-                    >
-                      <Video className="h-5 w-5 mr-2.5 group-hover:scale-110 transition-transform" />
-                      Request Virtual Tour
-                    </Button>
-                  )}
-
-                  {/* Secondary Actions Grid */}
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {/* Chat Button */}
-                    <Button 
-                      variant="outline" 
-                      className="h-11 md:h-12 text-xs md:text-sm font-semibold border-2 border-blue-200 text-blue-700 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-800 transition-all duration-300 rounded-xl group"
-                      onClick={handleChatLandlord}
-                    >
-                      <MessageCircle className="h-4 w-4 mr-1.5 group-hover:scale-110 transition-transform" />
-                      <span className="hidden sm:inline">Chat</span>
-                      <span className="sm:hidden">💬</span>
-                    </Button>
-
-                    {/* Save Button */}
-                    <Button 
-                      variant="outline" 
-                      className={`h-11 md:h-12 text-xs md:text-sm font-semibold border-2 transition-all duration-300 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed group ${
-                        isFavorite 
-                          ? 'border-red-300 bg-red-50 text-red-700 hover:border-red-400 hover:bg-red-100' 
-                          : 'border-slate-200 text-slate-700 hover:border-red-300 hover:bg-red-50 hover:text-red-600'
-                      }`}
-                      onClick={toggleFavorite}
-                      disabled={isTogglingFavorite}
-                    >
-                      <Heart className={`h-4 w-4 mr-1.5 group-hover:scale-110 transition-transform ${isFavorite ? 'fill-red-500 text-red-500' : ''} ${isTogglingFavorite ? 'animate-pulse' : ''}`} />
-                      <span className="hidden sm:inline">{isFavorite ? 'Saved' : 'Save'}</span>
-                      <span className="sm:hidden">❤️</span>
-                    </Button>
+                  {/* Trust note */}
+                  <div className="mt-4 p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      <strong className="text-slate-700">🛡️ Protected by Nulo:</strong> All interactions use our secure escrow system. Both parties can rate each other after.
+                    </p>
                   </div>
+                </CardContent>
+              </Card>
 
-                  {/* Report Button - Subtle */}
-                  <Button 
-                    variant="ghost" 
-                    className="w-full h-9 text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 transition-all duration-300 rounded-lg group"
-                    onClick={handleReportConcern}
-                  >
-                    <Shield className="h-3.5 w-3.5 mr-1.5 group-hover:scale-110 transition-transform" />
-                    Report Concern
+              {/* Similar properties nudge */}
+              <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
+                <p className="text-xs font-semibold text-slate-700 mb-0.5">Not the right fit?</p>
+                <p className="text-xs text-slate-500 mb-3">Browse similar properties in {propertyData.city || "Lagos"}</p>
+                <Link href="/properties">
+                  <Button variant="outline" size="sm" className="w-full h-9 text-xs border-slate-200 hover:border-orange-300 hover:text-orange-600 rounded-xl transition-all">
+                    Browse All Properties
+                    <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
                   </Button>
-                </div>
+                </Link>
+              </div>
 
-                {/* Trust & Safety Note */}
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-xs text-blue-700">
-                    <strong>🛡️ Protected by Nulo:</strong> All interactions use our secure escrow system. Both parties can rate each other post-interaction.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            </div>
           </div>
+          {/* ── end sidebar ── */}
+
         </div>
       </div>
 
-      {/* Viewing Request Modal */}
+      {/* ── MOBILE BOTTOM BAR ─────────────────────────────────────────────── */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-white border-t border-slate-200 px-4 pt-2 pb-4 safe-area-pb">
+
+        {/* 3-tab mini segmented control */}
+        <div className="flex bg-slate-100 rounded-lg p-0.5 gap-0.5 mb-2">
+          {/* Physical */}
+          <button
+            onClick={() => !hasExistingViewing && setViewingType("PHYSICAL")}
+            className={`flex-1 flex items-center justify-center gap-1 h-7 text-[11px] font-bold rounded-md transition-all ${
+              hasExistingViewing ? "text-slate-300 cursor-not-allowed"
+              : viewingType === "PHYSICAL" ? "bg-white text-orange-600 shadow-sm"
+              : "text-slate-500"
+            }`}
+          >
+            <Calendar className="h-3 w-3" /> Physical
+          </button>
+
+          {/* Virtual */}
+          <button
+            onClick={() => !hasExistingViewing && propertyData.video_tour_url && setViewingType("VIRTUAL")}
+            disabled={!propertyData.video_tour_url || hasExistingViewing}
+            className={`flex-1 flex items-center justify-center gap-1 h-7 text-[11px] font-bold rounded-md transition-all ${
+              hasExistingViewing || !propertyData.video_tour_url ? "text-slate-300 cursor-not-allowed"
+              : viewingType === "VIRTUAL" ? "bg-white text-blue-600 shadow-sm"
+              : "text-slate-500"
+            }`}
+          >
+            <Video className="h-3 w-3" />
+            Virtual
+            {!propertyData.video_tour_url && <span className="text-[9px] font-normal">(N/A)</span>}
+          </button>
+
+          {/* Live */}
+          <button
+            onClick={() => !hasExistingViewing && setViewingType("LIVE_VIDEO")}
+            className={`flex-1 flex items-center justify-center gap-1 h-7 text-[11px] font-bold rounded-md transition-all ${
+              hasExistingViewing ? "text-slate-300 cursor-not-allowed"
+              : viewingType === "LIVE_VIDEO" ? "bg-white text-purple-600 shadow-sm"
+              : "text-slate-500"
+            }`}
+          >
+            <Video className="h-3 w-3" /> Live
+          </button>
+        </div>
+
+        <div className="flex gap-2.5">
+          {/* Viewing button — tracks type, disables if already requested */}
+          <Button
+            disabled={hasExistingViewing || isCheckingViewings}
+            className={`flex-1 h-12 text-sm font-bold text-white rounded-xl shadow-md transition-all ${
+              hasExistingViewing || isCheckingViewings
+                ? "bg-slate-300 cursor-not-allowed shadow-none"
+                : viewingType === "PHYSICAL"
+                  ? "bg-gradient-to-r from-orange-500 to-orange-600"
+                  : viewingType === "VIRTUAL"
+                    ? "bg-gradient-to-r from-blue-500 to-blue-600"
+                    : "bg-gradient-to-r from-purple-500 to-purple-600"
+            }`}
+            onClick={() => handleRequestViewing(viewingType)}
+          >
+            {isCheckingViewings ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : hasExistingViewing ? (
+              <><CheckCircle2 className="h-4 w-4 mr-1.5" /> Requested</>
+            ) : (
+              <><Calendar className="h-4 w-4 mr-1.5" /> Schedule Viewing</>
+            )}
+          </Button>
+
+          <Button
+            className="flex-1 h-12 text-sm font-bold bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white rounded-xl shadow-md"
+            onClick={handleApply}
+          >
+            <FileText className="h-4 w-4 mr-1.5" />
+            Apply Now
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Modals ───────────────────────────────────────────────────────────── */}
       <ViewingRequestModal
         isOpen={showViewingModal}
         onClose={() => setShowViewingModal(false)}
         onSuccess={confirmViewing}
         property={propertyData}
         user={user}
+        viewingType={viewingType}
         landlordResponseTime="within 24 hours"
       />
 
-      {/* Chat Modal */}
       <ChatModal
         isOpen={showChatModal}
         onClose={() => setShowChatModal(false)}
         propertyId={propertyData.id}
         propertyTitle={propertyData.title}
         propertyPrice={formatPrice(propertyData.price)}
-        propertyImage={propertyData.images?.[0] || '/placeholder-property.jpg'}
-        landlordName={propertyData.landlord?.name || 'Property Owner'}
+        propertyImage={propertyData.images?.[0] || "/placeholder-property.jpg"}
+        landlordName={propertyData.landlord?.name || "Property Owner"}
         landlordId={propertyData.landlord?.id || propertyData.landlord_id}
         landlordAvatar={propertyData.landlord?.avatar_url}
         landlordVerified={propertyData.landlord?.verified}
         landlordResponseTime="within 24 hours"
       />
 
-      {/* Full Screen Gallery Modal */}
+      {/* Full-screen gallery */}
       {showGallery && (
-        <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute top-4 right-4 text-white hover:bg-white/20"
-            onClick={() => setShowGallery(false)}
-          >
-            <X className="h-6 w-6" />
-          </Button>
-
-          <div className="w-full h-full flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col">
+          <div className="flex items-center justify-between p-4">
+            <p className="text-white text-sm font-medium">{selectedImage + 1} / {propertyData.images.length}</p>
+            <button
+              onClick={() => setShowGallery(false)}
+              className="w-9 h-9 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center transition-colors"
+            >
+              <X className="h-5 w-5 text-white" />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4 min-h-0">
             <img
               src={propertyData.images[selectedImage]}
-              alt={`Property ${selectedImage + 1}`}
-              className="max-w-full max-h-full object-contain"
+              alt={`Property view ${selectedImage + 1}`}
+              className="max-w-full max-h-full object-contain rounded-lg"
             />
           </div>
-
-          {/* Thumbnails */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/50 p-2 rounded-lg backdrop-blur-sm">
-            {propertyData.images.map((image:any, index:any) => (
+          <div className="p-4 flex gap-2 justify-center overflow-x-auto">
+            {propertyData.images.map((img: string, i: number) => (
               <button
-                key={index}
-                onClick={() => setSelectedImage(index)}
-                className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
-                  selectedImage === index ? 'border-orange-500 scale-110' : 'border-transparent'
+                key={i}
+                onClick={() => setSelectedImage(i)}
+                className={`w-14 h-14 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${
+                  selectedImage === i ? "border-orange-500 scale-110 shadow-lg shadow-orange-500/30" : "border-white/20 hover:border-white/50"
                 }`}
               >
-                <img src={image} alt={`Thumb ${index + 1}`} className="w-full h-full object-cover" />
+                <img src={img} alt={`Thumb ${i + 1}`} className="w-full h-full object-cover" />
               </button>
             ))}
           </div>
@@ -1293,4 +1186,3 @@ export default function PropertyDetailPage() {
     </div>
   )
 }
-

@@ -4,6 +4,7 @@
  */
 
 import apiClient from './client';
+import { toast } from 'sonner';
 
 // ============================================================================
 // TYPES
@@ -140,10 +141,9 @@ export const getLandlordDashboard = async (): Promise<LandlordDashboardData> => 
   try {
     console.log('📤 [LANDLORD DASHBOARD API] Fetching dashboard data...')
     
-    // 🚀 15 second timeout - reasonable wait time
-    // If backend doesn't respond in 15s, show error so user can retry
+    // 30s timeout — backend makes ~10 sequential Supabase calls, needs time
     const response = await apiClient.get('/api/v1/landlord/dashboard', {
-      timeout: 15000 // 15 seconds - show error quickly if slow
+      timeout: 30000
     })
     
     console.log('✅ [LANDLORD DASHBOARD API] Dashboard data retrieved')
@@ -151,41 +151,22 @@ export const getLandlordDashboard = async (): Promise<LandlordDashboardData> => 
   } catch (error: any) {
     console.error('❌ [LANDLORD DASHBOARD API] Error fetching dashboard:', error)
     
-    // 🚀 PERFORMANCE: Return fallback data on error instead of throwing
+    // 🚀 PERFORMANCE: Return fallback data on timeout instead of throwing
     if (error.response?.status === 401) {
       console.log('🔒 [LANDLORD DASHBOARD] Unauthorized - user may not be landlord')
       throw new Error('You must be logged in as a landlord to access the dashboard')
     }
     
-    // Handle timeout errors - FAIL FAST instead of waiting forever
+    // Handle timeout - throw so DashboardContext keeps landlordData=null
+    // and page.tsx shows the "Could not load" retry screen (better than broken banner)
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      console.log('⏱️ [LANDLORD DASHBOARD] Request timeout after 15s - server is slow, showing error to user')
+      console.log('⏱️ [LANDLORD DASHBOARD] Request timeout - backend is slow, user should retry')
       throw new Error('Dashboard is taking too long to load. Please try again.')
     }
     
     if (error.response?.status === 500) {
-      console.log('🔥 [LANDLORD DASHBOARD] Server error - returning empty dashboard')
-      return {
-        profile: null,
-        onboarding: null,
-        stats: {
-          total_properties: 0,
-          active_listings: 0,
-          pending_viewings: 0,
-          unread_messages: 0,
-          total_views: 0,
-          occupancy_rate: 0,
-          monthly_revenue: 0,
-          avg_response_time: '0ms',
-          applications_pending: 0,
-          applications_approved: 0,
-          properties_vacant: 0,
-          properties_occupied: 0,
-        },
-        properties: [],
-        recentActivity: [],
-        notifications: [],
-      }
+      console.log('🔥 [LANDLORD DASHBOARD] Server error')
+      throw new Error('Server error loading dashboard. Please try again.')
     }
     
     throw new Error(

@@ -273,7 +273,8 @@ export function Navbar() {
                           <AvatarImage src={user?.avatar_url} />
                         ) : (
                           <AvatarFallback className="bg-orange-500 text-white text-xs font-semibold">
-                            {userInitials}
+                            {user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase() || 
+                             user?.email?.split('@')[0]?.toUpperCase() || 'U'}
                           </AvatarFallback>
                         )}
                       </Avatar>
@@ -332,6 +333,12 @@ export function Navbar() {
                             Favorites
                           </Link>
                         </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/tenant/messages" className="cursor-pointer">
+                          <MessageSquare className="h-4 w-4 mr-2" />
+                          Messages
+                        </Link>
+                      </DropdownMenuItem>
                       </>
                     )}
                     {userType === 'landlord' && (
@@ -348,16 +355,16 @@ export function Navbar() {
                             Viewings
                           </Link>
                         </DropdownMenuItem>
+                        
+                        <DropdownMenuItem asChild>
+                          <Link href="/landlord/messages" className="cursor-pointer">
+                            <MessageSquare className="h-4 w-4 mr-2" />
+                            Messages
+                          </Link>
+                      </DropdownMenuItem>
                       </>
                     )}
-                    {userType !== 'admin' && (
-                      <DropdownMenuItem asChild>
-                        <Link href="/tenant/messages" className="cursor-pointer">
-                          <MessageSquare className="h-4 w-4 mr-2" />
-                          Messages
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
+
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
                       <Link href="/tenant/profile" className="cursor-pointer">

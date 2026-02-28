@@ -5,7 +5,7 @@ import type { NextRequest } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-// Helper to ensure user record exists in database
+// ─── Helper: Wait for user record to exist ────────────────────────────────────
 async function ensureUserRecordExists(
   supabase: any,
   userId: string,
@@ -17,20 +17,81 @@ async function ensureUserRecordExists(
       .select('id')
       .eq('id', userId)
       .single()
-    
+
     if (data) {
       console.log('✅ [CALLBACK] User record found in database')
       return true
     }
-    
+
     console.log(`⏳ [CALLBACK] Waiting for user record... attempt ${i + 1}/${maxAttempts}`)
     await new Promise(resolve => setTimeout(resolve, 500))
   }
-  
+
   console.warn('⚠️ [CALLBACK] User record not found after waiting')
   return false
 }
 
+// ─── Helper: Create in-app notification via your FastAPI backend ──────────────
+// This is called AFTER successful email verification so the landlord/tenant
+// sees a welcome notification inside your app the first time they log in.
+async function createWelcomeNotification(
+  userId: string,
+  userType: 'landlord' | 'tenant' | string
+): Promise<void> {
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL || process.env.BACKEND_URL
+
+  if (!backendUrl) {
+    console.warn('⚠️ [CALLBACK] No backend URL configured — skipping welcome notification')
+    return
+  }
+
+  // Build the right message depending on user type
+  const notificationPayload =
+    userType === 'landlord'
+      ? {
+          user_id: userId,
+          title: '🎉 Email Verified!',
+          message:
+            'Your email has been confirmed. Complete your 5-step onboarding to get verified and start listing properties.',
+          type: 'email_verified',
+          link: '/onboarding/landlord/step-1',
+        }
+      : {
+          user_id: userId,
+          title: '🎉 Email Verified!',
+          message:
+            'Your email has been confirmed. Complete your profile to start browsing verified properties.',
+          type: 'email_verified',
+          link: '/onboarding/tenant/step-1',
+        }
+
+  try {
+    console.log('🔔 [CALLBACK] Creating welcome notification for user:', userId)
+
+    const response = await fetch(`${backendUrl}/api/v1/notifications/internal/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Use your internal service key if you have one, otherwise
+        // protect this endpoint at the network/infrastructure level
+        'X-Internal-Service-Key': process.env.INTERNAL_SERVICE_KEY || '',
+      },
+      body: JSON.stringify(notificationPayload),
+    })
+
+    if (response.ok) {
+      console.log('✅ [CALLBACK] Welcome notification created successfully')
+    } else {
+      const body = await response.text()
+      console.warn('⚠️ [CALLBACK] Notification API returned non-OK:', response.status, body)
+    }
+  } catch (err: any) {
+    // Non-fatal — don't fail the auth flow if notification creation fails
+    console.warn('⚠️ [CALLBACK] Could not create welcome notification:', err.message)
+  }
+}
+
+// ─── Main GET Handler ─────────────────────────────────────────────────────────
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
@@ -39,60 +100,54 @@ export async function GET(request: NextRequest) {
   const error_description = requestUrl.searchParams.get('error_description')
   const user_type = requestUrl.searchParams.get('user_type') || 'tenant'
 
-  console.log('🔄 [CALLBACK] Processing OAuth callback')
+  console.log('🔄 [CALLBACK] Processing OAuth/email callback')
   console.log('📝 [CALLBACK] Full URL:', request.url)
   console.log('📝 [CALLBACK] Code:', code?.substring(0, 20) + '...')
   console.log('📝 [CALLBACK] User type from URL:', requestUrl.searchParams.get('user_type'))
   console.log('📝 [CALLBACK] User type (final):', user_type)
   console.log('🌍 [CALLBACK] Origin:', requestUrl.origin)
 
-  // ✅ Handle email verification errors
+  // ─── Handle email verification errors ──────────────────────────────────────
   if (error || error_code) {
-    console.error('❌ [CALLBACK] Email verification error')
-    console.error('   Error:', error)
-    console.error('   Error code:', error_code)
-    console.error('   Description:', error_description)
+    console.error('❌ [CALLBACK] Email verification error:', error, error_code)
 
-    // Map error codes to user-friendly messages
     const errorMap: Record<string, { message: string; action: string }> = {
-      'otp_expired': {
+      otp_expired: {
         message: 'Email verification link has expired',
-        action: 'Please sign in and request a new verification link'
+        action: 'Please sign in and request a new verification link',
       },
-      'invalid_otp': {
+      invalid_otp: {
         message: 'Email verification link is invalid',
-        action: 'Please sign in and request a new verification link'
+        action: 'Please sign in and request a new verification link',
       },
-      'access_denied': {
+      access_denied: {
         message: 'Email verification was denied',
-        action: 'Please sign in and try again'
+        action: 'Please sign in and try again',
       },
     }
 
     const errorInfo = errorMap[error_code as string] || {
       message: error_description || 'Email verification failed',
-      action: 'Please sign in and try again'
+      action: 'Please sign in and try again',
     }
 
-    console.log(`📧 [CALLBACK] ${errorInfo.message}`)
-    console.log(`📧 [CALLBACK] User action: ${errorInfo.action}`)
-
-    // Redirect to signin with better error message
     return NextResponse.redirect(
       new URL(
-        `/auth/verify-email-failed?error=${encodeURIComponent((error_code || error) ?? 'unknown_error')}&message=${encodeURIComponent(errorInfo.message)}`,
+        `/auth/verify-email-failed?error=${encodeURIComponent(
+          (error_code || error) ?? 'unknown_error'
+        )}&message=${encodeURIComponent(errorInfo.message)}`,
         requestUrl.origin
       )
     )
   }
 
-  // Validate code exists
+  // ─── No code = can't proceed ────────────────────────────────────────────────
   if (!code) {
     console.error('❌ [CALLBACK] No code provided')
     return NextResponse.redirect(
       new URL(
-        '/auth/verify-email-failed?error=no_code&message=' + 
-        encodeURIComponent('No verification code found. Please check your email again.'), 
+        '/auth/verify-email-failed?error=no_code&message=' +
+          encodeURIComponent('No verification code found. Please check your email again.'),
         requestUrl.origin
       )
     )
@@ -100,8 +155,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const cookieStore = await cookies()
-    
-    // Create server client with proper cookie handling
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -123,7 +177,7 @@ export async function GET(request: NextRequest) {
       }
     )
 
-    // Exchange code for session
+    // ─── Exchange code for session ────────────────────────────────────────────
     console.log('🔄 [CALLBACK] Exchanging code for session...')
     const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
 
@@ -136,382 +190,280 @@ export async function GET(request: NextRequest) {
 
     if (!data.session) {
       console.error('❌ [CALLBACK] No session returned')
-      return NextResponse.redirect(
-        new URL('/signin?error=no_session', requestUrl.origin)
-      )
+      return NextResponse.redirect(new URL('/signin?error=no_session', requestUrl.origin))
     }
 
     console.log('✅ [CALLBACK] Session created for:', data.session.user.id)
 
-    // ✅ NEW: Read user_type from multiple sources (prioritized)
+    // ─── Resolve user_type (cookie → URL param → metadata → default) ──────────
     let cookieUserType: string | null = null
     try {
       const cookieHeader = request.headers.get('cookie') || ''
-      console.log('📝 [CALLBACK] Raw cookie header:', cookieHeader.substring(0, 100) + (cookieHeader.length > 100 ? '...' : ''))
-      
-      // Try to find nulo_user_type cookie
-      const userTypeCookieMatch = cookieHeader.match(/nulo_user_type=([^;]+)/)
-      if (userTypeCookieMatch) {
-        cookieUserType = decodeURIComponent(userTypeCookieMatch[1])
-        console.log('🍪 [CALLBACK] ✅ Found user_type in cookie:', cookieUserType)
-      } else {
-        console.log('🍪 [CALLBACK] ❌ No nulo_user_type cookie found in headers')
-        console.log('🍪 [CALLBACK] Cookies present:', cookieHeader.split(';').map(c => c.trim().split('=')[0]).join(', '))
+      const match = cookieHeader.match(/nulo_user_type=([^;]+)/)
+      if (match) {
+        cookieUserType = decodeURIComponent(match[1])
+        console.log('🍪 [CALLBACK] Found user_type in cookie:', cookieUserType)
       }
     } catch (cookieError) {
       console.warn('⚠️ [CALLBACK] Error reading user_type cookie:', cookieError)
     }
 
-    // Get user_type from URL parameter and metadata as fallbacks
     const urlUserType = requestUrl.searchParams.get('user_type')
-    const authenticatedUserType = data.session.user.user_metadata?.user_type
-  
-    console.log('📋 [CALLBACK] User type sources found:')
-    console.log('   🍪 Cookie (PREFERRED):', cookieUserType || 'NOT FOUND')
-    console.log('   📮 URL param (FALLBACK):', urlUserType || 'NOT FOUND')
-    console.log('   📊 Metadata (FALLBACK):', authenticatedUserType || 'NOT FOUND')
-  
-    // Priority: Cookie (OAuth) > URL param (OAuth) > metadata (manual) > default to tenant
-    let finalUserType = cookieUserType || urlUserType || authenticatedUserType || 'tenant'
-    console.log('✅ [CALLBACK] Final user_type determined:', finalUserType)
-    
-    if (!cookieUserType && !urlUserType && !authenticatedUserType) {
-      console.warn('⚠️ [CALLBACK] WARNING: Falling back to default tenant (no cookie, URL param, or metadata found)')
-    }
+    const metaUserType = data.session.user.user_metadata?.user_type
+    let finalUserType: string = cookieUserType || urlUserType || metaUserType || 'tenant'
+    console.log('✅ [CALLBACK] Final user_type:', finalUserType)
 
-    // IMPORTANT: Only update if metadata is missing
+    // ─── Update metadata if missing ────────────────────────────────────────────
     if (!data.session.user.user_metadata?.user_type) {
-      console.log('🔄 [CALLBACK] user_type missing from metadata, updating...')
       const { error: updateError } = await supabase.auth.updateUser({
-        data: { user_type: finalUserType }
+        data: { user_type: finalUserType },
       })
-
       if (updateError) {
         console.warn('⚠️ [CALLBACK] Could not update metadata:', updateError.message)
-      } else {
-        console.log('✅ [CALLBACK] Metadata updated with user_type:', finalUserType)
       }
-    } else {
-      console.log('✅ [CALLBACK] user_type already in metadata:', data.session.user.user_metadata.user_type)
     }
 
-    // ✅ NEW: Check if user with this email already exists (duplicate email handling)
-    console.log('🔍 [CALLBACK] Checking if user with email already exists...')
+    // ─── Look up existing user record by auth UID (most reliable) ─────────────
     const { data: existingUser, error: existingUserError } = await supabase
       .from('users')
-      .select('id, user_type, email')
-      .eq('email', data.session.user.email?.toLowerCase())
-      .single()
-    
-    if (existingUser && existingUser.id !== data.session.user.id) {
-      // Email exists for a different user (duplicate email scenario)
-      console.warn('⚠️ [CALLBACK] Email already exists for different user - this is a duplicate email signup!')
-      console.warn('   Existing user:', existingUser.id, 'Type:', existingUser.user_type)
-      console.warn('   New user:', data.session.user.id, 'Type:', finalUserType)
-      
-      // Just sign in as the existing user instead of creating a new one
-      // This mirrors Airbnb/Spleet behavior
-      console.log('✅ [CALLBACK] Signing in existing user with same email')
-      // The session is already created for the new Auth user, but we'll keep them signed in
-      // Their user_type will be based on their existing record
-      finalUserType = existingUser.user_type as 'landlord' | 'tenant'
-      console.log('📝 [CALLBACK] Updated finalUserType to existing user type:', finalUserType)
-    } else if (existingUserError && existingUserError.code !== 'PGRST116') {
-      console.warn('⚠️ [CALLBACK] Error checking existing user:', existingUserError.message)
-    } else {
-      console.log('✅ [CALLBACK] No existing user found with this email')
-    }
-
-    // Wait for database trigger to create user record
-    console.log('⏳ [CALLBACK] Waiting for database trigger to complete...')
-    const userExists = await ensureUserRecordExists(supabase, data.session.user.id)
-
-    if (!userExists) {
-      console.error('❌ [CALLBACK] User record was not created by trigger')
-      // Continue anyway - the update might still work if trigger completes late
-    }
-
-    // Update user_type in database
-    const updateData: any = { user_type: finalUserType }
-    
-    // For landlords, set initial verification_status to 'pending'
-    if (finalUserType === 'landlord') {
-      updateData.verification_status = 'pending'
-    }
-    
-    const { error: dbError } = await supabase
-      .from('users')
-      .update(updateData)
+      .select('id, user_type, email, verification_status, onboarding_completed, created_at')
       .eq('id', data.session.user.id)
+      .single()
 
-    if (dbError) {
-      console.warn('⚠️ [CALLBACK] Could not update database:', dbError.message)
-    } else {
-      console.log('✅ [CALLBACK] Database updated:', { 
-        user_type: finalUserType, 
-        verification_status: finalUserType === 'landlord' ? 'pending' : 'unchanged' 
-      })
+    // ⚠️  A DB row existing does NOT mean "returning user".
+    // Supabase fires a trigger that inserts into public.users the moment
+    // auth.users is created — so for a brand-new Google OAuth signup the row
+    // already exists by the time we query here.
+    //
+    // "Returning" = account was created more than 60 seconds ago, meaning
+    // this is NOT the very first OAuth callback for this user.
+    const accountAgeMs = existingUser?.created_at
+      ? Date.now() - new Date(existingUser.created_at).getTime()
+      : Infinity
+    const isReturningUser = !!existingUser && !existingUserError && accountAgeMs > 60_000
+
+    if (isReturningUser) {
+      // ✅ CRITICAL: For returning users always trust the DB user_type.
+      // Cookies and URL params are only set during the signup flow — a returning
+      // user signing in via Google has no nulo_user_type cookie, so we must NOT
+      // fall back to 'tenant' default. The DB is the source of truth.
+      const dbUserType = existingUser.user_type as string
+      if (dbUserType && dbUserType !== finalUserType) {
+        console.log(`🔄 [CALLBACK] Overriding user_type from '${finalUserType}' → '${dbUserType}' (DB is source of truth for returning user)`)
+        finalUserType = dbUserType
+      }
     }
 
-    // Determine redirect destination
-    // ✅ CRITICAL: Read redirect path from cookie set by OAuth client BEFORE redirect
-    let customRedirectTo: string | null = null;
-    
+    // Handle duplicate email across different auth UIDs (edge case)
+    if (!isReturningUser) {
+      const { data: emailUser } = await supabase
+        .from('users')
+        .select('id, user_type, email')
+        .eq('email', data.session.user.email?.toLowerCase())
+        .neq('id', data.session.user.id)
+        .single()
+
+      if (emailUser) {
+        console.warn('⚠️ [CALLBACK] Duplicate email across UIDs — using existing user type')
+        finalUserType = emailUser.user_type as string
+      }
+    }
+
+    if (existingUserError && existingUserError.code !== 'PGRST116') {
+      console.warn('⚠️ [CALLBACK] Error checking existing user:', existingUserError.message)
+    }
+
+    // ─── Wait for DB trigger (new users only) ─────────────────────────────────
+    if (!isReturningUser) {
+      const userExists = await ensureUserRecordExists(supabase, data.session.user.id)
+      if (!userExists) {
+        console.error('❌ [CALLBACK] User record was not created by trigger — continuing anyway')
+      }
+    }
+
+    // ─── Update user_type in DB ────────────────────────────────────────────────
+    // For returning users: DO NOT overwrite user_type — DB already has the correct value.
+    // Only update for new users or if metadata was missing.
+    if (!isReturningUser) {
+      const updateData: any = { user_type: finalUserType }
+      if (finalUserType === 'landlord') {
+        updateData.verification_status = 'pending'
+      }
+
+      const { error: dbError } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('id', data.session.user.id)
+
+      if (dbError) {
+        console.warn('⚠️ [CALLBACK] Could not update database:', dbError.message)
+      } else {
+        console.log('✅ [CALLBACK] Database updated for new user:', updateData)
+      }
+    } else {
+      console.log('✅ [CALLBACK] Returning user — skipping DB user_type overwrite')
+    }
+
+    // ─── 🔄 SYNC PROFILE + SIGNUP NOTIFICATION (Google OAuth only) ──────────
+    // Manual email signup handles both of these in AuthContext.tsx after
+    // supabase.auth.signUp(). Google OAuth users skip that path entirely and
+    // land here instead — so we fire both from route.ts.
+    //
+    // Detect OAuth vs email: OAuth users have no password_hash and their
+    // identity provider is 'google'. The most reliable signal is checking
+    // identities[0].provider — but a simpler proxy is: if the user's
+    // auth_provider metadata is not 'email', it came through OAuth.
+    const isOAuthUser = data.session.user.user_metadata?.auth_provider !== 'email'
+      && data.session.user.app_metadata?.provider !== 'email'
+
+    // "New" = account created in the last 60 seconds (first OAuth login only)
+    const isNewOAuthUser = (() => {
+      const createdAt = new Date(data.session.user.created_at).getTime()
+      return Date.now() - createdAt < 60_000
+    })()
+
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || process.env.BACKEND_URL || ''
+
+    if (isOAuthUser && isNewOAuthUser && backendUrl) {
+      const googleName =
+        data.session.user.user_metadata?.full_name ||
+        data.session.user.user_metadata?.name ||
+        data.session.user.email ||
+        'User'
+
+      const firstName = data.session.user.user_metadata?.given_name
+        || googleName.split(' ')[0]
+        || googleName
+      const lastName  = data.session.user.user_metadata?.family_name
+        || googleName.split(' ').slice(1).join(' ')
+        || ''
+
+      // 1️⃣ Sync profile with FastAPI backend (creates landlord_profiles row etc.)
+      try {
+        console.log('🔄 [CALLBACK] Syncing Google OAuth user with backend...')
+        const syncRes = await fetch(`${backendUrl}/api/v1/auth/sync-user-profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id:    data.session.user.id,
+            email:      data.session.user.email,
+            first_name: firstName,
+            last_name:  lastName,
+            full_name:  googleName,
+            user_type:  finalUserType,
+            auth_provider: 'google',
+          }),
+        })
+        if (syncRes.ok) {
+          console.log('✅ [CALLBACK] Google OAuth profile synced with backend')
+        } else {
+          console.warn('⚠️ [CALLBACK] sync-user-profile returned:', syncRes.status)
+        }
+      } catch (syncErr: any) {
+        // Non-fatal — user is already created in Supabase
+        console.warn('⚠️ [CALLBACK] sync-user-profile failed (non-fatal):', syncErr.message)
+      }
+
+      // 2️⃣ Fire signup notification (in-app + email welcome) - ONLY for NEW users
+      if (isNewOAuthUser) {
+        try {
+          const notifRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/signup-notification`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id:    data.session.user.id,
+              user_email: data.session.user.email,
+              user_name:  googleName,
+              user_type:  finalUserType,
+              is_oauth:   true,   // triggers welcome email (notify_email_verified never fires for OAuth)
+            }),
+          })
+          if (notifRes.ok) {
+            console.log('✅ [CALLBACK] Signup notification fired for NEW Google OAuth user')
+          } else {
+            console.warn('⚠️ [CALLBACK] signup notification returned:', notifRes.status)
+          }
+        } catch (notifErr: any) {
+          // Non-fatal
+          console.warn('⚠️ [CALLBACK] Signup notification failed (non-fatal):', notifErr.message)
+        }
+      } else {
+        console.log('👋 [CALLBACK] Returning OAuth user - skipping signup notification')
+      }
+    }
+
+    // ─── 🔔 CREATE WELCOME IN-APP NOTIFICATION ────────────────────────────────
+    // Only for brand-new users. Returning users signing in never get a welcome message.
+    const shouldShowWelcome = isOAuthUser ? isNewOAuthUser : !isReturningUser
+
+    if (shouldShowWelcome) {
+      console.log('🎉 [CALLBACK] New user detected - creating welcome notification')
+      await createWelcomeNotification(data.session.user.id, finalUserType)
+    } else {
+      console.log('👋 [CALLBACK] Returning user - skipping welcome notification')
+    }
+
+    // ─── Determine redirect ────────────────────────────────────────────────────
+    let customRedirectTo: string | null = null
     try {
-      const cookieHeader = request.headers.get('cookie') || '';
-      // Look for our custom cookie with the path to redirect to
-      const redirectCookieMatch = cookieHeader.match(/nulo_redirect_path=([^;]+)/);
-      if (redirectCookieMatch) {
-        customRedirectTo = decodeURIComponent(redirectCookieMatch[1]);
-        console.log('🍪 [CALLBACK] Found redirect path in cookie:', customRedirectTo);
+      const cookieHeader = request.headers.get('cookie') || ''
+      const match = cookieHeader.match(/nulo_redirect_path=([^;]+)/)
+      if (match) {
+        customRedirectTo = decodeURIComponent(match[1])
+        console.log('🍪 [CALLBACK] Found redirect path in cookie:', customRedirectTo)
       }
     } catch (cookieError) {
-      console.warn('⚠️ [CALLBACK] Error reading cookie:', cookieError);
+      console.warn('⚠️ [CALLBACK] Error reading redirect cookie:', cookieError)
     }
-    
-    let redirectTo = '/properties' // default fallback
-    
-    if (customRedirectTo) {
-      // Use custom redirect if provided (e.g., property detail page)
-      redirectTo = customRedirectTo
-      console.log('🔀 [CALLBACK] Using custom redirect from cookie:', redirectTo)
+
+    // For returning users, use DB onboarding_completed (more reliable than metadata)
+    const isOnboarded = isReturningUser
+      ? (existingUser?.onboarding_completed === true)
+      : false
+
+    let redirectTo = '/properties'
+
+    if (finalUserType === 'admin') {
+      redirectTo = '/admin'
     } else if (finalUserType === 'landlord') {
-      redirectTo = '/onboarding/landlord/step-1'
-      console.log('🏠 [CALLBACK] Redirecting landlord to onboarding...')
-    } else {
-      const redirectMap: Record<string, string> = {
-        tenant: '/properties',
-        admin: '/admin',
+      if (customRedirectTo && !customRedirectTo.startsWith('/properties')) {
+        // Respect custom redirect only if it's not a tenant page
+        redirectTo = customRedirectTo
+      } else if (isReturningUser && existingUser?.onboarding_completed === true) {
+        // Returning landlord who already finished onboarding → dashboard
+        redirectTo = '/landlord/overview'
+      } else {
+        // New landlord OR returning landlord who never finished onboarding → onboarding
+        redirectTo = '/onboarding/landlord/step-1'
       }
-      redirectTo = redirectMap[finalUserType] || '/properties'
-      console.log('👤 [CALLBACK] Redirecting to default:', redirectTo)
+    } else if (finalUserType === 'tenant') {
+      // Tenants: use the saved property page or fall back to /properties
+      redirectTo = customRedirectTo || '/properties'
+    }
+
+    // ✅ Append verify/oauth param for any landlord going to onboarding
+    // (new users, OR returning users who never finished onboarding).
+    if (finalUserType === 'landlord' && redirectTo.includes('/onboarding/')) {
+      const separator = redirectTo.includes('?') ? '&' : '?'
+      const verifyParam = isOAuthUser ? 'oauth=1' : 'verified=1'
+      redirectTo = `${redirectTo}${separator}${verifyParam}`
     }
 
     console.log('🔀 [CALLBACK] Final redirect to:', redirectTo)
 
-    // Create response with redirect
     const response = NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
-    
-    // ✅ CRITICAL: Clear the temporary cookies after use
+
+    // Clear temporary cookies
     response.cookies.delete('nulo_redirect_path')
     response.cookies.delete('nulo_user_type')
-    
-    // Optional: Add security headers
     response.headers.set('X-Robots-Tag', 'noindex')
-    
-    return response
 
+    return response
   } catch (error: any) {
     console.error('❌ [CALLBACK] Exception:', error)
-    console.error('❌ [CALLBACK] Stack trace:', error.stack)
+    console.error('❌ [CALLBACK] Stack:', error.stack)
     return NextResponse.redirect(
       new URL('/signin?error=callback_error', requestUrl.origin)
     )
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import { createServerClient } from '@supabase/ssr'
-// import { cookies } from 'next/headers'
-// import { NextResponse } from 'next/server'
-// import type { NextRequest } from 'next/server'
-
-// export const dynamic = 'force-dynamic'
-
-// export async function GET(request: NextRequest) {
-//   const requestUrl = new URL(request.url)
-//   const code = requestUrl.searchParams.get('code')
-//   const error = requestUrl.searchParams.get('error')
-//   const error_code = requestUrl.searchParams.get('error_code')
-//   const error_description = requestUrl.searchParams.get('error_description')
-//   const user_type = requestUrl.searchParams.get('user_type') || 'tenant'
-
-//   console.log('🔄 [CALLBACK] Processing OAuth callback')
-//   console.log('📝 [CALLBACK] Code:', code?.substring(0, 20) + '...')
-//   console.log('📝 [CALLBACK] User type:', user_type)
-
-//   // ✅ Handle email verification errors
-//   if (error || error_code) {
-//     console.error('❌ [CALLBACK] Email verification error')
-//     console.error('   Error:', error)
-//     console.error('   Error code:', error_code)
-//     console.error('   Description:', error_description)
-
-//     // Map error codes to user-friendly messages
-//     const errorMap: Record<string, { message: string; action: string }> = {
-//       'otp_expired': {
-//         message: 'Email verification link has expired',
-//         action: 'Please sign in and request a new verification link'
-//       },
-//       'invalid_otp': {
-//         message: 'Email verification link is invalid',
-//         action: 'Please sign in and request a new verification link'
-//       },
-//       'access_denied': {
-//         message: 'Email verification was denied',
-//         action: 'Please sign in and try again'
-//       },
-//     }
-
-//     const errorInfo = errorMap[error_code as string] || {
-//       message: error_description || 'Email verification failed',
-//       action: 'Please sign in and try again'
-//     }
-
-//     console.log(`📧 [CALLBACK] ${errorInfo.message}`)
-//     console.log(`📧 [CALLBACK] User action: ${errorInfo.action}`)
-
-//     // Redirect to signin with better error message
-//     return NextResponse.redirect(
-//       new URL(
-//         `/auth/verify-email-failed?error=${encodeURIComponent((error_code || error) ?? 'unknown_error')}&message=${encodeURIComponent(errorInfo.message)}`,
-//         requestUrl.origin
-//       )
-//     )
-//   }
-
-//   // Validate code exists
-//   if (!code) {
-//     console.error('❌ [CALLBACK] No code provided')
-//     return NextResponse.redirect(new URL('/auth/verify-email-failed?error=no_code&message=' + encodeURIComponent('No verification code found. Please check your email again.'), requestUrl.origin))
-//   }
-
-//   try {
-//     const cookieStore = await cookies()
-    
-//     // Create server client with proper cookie handling
-//     const supabase = createServerClient(
-//       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-//       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-//       {
-//         cookies: {
-//           getAll() {
-//             return cookieStore.getAll()
-//           },
-//           setAll(cookiesToSet) {
-//             cookiesToSet.forEach(({ name, value, options }) =>
-//               cookieStore.set(name, value, options)
-//             )
-//           },
-//         },
-//       }
-//     )
-
-//     // Exchange code for session
-//     console.log('🔄 [CALLBACK] Exchanging code for session...')
-//     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-
-//     if (error) {
-//       console.error('❌ [CALLBACK] Exchange failed:', error.message)
-//       return NextResponse.redirect(
-//         new URL(`/signin?error=${encodeURIComponent(error.message)}`, requestUrl.origin)
-//       )
-//     }
-
-//     if (!data.session) {
-//       console.error(' [CALLBACK] No session returned')
-//       return NextResponse.redirect(new URL('/signin?error=no_session', requestUrl.origin))
-//     }
-
-//     console.log(' [CALLBACK] Session created for:', data.session.user.id)
-
-//     // FIX: Get user_type from URL parameter first (OAuth), then metadata
-//     // OAuth signup should pass user_type in URL, manual signup sets it in metadata
-//     const urlUserType = requestUrl.searchParams.get('user_type')
-//     const authenticatedUserType = data.session.user.user_metadata?.user_type
-  
-//     console.log(' [CALLBACK] URL user_type (OAuth):', urlUserType)
-//     console.log(' [CALLBACK] Metadata user_type (manual):', authenticatedUserType)
-  
-//     // Priority: URL param (OAuth) > metadata (manual) > default to tenant
-//     const finalUserType = urlUserType || authenticatedUserType || 'tenant'
-//     console.log(' [CALLBACK] Final user_type to use:', finalUserType)
-
-//     // IMPORTANT: Only update if metadata is missing
-//     // Email verification should NOT change user_type that was already set during signup
-//     if (!data.session.user.user_metadata?.user_type) {
-//       console.log(' [CALLBACK] user_type missing from metadata, updating...')
-//       const { error: updateError } = await supabase.auth.updateUser({
-//         data: { user_type: finalUserType }
-//       })
-
-//       if (updateError) {
-//         console.warn('⚠️ [CALLBACK] Could not update metadata:', updateError.message)
-//       } else {
-//         console.log('✅ [CALLBACK] Metadata updated with user_type:', finalUserType)
-//       }
-//     } else {
-//       console.log('✅ [CALLBACK] user_type already in metadata:', data.session.user.user_metadata.user_type)
-//     }
-
-//     // SIMPLIFIED: Only update user_type, skip complex onboarding checks for new users
-//     const updateData: any = { user_type: finalUserType }
-    
-//     // For landlords, set initial verification_status to 'pending' (new users)
-//     if (finalUserType === 'landlord') {
-//       updateData.verification_status = 'pending'
-//     }
-    
-//     const { error: dbError } = await supabase
-//       .from('users')
-//       .update(updateData)
-//       .eq('id', data.session.user.id)
-
-//     if (dbError) {
-//       console.warn('⚠️ [CALLBACK] Could not update database:', dbError.message)
-//     } else {
-//       console.log('✅ [CALLBACK] Database updated:', { user_type: finalUserType, verification_status: finalUserType === 'landlord' ? 'pending' : 'unchanged' })
-//     }
-
-//     // Wait for trigger to complete
-//     console.log('⏳ [CALLBACK] Waiting for database trigger...')
-//     await new Promise(resolve => setTimeout(resolve, 1000))
-
-//     // SIMPLIFIED REDIRECT: Send landlords to onboarding, others to normal destinations
-//     let redirectTo = '/properties' // default fallback
-//     if (finalUserType === 'landlord') {
-//       // All landlords go to onboarding first - let onboarding pages handle completion checks
-//       redirectTo = '/onboarding/landlord/step-1'
-//       console.log('🏠 [CALLBACK] Redirecting landlord to onboarding...')
-//     } else {
-//       // Non-landlord users use normal redirect map
-//       const redirectMap: Record<string, string> = {
-//         tenant: '/properties',
-//         admin: '/admin',
-//       }
-//       redirectTo = redirectMap[finalUserType] || '/properties'
-//       console.log('👤 [CALLBACK] Redirecting to:', redirectTo)
-//     }
-
-//     console.log('🔀 [CALLBACK] Final redirect to:', redirectTo)
-
-//     // Create response with proper cookie handling
-//     const response = NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
-    
-//     return response
-
-//   } catch (error: any) {
-//     console.error('❌ [CALLBACK] Exception:', error)
-//     return NextResponse.redirect(
-//       new URL('/signin?error=callback_error', requestUrl.origin)
-//     )
-//   }
-// }

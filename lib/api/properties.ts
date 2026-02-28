@@ -271,39 +271,99 @@ export const propertiesAPI = {
   },
 
   /**
-   * Get property by ID
+   * Get property by ID with retry logic and better timeout handling
    * Returns full property with landlord info and favorited status
    */
   getById: async (
     id: string,
     options?: { skipCache?: boolean }
   ): Promise<Property> => {
-    try {
-      if (!options?.skipCache) {
-        const cacheKey = `property_${id}`;
-        const cached = await optimizedPropertyCache.get(cacheKey);
-        if (cached) {
-          console.log(`🎯 [CACHE HIT] Property: ${id}`);
-          return cached;
+    let lastError: any;
+    let retries = 2;
+    
+    while (retries >= 0) {
+      try {
+        console.log(`🔍 [PROPERTY DETAIL] Fetching property: ${id} (retry ${2 - retries}/2)`);
+        
+        if (!options?.skipCache) {
+          const cacheKey = `property_${id}`;
+          const cached = await optimizedPropertyCache.get(cacheKey);
+          if (cached) {
+            console.log(`🎯 [CACHE HIT] Property: ${id}`);
+            return cached;
+          }
         }
+        
+        // Create a dedicated client with longer timeout for property details
+        const propertyClient = axios.create({
+          baseURL: apiClient.defaults.baseURL,
+          headers: apiClient.defaults.headers,
+          timeout: 45000, // 45 seconds - longer than default but not too long
+        });
+        
+        // Add auth token to property client
+        const cachedToken = localStorage.getItem('sb-access-token');
+        if (cachedToken) {
+          propertyClient.defaults.headers.Authorization = `Bearer ${cachedToken}`;
+        }
+        
+        const response = await propertyClient.get<Property>(`/api/v1/properties/${id}`);
+        const property = response.data;
+        
+        const cacheKey = `property_${id}`;
+        optimizedPropertyCache.set(cacheKey, property, 600).catch(() => {});
+        
+        console.log(`✅ [PROPERTY DETAIL] Successfully fetched: ${id}`);
+        return property;
+        
+      } catch (error: any) {
+        lastError = error;
+        console.error(`❌ [GET PROPERTY ERROR] (retry ${2 - retries}/2):`, error.message);
+        
+        // Don't retry for certain errors
+        if (error.response?.status === 404) {
+          throw new Error('Property not found');
+        }
+        
+        if (error.response?.status === 403) {
+          throw new Error('Access denied for this property');
+        }
+        
+        // Retry on timeout or network errors
+        if ((error.code === 'ECONNABORTED' || 
+             error.message?.includes('timeout') ||
+             error.code === 'ECONNRESET' ||
+             error.code === 'ENOTFOUND' ||
+             error.message?.includes('Network Error')) && retries > 0) {
+          
+          console.log(`⏱️ [PROPERTY DETAIL] Network/timeout error - retrying... (${retries} attempts left)`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (2 - retries))); // Exponential backoff
+          retries--;
+          continue;
+        }
+        
+        // Break for non-retriable errors or if out of retries
+        break;
       }
-      
-      const response = await apiClient.get<Property>(`/api/v1/properties/${id}`);
-      const property = response.data;
-      
-      const cacheKey = `property_${id}`;
-      optimizedPropertyCache.set(cacheKey, property, 600).catch(() => {});
-      
-      return property;
-    } catch (error: any) {
-      console.error('❌ [GET PROPERTY ERROR]:', error.message);
-      
-      if (error.response?.status === 404) {
-        throw new Error('Property not found');
-      }
-      
-      throw new Error(error.response?.data?.detail || 'Failed to fetch property');
     }
+    
+    // If we get here, all retries failed
+    console.error(`❌ [PROPERTY DETAIL] Final error after retries:`, lastError.message);
+    
+    // Provide more helpful error messages
+    if (lastError.code === 'ECONNABORTED' || lastError.message?.includes('timeout')) {
+      throw new Error('Property details are taking too long to load. Please check your connection and try again.');
+    }
+    
+    if (lastError.code === 'ECONNRESET' || lastError.message?.includes('Network Error')) {
+      throw new Error('Network connection lost while loading property. Please check your internet and try again.');
+    }
+    
+    if (lastError.code === 'ENOTFOUND') {
+      throw new Error('Cannot reach the property server. Please try again in a moment.');
+    }
+    
+    throw new Error(lastError.response?.data?.detail || 'Failed to fetch property details. Please try again.');
   },
 
   /**
@@ -316,25 +376,60 @@ export const propertiesAPI = {
    * - featured (defaults to false)
    * - verification_status (defaults to 'pending')
    */
-  create: async (data: CreatePropertyData | FormData): Promise<Property> => {
-    try {
-      console.log('📤 [CREATE PROPERTY]');
+  // create: async (data: CreatePropertyData | FormData): Promise<Property> => {
+  //   try {
+  //     console.log('📤 [CREATE PROPERTY]');
       
-      const response = await apiClient.post<Property>('/api/v1/properties', data, {
-        headers: data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {},
-        timeout: 60000
-      });
+  //     const response = await apiClient.post<Property>('/api/v1/properties', data, {
+  //       headers: data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {},
+  //       timeout: 60000
+  //     });
       
-      // Invalidate search cache
-      await optimizedPropertyCache.clear();
+  //     // Invalidate search cache
+  //     await optimizedPropertyCache.clear();
       
-      console.log('✅ [PROPERTY CREATED]:', response.data.id);
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ [CREATE ERROR]:', error.message);
-      throw new Error(error.response?.data?.detail || 'Failed to create property');
+  //     console.log('✅ [PROPERTY CREATED]:', response.data.id);
+  //     return response.data;
+  //   } catch (error: any) {
+  //     console.error('❌ [CREATE ERROR]:', error.message);
+  //     throw new Error(error.response?.data?.detail || 'Failed to create property');
+  //   }
+  // },
+
+create: async (data: CreatePropertyData | FormData): Promise<Property> => {
+  try {
+    console.log('📤 [CREATE PROPERTY]');
+    
+    // ✅ Always get a fresh token before creating a property (expensive operation)
+    const { createClient } = await import('@/utils/supabase/client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    const headers: Record<string, string> = {}
+    if (data instanceof FormData) {
+      headers['Content-Type'] = 'multipart/form-data'
     }
-  },
+    // ✅ Attach fresh token directly — bypasses stale cache
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+    
+    const response = await apiClient.post<Property>('/api/v1/properties', data, {
+      headers,
+      timeout: 60000
+    });
+    
+    await optimizedPropertyCache.clear();
+    console.log('✅ [PROPERTY CREATED]:', response.data.id);
+    return response.data;
+  } catch (error: any) {
+    console.error('❌ [CREATE ERROR]:', error.message);
+    throw new Error(error.response?.data?.detail || 'Failed to create property');
+  }
+},
+
+
+
 
   /**
    * Update property

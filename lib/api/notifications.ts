@@ -17,7 +17,7 @@ export interface NotificationResponse {
 // Notifications API
 export const notificationsAPI = {
   /**
-   * Get notifications for current user
+   * Get notifications for current user with better error handling
    */
   getNotifications: async (options: {
     unread_only?: boolean;
@@ -40,6 +40,13 @@ export const notificationsAPI = {
       console.log('✅ [NOTIFICATIONS API] Fetched notifications:', response.data);
       return response.data;
     } catch (error: any) {
+      // Handle 401 Unauthorized specifically
+      if (error.response?.status === 401) {
+        console.log('🔔 [NOTIFICATIONS API] Unauthorized - token may be expired');
+        // Don't return empty - let the auth system handle token refresh
+        throw error;
+      }
+      
       // Silently handle timeouts - don't log as error
       if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
         console.log('🔔 [NOTIFICATIONS API] Request taking time - using existing notifications');
@@ -47,7 +54,7 @@ export const notificationsAPI = {
       }
       
       // Silently handle network issues
-      if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND' || !navigator.onLine) {
+      if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND' || error.message?.includes('Network Error') || !navigator.onLine) {
         console.log('🔔 [NOTIFICATIONS API] Network issue - using existing notifications');
         return { success: false, notifications: [], unread_count: 0, total_count: 0, limit: 20, offset: 0 };
       }

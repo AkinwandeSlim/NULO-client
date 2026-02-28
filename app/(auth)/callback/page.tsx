@@ -14,6 +14,7 @@
  * - This page shows loading state as backup
  */
 
+
 import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'

@@ -276,9 +276,18 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
       } catch (error: any) {
         console.error('❌ [LANDLORD DASHBOARD] Failed to fetch dashboard:', error)
         
-        // If we have cached data, use it despite error
+        // 🚀 IMPROVEMENT: Don't show error toast if we have cached data
+        // Just log it and continue with cached data
         if (!landlordData) {
-          toast.error(error.message || 'Failed to load dashboard data')
+          // Only show error if we have no data at all
+          if (error.message?.includes('timeout')) {
+            toast.error('Dashboard is loading slowly. Please try refreshing.')
+          } else {
+            toast.error(error.message || 'Failed to load dashboard data')
+          }
+        } else {
+          // We have cached data, just show a subtle info message
+          console.log('📋 [LANDLORD DASHBOARD] Using cached data due to API error')
         }
       } finally {
         setLandlordLoading(false)

@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from "react"
 import { useAuth } from "@/contexts/AuthContext"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { 
-  Heart, MapPin, Bed, Bath, Square, 
-  Trash2, Eye, Calendar, MessageSquare,
-  ArrowLeft, Search
+  Home, Heart, MessageSquare, Calendar, 
+  MapPin, Bed, Bath, Square, Eye, Clock, 
+  ArrowRight, TrendingUp, Bell,
+  Settings, User, Star, Zap, Activity,
+  Filter, CheckCircle, AlertCircle,ArrowLeft, Search
 } from "lucide-react"
 import Link from "next/link"
 import { favoritesAPI } from "@/lib/api/favorites"
@@ -74,7 +76,7 @@ export default function FavoritesPage() {
   }
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8 max-w-7xl">
       {/* Header */}
       <div className="mb-8">
         <Link href="/dashboard/tenant">
@@ -83,9 +85,9 @@ export default function FavoritesPage() {
             Back to Dashboard
           </Button>
         </Link>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-3">
               Saved Properties
             </h1>
             <p className="text-slate-600">
@@ -93,7 +95,7 @@ export default function FavoritesPage() {
             </p>
           </div>
           <Link href="/properties">
-            <Button className="bg-orange-500 hover:bg-orange-600">
+            <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6">
               <Search className="mr-2 h-4 w-4" />
               Browse More
             </Button>
@@ -101,103 +103,165 @@ export default function FavoritesPage() {
         </div>
       </div>
 
-      {/* Favorites Grid */}
-      {favorites.length === 0 ? (
-        <Card className="bg-white/90 backdrop-blur-sm border-white/50">
-          <CardContent className="py-16">
-            <div className="text-center">
-              <Heart className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                No saved properties yet
-              </h3>
-              <p className="text-slate-600 mb-6">
-                Start browsing and save properties you're interested in
-              </p>
-              <Link href="/properties">
-                <Button className="bg-orange-500 hover:bg-orange-600">
-                  <Search className="mr-2 h-4 w-4" />
-                  Browse Properties
-                </Button>
-              </Link>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Total Favorites</p>
+                <p className="text-2xl font-bold text-slate-900">{favorites.length}</p>
+              </div>
+              <Heart className="w-8 h-8 text-slate-400" />
             </div>
           </CardContent>
         </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {favorites.map((property) => {
-            if (!property) return null
+        
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Recently Added</p>
+                <p className="text-2xl font-bold text-orange-600">
+                  {favorites.slice(0, 3).length}
+                </p>
+              </div>
+              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                <span className="text-orange-600 font-bold text-sm">★</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Available</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {favorites.filter(f => f.status === 'available').length}
+                </p>
+              </div>
+              <CheckCircle className="w-8 h-8 text-green-400" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      {/* Main Content Card */}
+      <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Saved Properties</span>
+            <span className="text-sm font-normal text-slate-500">
+              {favorites.length} {favorites.length === 1 ? 'property' : 'properties'} saved
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {favorites.length === 0 ? (
+            <div className="text-center py-20 max-w-md mx-auto">
+              <div className="h-16 w-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Heart className="h-8 w-8 text-orange-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900 mb-3">No saved properties yet</h3>
+              <p className="text-slate-600 mb-8">
+                Start browsing and save properties you're interested in. Your favorites will appear here for easy access.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link href="/properties">
+                  <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6">
+                    <Search className="mr-2 h-4 w-4" />
+                    Browse Properties
+                  </Button>
+                </Link>
+                <Button 
+                  variant="outline" 
+                  onClick={() => toast.info('Check out our rental guide for tips on finding your perfect home!')}
+                  className="border-orange-200 text-orange-700 hover:bg-orange-50"
+                >
+                  <Heart className="mr-2 h-4 w-4" />
+                  Saving Tips
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {favorites.map((property) => {
+                if (!property) return null
 
-            return (
-              <Link key={property.id} href={`/properties/${property.id}`}>
-                <div className="group relative bg-white rounded-2xl overflow-hidden border border-slate-200 hover:border-orange-300 hover:shadow-xl transition-all duration-300 cursor-pointer">
-                  {/* Property Image */}
-                  <div className="relative h-56 overflow-hidden">
-                    <img
-                      src={property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
-                      alt={property.title}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    />
-                    {/* Remove Favorite Button */}
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        handleRemoveFavorite(property.id, property.title)
-                      }}
-                      disabled={removingId === property.id}
-                      className="absolute top-3 right-3 bg-white/95 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-                    >
-                      {removingId === property.id ? (
-                        <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <Heart className="h-4 w-4 text-red-500 fill-red-500" />
-                      )}
-                    </button>
-                  </div>
+                return (
+                  <Link key={property.id} href={`/properties/${property.id}`}>
+                    <div className="group relative bg-white rounded-2xl overflow-hidden border border-slate-200 hover:border-orange-300 hover:shadow-xl transition-all duration-300 cursor-pointer">
+                      {/* Property Image */}
+                      <div className="relative h-56 overflow-hidden">
+                        <img
+                          src={property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
+                          alt={property.title}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                        />
+                        {/* Remove Favorite Button */}
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            handleRemoveFavorite(property.id, property.title)
+                          }}
+                          disabled={removingId === property.id}
+                          className="absolute top-3 right-3 bg-white/95 backdrop-blur-sm p-2.5 rounded-full shadow-lg hover:bg-red-50 transition-all hover:scale-110 disabled:opacity-50 border border-white/50"
+                        >
+                          {removingId === property.id ? (
+                            <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Heart className="h-4 w-4 text-red-500 fill-red-500" />
+                          )}
+                        </button>
+                      </div>
 
-                  {/* Property Details */}
-                  <div className="p-5">
-                    {/* Price */}
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-2xl font-bold text-orange-600">
-                        {formatPrice(property.price)}
-                        <span className="text-sm font-normal text-slate-500">/mo</span>
-                      </p>
+                      {/* Property Details */}
+                      <div className="p-5">
+                        {/* Price */}
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-2xl font-bold text-orange-600">
+                            {formatPrice(property.price)}
+                            <span className="text-sm font-normal text-slate-500">/mo</span>
+                          </p>
+                        </div>
+
+                        {/* Title */}
+                        <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
+                          {property.title}
+                        </h3>
+
+                        {/* Location */}
+                        <p className="text-sm text-slate-600 flex items-center mb-4">
+                          <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
+                          <span className="line-clamp-1">{property.location}</span>
+                        </p>
+
+                        {/* Features */}
+                        <div className="flex items-center gap-4 text-sm text-slate-600 pt-4 border-t border-slate-100">
+                          <div className="flex items-center gap-1.5">
+                            <Bed className="h-4 w-4 text-orange-500" />
+                            <span className="font-medium">{property.beds || property.bedrooms || 0}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Bath className="h-4 w-4 text-orange-500" />
+                            <span className="font-medium">{property.baths || property.bathrooms || 0}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Square className="h-4 w-4 text-orange-500" />
+                            <span className="font-medium">{property.sqft || property.square_feet || 0} sqft</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-
-                    {/* Title */}
-                    <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
-                      {property.title}
-                    </h3>
-
-                    {/* Location */}
-                    <p className="text-sm text-slate-600 flex items-center mb-4">
-                      <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
-                      <span className="line-clamp-1">{property.location}</span>
-                    </p>
-
-                    {/* Features */}
-                    <div className="flex items-center gap-4 text-sm text-slate-600 pt-4 border-t border-slate-100">
-                      <div className="flex items-center gap-1.5">
-                        <Bed className="h-4 w-4 text-orange-500" />
-                        <span className="font-medium">{property.beds || property.bedrooms || 0}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Bath className="h-4 w-4 text-orange-500" />
-                        <span className="font-medium">{property.baths || property.bathrooms || 0}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Square className="h-4 w-4 text-orange-500" />
-                        <span className="font-medium">{property.sqft || property.square_feet || 0} sqft</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
+                  </Link>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

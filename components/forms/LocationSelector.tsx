@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { locationsAPI } from '@/lib/api/locations'
+import type { StateData } from '@/lib/api/locations'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -35,7 +36,7 @@ export function LocationSelector({
   onCityNameChange,
   required = true
 }: LocationSelectorProps) {
-  const [states, setStates] = useState<any[]>([])
+  const [states, setStates] = useState<StateData[]>([])
   const [cities, setCities] = useState<CityData[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingCities, setLoadingCities] = useState(false)
@@ -68,11 +69,8 @@ export function LocationSelector({
       try {
         const response = await locationsAPI.getCities(selectedState)
         setCities(response.cities || [])
-        // Reset city selection when state changes
         onCityChange('')
-        if (onCityNameChange) {
-          onCityNameChange('')
-        }
+        if (onCityNameChange) onCityNameChange('')
       } catch (error) {
         console.error('Failed to load cities:', error)
         setCities([])
@@ -82,7 +80,7 @@ export function LocationSelector({
     }
 
     fetchCities()
-  }, [selectedState, onCityChange, onCityNameChange])
+  }, [selectedState]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStateChange = (value: string) => {
     onStateChange(value)
@@ -90,15 +88,14 @@ export function LocationSelector({
 
   const handleCityChange = (value: string) => {
     onCityChange(value)
-    
-    // Find the city data and pass the name
     const selectedCityData = cities.find(c => c.id === value)
     if (selectedCityData && onCityNameChange) {
       onCityNameChange(selectedCityData.name)
     }
   }
 
-  const stateCode = states.find(s => s.name === selectedState)?.state_code
+  const selectedStateData = states.find(s => s.name === selectedState)
+  const selectedCityData = cities.find(c => c.id === selectedCity)
 
   return (
     <div className="space-y-4">
@@ -109,11 +106,11 @@ export function LocationSelector({
           State/Region {required && <span className="text-red-500">*</span>}
         </Label>
         <Select value={selectedState} onValueChange={handleStateChange} disabled={loading}>
-          <SelectTrigger 
+          <SelectTrigger
             id="state"
             className="mt-2 border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 transition-all duration-300"
           >
-            <SelectValue placeholder="Select state or region..." />
+            <SelectValue placeholder={loading ? 'Loading states...' : 'Select state or region...'} />
           </SelectTrigger>
           <SelectContent>
             {states.map((state) => (
@@ -136,19 +133,16 @@ export function LocationSelector({
             City/Area {required && <span className="text-red-500">*</span>}
           </Label>
           <Select value={selectedCity} onValueChange={handleCityChange} disabled={loadingCities}>
-            <SelectTrigger 
+            <SelectTrigger
               id="city"
               className="mt-2 border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 transition-all duration-300"
             >
-              <SelectValue placeholder={loadingCities ? "Loading cities..." : "Select city or area..."} />
+              <SelectValue placeholder={loadingCities ? 'Loading cities...' : cities.length === 0 ? 'No cities available' : 'Select city or area...'} />
             </SelectTrigger>
             <SelectContent>
               {cities.map((city) => (
                 <SelectItem key={city.id} value={city.id}>
-                  <div className="flex items-center gap-2">
-                    <span>{city.name}</span>
-                    <span className="text-xs text-slate-500">({stateCode})</span>
-                  </div>
+                  {city.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -156,8 +150,8 @@ export function LocationSelector({
         </div>
       )}
 
-      {/* Info Box */}
-      {selectedState && selectedCity && (
+      {/* Confirmation badge */}
+      {selectedState && selectedCity && selectedCityData && (
         <div className="bg-gradient-to-r from-orange-50 to-white border-2 border-orange-200 p-4 rounded-2xl">
           <div className="flex items-center gap-3 text-orange-700">
             <div className="w-8 h-8 bg-orange-500 rounded-xl flex items-center justify-center">
@@ -165,9 +159,7 @@ export function LocationSelector({
             </div>
             <div className="text-sm">
               <p className="font-medium">Location Selected</p>
-              <p className="text-orange-600">
-                {cities.find(c => c.id === selectedCity)?.name}, {selectedState}
-              </p>
+              <p className="text-orange-600">{selectedCityData.name}, {selectedState}, Nigeria</p>
             </div>
           </div>
         </div>

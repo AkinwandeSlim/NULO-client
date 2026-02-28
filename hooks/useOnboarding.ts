@@ -6,11 +6,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
-// ✅ FIX: Rename import to avoid conflict
 import { submitCompleteOnboarding as apiSubmitOnboarding } from '@/lib/api/onboarding'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 // ============================================================================
 // TYPES
@@ -119,9 +119,12 @@ const storage = {
 
 export function useOnboarding() {
   const router = useRouter()
-  const { user, updateUserProfile } = useAuth() // Add this line
+  const pathname = usePathname()
+  const { user, loading, updateUserProfile } = useAuth()
+  const { invalidateLandlordCache } = useDashboard()
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentStep, setCurrentStep] = useState(1)
+  const [isReady, setIsReady] = useState(false)
 
   const [step1Data, setStep1Data] = useState<OnboardingStep1Data | null>(null)
   const [step2Data, setStep2Data] = useState<OnboardingStep2Data | null>(null)
@@ -168,7 +171,76 @@ export function useOnboarding() {
     }
   }, [])
 
-  // SAVE STEP 1 - localStorage only (fast!)
+  // ── AUTH GUARD ────────────────────────────────────────────────────────────
+  // Runs once after auth is resolved. Handles all redirect logic in one place
+  // so individual step pages don't need to repeat it.
+  //
+  // KEY FIX: Google OAuth users have their email verified by Google, but
+  // user.email_verified in the DB can be false right after sign-up (the trigger
+  // hasn't fired yet, or doesn't set the flag for OAuth users). Sending them to
+  // the confirmation page is wrong — they never got a confirmation email.
+  // We detect OAuth users via user.auth_provider === 'google'.
+  useEffect(() => {
+    if (!user || loading) return
+
+    // 1. Wrong user type
+    if (user.user_type !== 'landlord') {
+      toast.error('This page is only for landlords')
+      router.push('/properties')
+      return
+    }
+
+    // 2. Email not verified — skip for Google OAuth users
+    const isOAuthUser =
+      user.auth_provider === 'google' ||
+      (user as any).provider === 'google'
+
+    if (!user.email_verified && !isOAuthUser) {
+      toast.error('Please verify your email first')
+      router.push('/signup/landlord/confirmation')
+      return
+    }
+
+    // 3. Onboarding already completed — verify against DB before redirecting
+    //    (the flag can go stale on partial submits)
+    //    IMPORTANT: Skip this redirect if the user is on a step page right now.
+    //    When step-5 submits, it sets onboarding_completed=true which triggers
+    //    this effect — but the step page handles its own redirect to
+    //    verification-pending. Redirecting here simultaneously causes a bounce.
+    const isOnStepPage = pathname?.includes('/onboarding/landlord/step-')
+    if (user.onboarding_completed && !isOnStepPage) {
+      const verify = async () => {
+        try {
+          const { createClient } = await import('@/utils/supabase/client')
+          const supabase = createClient()
+          const { data } = await supabase
+            .from('landlord_onboarding')
+            .select('all_steps_completed, submitted_for_review')
+            .eq('landlord_id', user.id)
+            .single()
+
+          if (data?.all_steps_completed && data?.submitted_for_review) {
+            router.push('/landlord/overview')
+          } else {
+            // Flag is stale — reset it and let the user continue
+            await supabase
+              .from('users')
+              .update({ onboarding_completed: false })
+              .eq('id', user.id)
+            setIsReady(true)
+          }
+        } catch {
+          // Can't confirm — let the user through rather than blocking them
+          setIsReady(true)
+        }
+      }
+      verify()
+      return
+    }
+
+    // All checks passed
+    setIsReady(true)
+  }, [user, loading, router, pathname])
   const saveStep1 = useCallback(async (data: OnboardingStep1Data) => {
     console.log('📤 [STEP 1] Saving data to localStorage...')
     setIsProcessing(true)
@@ -331,7 +403,13 @@ export function useOnboarding() {
 
       console.log(' [SUBMIT] Backend API response:', result)
 
-      // 4. Update user verification_status locally for MVP
+      // 4. Bust the dashboard cache immediately so the overview page
+      //    re-fetches fresh data (updated onboarding + verification_status)
+      //    instead of showing the stale cached snapshot.
+      invalidateLandlordCache()
+      console.log('🔄 [SUBMIT] Dashboard cache invalidated')
+
+      // 5. Update user verification_status locally for MVP
       // This ensures UI shows correct status even if backend is down
       if (user && updateUserProfile) {
         console.log('🔄 [SUBMIT] Updating user verification_status to pending')
@@ -345,7 +423,7 @@ export function useOnboarding() {
       // 5. Clear localStorage after successful submission
       storage.clearAll()
 
-      toast.success(' Onboarding submitted for review!')
+      // toast.success(' Onboarding submitted for review!')
       
       // // 6. Redirect to pending review page
       // setTimeout(() => {
@@ -360,7 +438,7 @@ export function useOnboarding() {
     } finally {
       setIsProcessing(false)
     }
-  }, [router])
+  }, [router, invalidateLandlordCache])
 
   const clearData = useCallback(() => {
     storage.clearAll()
@@ -384,6 +462,7 @@ export function useOnboarding() {
   }, [currentStep, step1Data, step2Data, step3Data, step4Data])
 
   return {
+    isReady,
     currentStep,
     isProcessing,
     step1Data,
@@ -399,3 +478,4 @@ export function useOnboarding() {
     exportData,
   }
 }
+

@@ -8,66 +8,57 @@ import { ArrowLeft, Clock, CheckCircle, AlertCircle, Mail, Phone, RefreshCw, Hom
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuth } from "@/contexts/AuthContext"
-import { useOnboarding } from "@/hooks/useOnboarding"
 import { getOnboardingStatus } from "@/lib/api/onboarding"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTE: This page intentionally does NOT use useOnboarding.
+//
+// useOnboarding's auth guard redirects to /landlord/overview when
+// user.onboarding_completed is true — which is exactly the state this page
+// is supposed to show. Using it here would cause an immediate redirect away
+// from verification-pending right after step 5 submits.
+//
+// This page only needs a simple auth check (signed in + landlord), which
+// it handles itself via useAuth.
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function VerificationPending() {
   const router = useRouter()
   const { user, loading } = useAuth()
-  const { currentStep } = useOnboarding()
-  
+
   const [isChecking, setIsChecking] = useState(false)
   const [verificationStatus, setVerificationStatus] = useState<'pending' | 'in_review' | 'approved' | 'rejected'>('pending')
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
 
-  // Redirect if not authenticated or not a landlord
+  // Simple auth guard — just needs sign-in + landlord type.
+  // Does NOT check email_verified or onboarding_completed.
   useEffect(() => {
-    if (!loading) {
-      if (!user) {
-        toast.error('Please sign in first')
-        router.push('/signin')
-        return
-      }
-      
-      if (user.user_type !== 'landlord') {
-        toast.error('This page is only for landlords')
-        router.push('/properties')
-        return
-      }
-      
-      // Check if email is verified
-      if (!user.email_verified) {
-        toast.error('Please verify your email first')
-        router.push('/signup/landlord/confirmation')
-        return
-      }
+    if (loading) return
+    if (!user) {
+      router.push('/signin')
+      return
+    }
+    if (user.user_type !== 'landlord') {
+      router.push('/properties')
+      return
     }
   }, [user, loading, router])
 
   const checkVerificationStatus = async () => {
     if (!user) return
-    
+
     setIsChecking(true)
-    
+
     try {
-      console.log('🔍 [VERIFICATION] Checking status for user:', user.id)
-      
-      // Try to get real status from backend
       const status = await getOnboardingStatus(user.id)
-      
-      console.log('📊 [VERIFICATION] Status response:', status)
-      
-      // Update local state based on response
+
       if (status.admin_review_status) {
         setVerificationStatus(status.admin_review_status.toLowerCase() as any)
         setLastChecked(new Date())
-        
-        // Handle different statuses
+
         if (status.admin_review_status === 'approved') {
           toast.success('🎉 Congratulations! Your verification has been approved!')
-          setTimeout(() => {
-            router.push('/landlord/overview')
-          }, 2000)
+          setTimeout(() => router.push('/landlord/overview'), 2000)
         } else if (status.admin_review_status === 'rejected') {
           toast.error('❌ Your verification was rejected. Please check your email for details.')
         } else if (status.admin_review_status === 'in_review') {
@@ -76,13 +67,11 @@ export default function VerificationPending() {
           toast.info('⏳ Your verification is still pending.')
         }
       } else {
-        // Fallback - check local user status
+        // Fallback: check local user status
         if (user.verification_status === 'approved') {
           setVerificationStatus('approved')
           toast.success('🎉 Congratulations! Your verification has been approved!')
-          setTimeout(() => {
-            router.push('/landlord/overview')
-          }, 2000)
+          setTimeout(() => router.push('/landlord/overview'), 2000)
         } else {
           setVerificationStatus('pending')
           toast.info('⏳ Your verification is still pending.')
@@ -91,17 +80,13 @@ export default function VerificationPending() {
       }
     } catch (error: any) {
       console.error('❌ [VERIFICATION] Error checking status:', error)
-      
-      // Fallback to local user status
       if (user?.verification_status === 'approved') {
         setVerificationStatus('approved')
-        toast.success('🎉 Congratulations! Your verification has been approved!')
-        setTimeout(() => {
-          router.push('/landlord/overview')
-        }, 2000)
+        toast.success('🎉 Your verification has been approved!')
+        setTimeout(() => router.push('/landlord/overview'), 2000)
       } else {
         setVerificationStatus('pending')
-        toast.info('⏳ Your verification is still pending. Please try again later.')
+        toast.info('⏳ Still pending. Please try again later.')
       }
       setLastChecked(new Date())
     } finally {
@@ -139,9 +124,9 @@ export default function VerificationPending() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-            verificationStatus === 'approved' ? 'bg-green-100' : 
-            verificationStatus === 'in_review' ? 'bg-blue-100' : 
-            verificationStatus === 'rejected' ? 'bg-red-100' : 
+            verificationStatus === 'approved' ? 'bg-green-100' :
+            verificationStatus === 'in_review' ? 'bg-blue-100' :
+            verificationStatus === 'rejected' ? 'bg-red-100' :
             'bg-orange-100'
           }`}>
             {verificationStatus === 'approved' ? (
@@ -172,29 +157,17 @@ export default function VerificationPending() {
           <CardHeader>
             <CardTitle className="text-xl flex items-center gap-3">
               {verificationStatus === 'approved' ? (
-                <>
-                  <CheckCircle className="h-6 w-6 text-green-600" />
-                  Verification Complete
-                </>
+                <><CheckCircle className="h-6 w-6 text-green-600" /> Verification Complete</>
               ) : verificationStatus === 'in_review' ? (
-                <>
-                  <FileText className="h-6 w-6 text-blue-600" />
-                  Application In Review
-                </>
+                <><FileText className="h-6 w-6 text-blue-600" /> Application In Review</>
               ) : verificationStatus === 'rejected' ? (
-                <>
-                  <AlertCircle className="h-6 w-6 text-red-600" />
-                  Verification Rejected
-                </>
+                <><AlertCircle className="h-6 w-6 text-red-600" /> Verification Rejected</>
               ) : (
-                <>
-                  <AlertCircle className="h-6 w-6 text-orange-600" />
-                  Awaiting Admin Verification
-                </>
+                <><AlertCircle className="h-6 w-6 text-orange-600" /> Awaiting Admin Verification</>
               )}
             </CardTitle>
             <CardDescription>
-              {verificationStatus === 'approved' 
+              {verificationStatus === 'approved'
                 ? 'Your verification has been completed successfully. You now have full access to landlord features.'
                 : verificationStatus === 'in_review'
                 ? 'Your application is currently being reviewed by our admin team.'
@@ -205,7 +178,8 @@ export default function VerificationPending() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Status */}
+
+            {/* Status Banner */}
             <div className={`border rounded-lg p-4 ${
               verificationStatus === 'approved' ? 'bg-green-50 border-green-200' :
               verificationStatus === 'in_review' ? 'bg-blue-50 border-blue-200' :
@@ -242,9 +216,7 @@ export default function VerificationPending() {
                   }`}>
                     Submitted on {new Date().toLocaleDateString()}
                     {lastChecked && (
-                      <span className="block mt-1">
-                        Last checked: {lastChecked.toLocaleTimeString()}
-                      </span>
+                      <span className="block mt-1">Last checked: {lastChecked.toLocaleTimeString()}</span>
                     )}
                   </p>
                 </div>
@@ -264,7 +236,6 @@ export default function VerificationPending() {
                     <p className="text-slate-600 text-sm">Our team will review your submitted documents and information</p>
                   </div>
                 </div>
-                
                 <div className="flex items-start gap-3">
                   <div className="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center mt-0.5">
                     <span className="text-orange-600 text-sm font-semibold">2</span>
@@ -274,7 +245,6 @@ export default function VerificationPending() {
                     <p className="text-slate-600 text-sm">You'll be notified via email once verification is complete</p>
                   </div>
                 </div>
-                
                 <div className="flex items-start gap-3">
                   <div className="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center mt-0.5">
                     <span className="text-orange-600 text-sm font-semibold">3</span>
@@ -306,65 +276,36 @@ export default function VerificationPending() {
             <div className="flex flex-col sm:flex-row gap-4">
               {verificationStatus === 'approved' ? (
                 <>
-                  <Button 
-                    onClick={() => router.push('/landlord/overview')}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                  >
+                  <Button onClick={() => router.push('/landlord/overview')} className="flex-1 bg-green-600 hover:bg-green-700 text-white">
                     <Home className="h-4 w-4 mr-2" />
                     Go to Dashboard
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => window.location.reload()}
-                    className="flex-1 border-green-300 text-green-700 hover:border-green-500 hover:text-green-600 hover:bg-green-50"
-                  >
+                  <Button variant="outline" onClick={() => window.location.reload()} className="flex-1 border-green-300 text-green-700 hover:border-green-500 hover:bg-green-50">
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh
                   </Button>
                 </>
               ) : verificationStatus === 'rejected' ? (
                 <>
-                  <Button 
-                    onClick={() => router.push('/onboarding/landlord/step-1')}
-                    className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
-                  >
+                  <Button onClick={() => router.push('/onboarding/landlord/step-1')} className="flex-1 bg-orange-600 hover:bg-orange-700 text-white">
                     <FileText className="h-4 w-4 mr-2" />
                     Reapply
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => router.push('/landlord/overview')}
-                    className="flex-1 border-slate-300 text-slate-700 hover:border-slate-500 hover:text-slate-600 hover:bg-slate-50"
-                  >
+                  <Button variant="outline" onClick={() => router.push('/landlord/overview')} className="flex-1 border-slate-300 text-slate-700 hover:border-slate-500 hover:bg-slate-50">
                     <Home className="h-4 w-4 mr-2" />
                     Dashboard
                   </Button>
                 </>
               ) : (
                 <>
-                  <Button 
-                    onClick={checkVerificationStatus}
-                    disabled={isChecking}
-                    className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
-                  >
+                  <Button onClick={checkVerificationStatus} disabled={isChecking} className="flex-1 bg-orange-600 hover:bg-orange-700 text-white">
                     {isChecking ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Checking...
-                      </>
+                      <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>Checking...</>
                     ) : (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Check Status
-                      </>
+                      <><RefreshCw className="h-4 w-4 mr-2" />Check Status</>
                     )}
                   </Button>
-                  
-                  <Button 
-                    variant="outline" 
-                    onClick={() => router.push('/landlord/overview')}
-                    className="flex-1 border-orange-300 text-orange-700 hover:border-orange-500 hover:text-orange-600 hover:bg-orange-50"
-                  >
+                  <Button variant="outline" onClick={() => router.push('/landlord/overview')} className="flex-1 border-orange-300 text-orange-700 hover:border-orange-500 hover:bg-orange-50">
                     <Home className="h-4 w-4 mr-2" />
                     Go to Dashboard
                   </Button>
@@ -377,6 +318,7 @@ export default function VerificationPending() {
               <p>You'll receive an email notification as soon as your verification is complete.</p>
               <p className="mt-1">Typical verification time: 1-3 business days</p>
             </div>
+
           </CardContent>
         </Card>
       </div>

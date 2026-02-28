@@ -9,6 +9,7 @@ import { useDashboard } from "@/contexts/DashboardContext"
 import { toast } from "sonner"
 import { Navbar } from "@/components/navigation/Navbar"
 import { NotificationBadge } from "@/components/notifications/NotificationBadge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   LayoutDashboard,
   Heart,
@@ -47,6 +48,7 @@ import {
 // Tenant sidebar links
 const tenantSidebarLinks = [
   { href: "/tenant", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/tenant/applications", label: "My Applications", icon: FileText },
   { href: "/tenant/favorites", label: "Saved Properties", icon: Heart },
   { href: "/tenant/viewings", label: "Viewing Requests", icon: Calendar },
   { href: "/tenant/messages", label: "Messages", icon: MessageSquare },
@@ -58,9 +60,11 @@ const tenantSidebarLinks = [
 const landlordSidebarLinks = [
   { href: "/landlord/overview", label: "Dashboard", icon: LayoutDashboard },
   { href: "/landlord/properties", label: "My Properties", icon: Building2 },
+  { href: "/landlord/applications", label: "Applications", icon: FileText },
   { href: "/landlord/viewings", label: "Viewing Requests", icon: Calendar },
   { href: "/landlord/messages", label: "Messages", icon: MessageSquare },
-  { href: "/tenant/profile", label: "Profile", icon: User },
+  { href: "/landlord/notifications", label: "Notifications", icon: Bell },
+  { href: "/landlord/profile", label: "Profile", icon: User },
 ]
 
 // Admin sidebar links with dropdown for user management
@@ -81,6 +85,8 @@ const adminSidebarLinks = [
   { href: "/admin/landlord-verification", label: "Landlord Verification", icon: Building2 },
   { href: "/admin/property-verification", label: "Property Verification", icon: FileText },
   { href: "/admin/verifications", label: "All Verifications", icon: CheckCircle },
+  { href: "/admin/notifications", label: "Notifications", icon: Bell },
+  
 ]
 
 // ✅ NEW: Public navigation links to show in dashboard navbar
@@ -197,16 +203,44 @@ export default function DashboardLayout({
     return pathname.startsWith(path)
   }
 
+  // Enhanced active detection for dashboard links (handles nested routes)
+  const isDashboardLinkActive = (path: string) => {
+    if (path === '/') return pathname === '/'
+    
+    // Exact match for main pages
+    if (pathname === path) return true
+    
+    // Special cases: Don't highlight parent routes when on child pages
+    const tenantChildRoutes = ['/tenant/applications', '/tenant/favorites', '/tenant/viewings', '/tenant/messages', '/tenant/notifications', '/tenant/profile']
+    const landlordChildRoutes = ['/landlord/properties', '/landlord/applications', '/landlord/viewings', '/landlord/messages', '/landlord/notifications', '/landlord/profile']
+    
+    // For tenant dashboard, don't highlight when on any tenant child route
+    if (path === '/tenant' && tenantChildRoutes.some(childRoute => pathname.startsWith(childRoute))) {
+      return false
+    }
+    
+    // For landlord dashboard, don't highlight when on any landlord child route
+    if (path === '/landlord/overview' && landlordChildRoutes.some(childRoute => pathname.startsWith(childRoute))) {
+      return false
+    }
+    
+    // Check for nested routes (e.g., /landlord/applications/[id] should highlight /landlord/applications)
+    // This comes AFTER the special cases to avoid double-highlighting
+    if (pathname.startsWith(path + '/')) return true
+    
+    return false
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]">
       {/* UPDATED: Use unified Navbar component */}
       <Navbar />
 
-      {/* FIXED: Adjusted top spacing for navbar */}
-      <div className="pt-16">
+      {/* FIXED: Reduced top spacing for navbar */}
+      <div className="pt-14">
         {/* Sidebar */}
         <aside
-          className={`fixed top-16 left-0 z-40 h-[calc(100vh-4rem)] w-64 bg-white border-r border-slate-200 transition-transform duration-300 lg:translate-x-0 ${
+          className={`fixed top-14 left-0 z-40 h-[calc(100vh-3.5rem)] w-64 bg-white border-r border-slate-200 transition-transform duration-300 lg:translate-x-0 ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -387,7 +421,7 @@ export default function DashboardLayout({
                           )
                         }) :sidebarLinks.map((link) => {
                           const Icon = link.icon
-                          const isActive = pathname === link.href
+                          const isActive = isDashboardLinkActive(link.href)
                           
                           return (
                             <Link key={link.href} href={link.href}>
@@ -395,13 +429,16 @@ export default function DashboardLayout({
                                 variant={isActive ? "default" : "ghost"}
                                 className={`w-full justify-start gap-3 ${
                                   isActive
-                                    ? "bg-orange-500 text-white hover:bg-orange-600"
+                                    ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 shadow-sm"
                                     : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
                                 }`}
                                 onClick={() => setSidebarOpen(false)}
                               >
                                 <Icon className="h-5 w-5" />
                                 {link.label}
+                                {isActive && (
+                                  <div className="ml-auto w-2 h-2 bg-white rounded-full animate-pulse" />
+                                )}
                               </Button>
                             </Link>
                           )
@@ -426,7 +463,7 @@ export default function DashboardLayout({
               
               {/* Add Property - Only for landlords */}
               {userType === 'landlord' && (
-                <Link href="/landlord/properties/new">
+                <Link href="/dashboard/landlord/properties/new">
                   <Button 
                     variant="ghost" 
                     className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
@@ -439,7 +476,7 @@ export default function DashboardLayout({
               )}
 
               {/* Settings */}
-              <Link href="/tenant/profile">
+              <Link href={userType === 'landlord' ? '/landlord/profile' : '/tenant/profile'}>
                 <Button 
                   variant="ghost" 
                   className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
@@ -484,10 +521,13 @@ export default function DashboardLayout({
           />
         )}
 
-        {/* ✅ FIXED: Main Content */}
+        {/* ✅ FIXED: Main Content with notification sidebar */}
         <main className="lg:pl-64">
-          <div className="p-4 sm:p-6">
-            {children}
+          <div className="flex gap-6">
+            {/* Main Content Area */}
+            <div className="flex-1 p-3 sm:p-4">
+              {children}
+            </div>
           </div>
         </main>
       </div>

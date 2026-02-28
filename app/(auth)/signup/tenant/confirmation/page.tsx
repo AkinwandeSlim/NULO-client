@@ -61,9 +61,22 @@ export default function TenantConfirmationPage() {
     // Clean up localStorage when user clicks to go to sign in
     if (typeof window !== 'undefined') {
       localStorage.removeItem('signup_email')
+      // Don't clear the callback URL - it should persist until after email verification
     }
     router.push('/signin')
   }
+
+  // Check if we have a callback URL stored for better UX messaging
+  const [callbackUrl, setCallbackUrl] = useState<string | null>(null)
+  
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('signup_callback_url')
+      if (stored) {
+        setCallbackUrl(stored)
+      }
+    }
+  }, [])
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden bg-gradient-to-br from-orange-50 via-white to-slate-50">
@@ -130,8 +143,18 @@ export default function TenantConfirmationPage() {
               <p>• Check your spam folder if you don't see the email</p>
               <p>• The confirmation link expires in 24 hours</p>
               <p>• Click the link in the email to verify your account</p>
-              <p>• After verification, come back and sign in</p>
+              <p>• After verification, you'll be redirected back{callbackUrl && ' to the property you were viewing'}</p>
             </div>
+
+            {/* Callback URL Info */}
+            {callbackUrl && callbackUrl.includes('/properties/') && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <strong>🏠 Good news!</strong><br />
+                  After verifying your email, you'll be automatically redirected back to the property you were viewing.
+                </p>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="space-y-3">

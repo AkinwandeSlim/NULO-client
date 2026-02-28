@@ -1,38 +1,34 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useLandlordDashboard } from "@/contexts/DashboardContext"
+import { useNotifications } from "@/contexts/NotificationContext"
+import { Notification } from "@/contexts/NotificationContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { 
-  Home, Building2, Calendar, MessageSquare,
-  DollarSign, TrendingUp, Eye, Plus,
-  MapPin, Bed, Bath, Square, Users,
-  ArrowRight, AlertCircle, CheckCircle, Shield, 
-  RefreshCw, XCircle, Star, Bell, Settings,
-  Activity, BarChart3, Clock, ChevronRight,
-  FileText, Upload, User, Mail, Phone
+import {
+  Building2, Calendar, MessageSquare, DollarSign,
+  Eye, Plus, MapPin, Bed, Bath, Square,
+  ArrowRight, AlertCircle, CheckCircle,
+  Bell, Settings, Activity, FileText,
+  Upload, User, Zap, Award, Target, TrendingUp, Mail
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
-import landlordDashboardAPI, { 
-  LandlordProfile, 
+import landlordDashboardAPI, {
+  LandlordProfile,
   LandlordOnboarding,
-  LandlordStats,
-  LandlordProperties,
-  RecentActivity,
-  Notification,
   isLandlordVerified,
   isOnboardingCompleted,
   getOnboardingProgress,
-  getVerificationStatusColor,
-  getPropertyStatusColor,
   formatCurrency,
   formatDate
 } from "@/lib/api/landlordDashboard"
+import { viewingRequestsAPI as landlordViewingRequestsAPI } from "@/lib/api/viewingRequestsLandlord"
+import { engagementAPI, getEngagementLevelColor, getEngagementLevelTextColor, getEngagementLevelBgColor, getTrustScoreColor, getTrustScoreTextColor, getTrustScoreBgColor, trackEngagement } from "@/lib/api/engagement"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 
@@ -40,891 +36,1010 @@ export default function LandlordDashboard() {
   const router = useRouter()
   const pathname = usePathname()
   const { user, userProfile } = useAuth()
-  const [mounted, setMounted] = useState(false)
-  const [loadingTooLong, setLoadingTooLong] = useState(false)
-  
-  // ✅ Use context hook for cached landlord data
-  const { 
-    landlordData, 
-    loading, 
-    refreshing, 
+  const { state } = useNotifications()
+  const { notifications, unreadCount } = state
+
+  const {
+    landlordData,
+    loading,
+    refreshing,
     fetchLandlordDashboard,
     invalidateLandlordCache
   } = useLandlordDashboard()
 
-  // 🚀 OPTIMIZATION: Show "taking too long" message after 8 seconds to help user decide to retry
-  useEffect(() => {
-    if (loading && !loadingTooLong) {
-      const timer = setTimeout(() => {
-        setLoadingTooLong(true)
-      }, 8000) // Show after 8 seconds (before 15s timeout)
-      
-      return () => clearTimeout(timer)
+  const [mounted, setMounted] = useState(false)
+  const [viewingRequests, setViewingRequests] = useState<any[]>([])
+  const [viewingsLoading, setViewingsLoading] = useState(true)
+  const [engagementMetrics, setEngagementMetrics] = useState<any>(null)
+
+  // Track engagement activities
+  const trackActivity = useCallback(async (activityType: any, metadata?: any) => {
+    if (user?.id) {
+      await trackEngagement(user.id, activityType, metadata)
     }
-  }, [loading, loadingTooLong])
+  }, [user?.id])
 
-  // Handle refresh
-  const handleRefresh = async () => {
-    try {
-      await fetchLandlordDashboard(true) // Force refresh
-      toast.success('Dashboard refreshed')
-    } catch (error: any) {
-      console.error('Error refreshing dashboard:', error)
-      toast.error('Failed to refresh dashboard')
-    }
-  }
+  // Memoize expensive calculations and event handlers (must be before early returns)
+  const getUserName = useMemo(() => () =>
+    userProfile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'there'
+  , [userProfile, user])
 
-  // Mount check
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  // Fetch landlord data on mount - only once
-  useEffect(() => {
-    if (mounted && user?.user_type === 'landlord' && !landlordData) {
-      fetchLandlordDashboard()
-    }
-  }, [mounted, user?.user_type, landlordData?.profile?.id]) // Changed to only trigger when needed
-
-  // Handle notification click
-  const handleNotificationClick = async (notification: Notification) => {
+  const handleNotificationClick = useCallback(async (notification: Notification) => {
     if (!notification.read) {
       try {
         await landlordDashboardAPI.markNotificationRead(notification.id)
-        // Invalidate cache so fresh data is fetched next time
         invalidateLandlordCache()
+      } catch {}
+    }
+    if (notification.link) router.push(notification.link)
+  }, [invalidateLandlordCache, router])
+
+  useEffect(() => { setMounted(true) }, [])
+
+  useEffect(() => {
+    if (mounted && user?.user_type === 'landlord' && !landlordData) {
+      // Only fetch if no cached data exists.
+      // Cache is explicitly invalidated by useOnboarding after submission,
+      // so we never need to force-refresh here — the cache is always correct.
+      fetchLandlordDashboard()
+    } else if (mounted && user && user.user_type !== 'landlord') {
+      router.push('/dashboard')
+      toast.error('Access denied. Landlord access required.')
+    }
+  }, [mounted, user, landlordData])
+
+  // Fetch viewing requests once landlordData is available.
+  // Tied to landlordData (not mounted/user) to avoid race conditions during auth hydration.
+  // Mirrors the tenant dashboard pattern: direct fetch, no user_type re-check needed.
+  useEffect(() => {
+    if (!landlordData) return
+    const fetchViewings = async () => {
+      setViewingsLoading(true)
+      try {
+        const data = await landlordViewingRequestsAPI.getLandlord()
+        // getLandlord() returns typed objects directly -- handle array or wrapped response
+        const list: any[] = Array.isArray(data)
+          ? data
+          : Array.isArray((data as any)?.viewing_requests)
+          ? (data as any).viewing_requests
+          : Array.isArray((data as any)?.data)
+          ? (data as any).data
+          : []
+        // Show pending + confirmed only -- completed/cancelled not actionable on overview
+        setViewingRequests(list.filter((v: any) => v.status === 'pending' || v.status === 'confirmed'))
+      } catch (err) {
+        console.error('Failed to fetch viewings for overview:', err)
+        setViewingRequests([])
+      } finally {
+        setViewingsLoading(false)
+      }
+    }
+    fetchViewings()
+  }, [landlordData])
+
+  // Fetch engagement metrics
+  useEffect(() => {
+    if (!user?.id) return
+    
+    const fetchEngagementMetrics = async () => {
+      try {
+        const engagementData = await engagementAPI.getEngagementMetrics(user.id)
+        setEngagementMetrics(engagementData)
       } catch (error) {
-        console.error('Error marking notification as read:', error)
+        console.error('Failed to fetch engagement metrics:', error)
       }
     }
     
-    if (notification.link) {
-      router.push(notification.link)
-    }
-  }
+    fetchEngagementMetrics()
+  }, [user?.id])
 
-  // Get verification status badge
-  const getVerificationBadge = (profile: LandlordProfile | null | undefined) => {
-    if (!profile) return null
-    const color = getVerificationStatusColor(profile.verification_status)
-    const status = profile.verification_status.charAt(0).toUpperCase() + profile.verification_status.slice(1)
-    
-    return (
-      <Badge className={`bg-${color}-100 text-${color}-800 border-${color}-200`}>
-        {status}
-      </Badge>
-    )
-  }
+  // Memoize viewing requests list to prevent unnecessary re-renders
+  const viewingRequestsList = useMemo(() => viewingRequests, [viewingRequests])
 
-  // Get onboarding progress component
-  const renderOnboardingProgress = (onboarding: LandlordOnboarding | null) => {
-    if (!onboarding) return null
-    
-    const progress = getOnboardingProgress(onboarding)
-    const isCompleted = isOnboardingCompleted(onboarding)
-    
-    return (
-      <div className="space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-sm font-medium">Onboarding Progress</span>
-          <span className="text-sm text-slate-600">{Math.round(progress)}%</span>
-        </div>
-        <div className="w-full bg-slate-200 rounded-full h-2">
-          <div 
-            className="bg-orange-500 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="text-xs text-slate-600">
-          {isCompleted ? '✅ Completed - Under Review' : `Step ${onboarding.current_step} of 4`}
-        </div>
-      </div>
-    )
-  }
-
-  // Progressive Banner System
-  const getProgressiveBanner = () => {
-    // Case 1: Not verified or onboarding not completed
-    if (!isVerified || !hasCompletedOnboarding) {
+  // Memoize progressive banner to prevent unnecessary re-renders
+  const progressiveBanner = useMemo(() => {
+    // State 1: Onboarding steps not all done
+    if (!landlordData?.onboarding?.all_steps_completed) {
       return (
-        <Card className="mb-6 border-orange-200 bg-orange-50">
+        <Card className="mb-8 border-orange-200 bg-orange-50">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
-                <h3 className="font-semibold text-orange-900 mb-1">
-                  {!hasCompletedOnboarding ? 'Complete Your Onboarding' : 'Verification Pending'}
-                </h3>
+                <h3 className="font-semibold text-orange-900 mb-1">Complete Your Onboarding</h3>
                 <p className="text-orange-700 text-sm mb-3">
-                  {!hasCompletedOnboarding 
-                    ? 'Complete your onboarding process to start listing properties.'
-                    : 'Your verification is under review. You\'ll be notified once approved.'
-                  }
+                  Complete your onboarding process to start listing properties.
                 </p>
-                
-                {!hasCompletedOnboarding && (
-                  <Link href="/landlord/onboarding">
-                    <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
-                      <Upload className="h-4 w-4 mr-2" />
-                      Complete Onboarding
-                    </Button>
-                  </Link>
-                )}
+                <Link href="/landlord/onboarding">
+                  <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
+                    <Upload className="h-4 w-4 mr-2" />Continue Onboarding
+                  </Button>
+                </Link>
               </div>
-              
-              <div className="flex items-center gap-2">
-                {getVerificationBadge(landlordData?.profile)}
-              </div>
+              <Badge className="bg-orange-100 text-orange-800 border-orange-200">Incomplete</Badge>
             </div>
           </CardContent>
         </Card>
       )
     }
 
-    // Case 2: Verified but no properties listed
-    if (isVerified && hasCompletedOnboarding && stats.total_properties === 0) {
+    // State 2: All steps done + submitted → awaiting admin review
+    if (landlordData?.onboarding?.all_steps_completed && landlordData?.onboarding?.submitted_for_review && landlordData?.profile && !isLandlordVerified(landlordData.profile)) {
       return (
-        <Card className="mb-6 border-green-200 bg-green-50">
+        <Card className="mb-8 border-blue-200 bg-blue-50">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="font-semibold text-blue-900 mb-1">Verification Pending</h3>
+                <p className="text-blue-700 text-sm">
+                  Your documents are under review. You'll be notified by email once approved — this usually takes 1–2 business days.
+                </p>
+              </div>
+              <Badge className="bg-blue-100 text-blue-800 border-blue-200">Under Review</Badge>
+            </div>
+          </CardContent>
+        </Card>
+      )
+    }
+
+    if (landlordData?.profile && isLandlordVerified(landlordData.profile) && landlordData?.stats?.total_properties === 0) {
+      return (
+        <Card className="mb-8 border-green-200 bg-green-50">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
-                <h3 className="font-semibold text-green-900 mb-1">
-                  🎉 Congratulations! Your account is verified.
-                </h3>
+                <h3 className="font-semibold text-green-900 mb-1">Your account is verified!</h3>
                 <p className="text-green-700 text-sm mb-3">
-                  Ready to list your first property? Get started now and reach thousands of potential tenants.
+                  Ready to list your first property? Reach thousands of verified tenants.
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <Link href="/landlord/properties/new">
-                    <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
-                      <Plus className="h-4 w-4 mr-2" />
-                      List Your First Property
-                    </Button>
-                  </Link>
-                  <Link href="/landlord/guides/property-listing">
-                    <Button size="sm" variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-100">
-                      <FileText className="h-4 w-4 mr-2" />
-                      Property Listing Guide
-                    </Button>
-                  </Link>
-                </div>
+                <Link href="/landlord/properties/new">
+                  <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
+                    <Plus className="h-4 w-4 mr-2" />List Your First Property
+                  </Button>
+                </Link>
               </div>
-              
-              <div className="flex items-center gap-2">
-                {getVerificationBadge(landlordData?.profile)}
-              </div>
+              <Badge className="bg-green-100 text-green-800 border-green-200">Verified</Badge>
             </div>
           </CardContent>
         </Card>
       )
     }
 
-    // Case 3: Has properties with pending viewing requests
-    if (stats.total_properties > 0 && stats.pending_viewings > 0) {
+    if (viewingRequestsList.filter((v: any) => v.status === 'pending').length > 0) {
       return (
-        <Card className="mb-6 border-blue-200 bg-blue-50">
+        <Card className="mb-8 border-blue-200 bg-blue-50">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <Calendar className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
                 <h3 className="font-semibold text-blue-900 mb-1">
-                  📅 You have {stats.pending_viewings} viewing request{stats.pending_viewings > 1 ? 's' : ''}
+                  You have {viewingRequestsList.filter((v: any) => v.status === 'pending').length} viewing request{viewingRequestsList.filter((v: any) => v.status === 'pending').length > 1 ? 's' : ''}
                 </h3>
                 <p className="text-blue-700 text-sm mb-3">
-                  Tenants are interested in your properties! Review and respond to viewing requests promptly.
+                  Tenants are interested in your properties! Review and respond promptly.
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <Link href="/landlord/viewings">
-                    <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Review Viewing Requests
-                    </Button>
-                  </Link>
-                  <Link href="/landlord/properties">
-                    <Button size="sm" variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-100">
-                      <Building2 className="h-4 w-4 mr-2" />
-                      Manage Properties
-                    </Button>
-                  </Link>
-                </div>
+                <Link href="/landlord/viewings">
+                  <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
+                    <Eye className="h-4 w-4 mr-2" />Review Requests
+                  </Button>
+                </Link>
               </div>
-              
-              <Badge className="bg-blue-100 text-blue-800">
-                {stats.pending_viewings} New
-              </Badge>
+              <Badge className="bg-blue-100 text-blue-800">{viewingRequestsList.filter((v: any) => v.status === 'pending').length} Pending</Badge>
             </div>
           </CardContent>
         </Card>
       )
     }
 
-    // Case 4: Has properties, check if any are approved/live
-    if (stats.total_properties > 0) {
-      // Check if any properties are approved (verification_status = 'approved')
-      const hasApprovedProperties = (properties ?? []).some((p: any) => 
-        p.verification_status === 'approved' || p.verification_status === 'verified'
-      )
-      
-      if (hasApprovedProperties) {
-        return (
-          <Card className="mb-6 border-slate-200 bg-slate-50">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <BarChart3 className="h-5 w-5 text-slate-600 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <h3 className="font-semibold text-slate-900 mb-1">
-                    📊 Your properties are live!
-                  </h3>
-                  <p className="text-slate-700 text-sm mb-3">
-                    Monitor viewing requests, applications, and track your property performance from your dashboard.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Link href="/landlord/analytics">
-                      <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
-                        <TrendingUp className="h-4 w-4 mr-2" />
-                        View Analytics
-                      </Button>
-                    </Link>
-                    <Link href="/landlord/properties">
-                      <Button size="sm" variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-100">
-                        <Building2 className="h-4 w-4 mr-2" />
-                        Manage Properties
-                      </Button>
-                    </Link>
-                    <Link href="/landlord/properties/new">
-                      <Button size="sm" variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-100">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add New Property
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-green-100 text-green-800">
-                    {stats.active_listings} Active
-                  </Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )
-      } else {
-        // Properties exist but none are approved yet
-        return (
-          <Card className="mb-6 border-orange-200 bg-orange-50">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <h3 className="font-semibold text-orange-900 mb-1">
-                    ⏳ Properties pending verification
-                  </h3>
-                  <p className="text-orange-700 text-sm mb-3">
-                    Your properties have been submitted and are currently under review by our admin team. You'll receive a notification once they're approved and live.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Link href="/landlord/properties">
-                      <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
-                        <Eye className="h-4 w-4 mr-2" />
-                        Review Properties
-                      </Button>
-                    </Link>
-                    <Link href="/landlord/properties/new">
-                      <Button size="sm" variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-100">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add Another Property
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-orange-100 text-orange-800">
-                    {stats.total_properties} Pending
-                  </Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )
-      }
-    }
-
-    // Default: No banner needed
     return null
-  }
+  }, [landlordData, viewingRequestsList])
 
-  // Load data on mount and route change
-  useEffect(() => {
-    if (mounted && user && user.user_type === 'landlord') {
-      if (!landlordData) {
-        fetchLandlordDashboard()
-      }
-    } else if (user && user.user_type !== 'landlord') {
-      router.push('/dashboard')
-      toast.error('Access denied. Landlord access required.')
-    }
-  }, [mounted, user, landlordData, fetchLandlordDashboard])
-
-  // Loading state
+  // ─── Loading — same spinner as tenant ────────────────────────────────────────
   if (!mounted || loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white p-6">
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
         <div className="max-w-7xl mx-auto">
-          {loadingTooLong && (
-            <Card className="mb-6 border-orange-200 bg-orange-50">
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-orange-900 mb-1">
-                      Dashboard is taking longer than usual
-                    </h3>
-                    <p className="text-orange-700 text-sm mb-3">
-                      The server seems to be slow. This usually resolves in a few seconds. You can try refreshing if it doesn't load within 15 seconds.
-                    </p>
-                    <Button 
-                      onClick={handleRefresh}
-                      size="sm"
-                      className="bg-orange-500 hover:bg-orange-600"
-                      disabled={refreshing}
-                    >
-                      <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-                      Retry Now
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <div className="w-20 h-20 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
+              <h3 className="text-xl font-semibold text-slate-900 mb-2">Loading Your Dashboard</h3>
+              <p className="text-slate-600">Please wait while we fetch your property management activity...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Error — same centered layout as tenant ───────────────────────────────────
+  if (!landlordData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <div className="w-20 h-20 border-4 border-red-300 border-t-transparent rounded-full mx-auto mb-6" />
+              <h3 className="text-xl font-semibold text-slate-900 mb-2">Could not load dashboard</h3>
+              <p className="text-slate-600 mb-6">Please try refreshing the page.</p>
+              <Button
+                onClick={() => fetchLandlordDashboard(true)}
+                disabled={refreshing}
+                className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg"
+              >
+                {refreshing ? 'Retrying...' : 'Try Again'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const profile = landlordData?.profile || null
+  const { onboarding, stats, properties = [], recentActivity = [] } = landlordData || {}
+
+  // Read verification status from landlordData.profile (fresh from API).
+  // isLandlordVerified checks profile.verification_status === 'approved'.
+  const isVerified = profile ? isLandlordVerified(profile) : false
+
+  // Three distinct states read directly from onboarding object fields.
+  // Never use isOnboardingCompleted() alone — it collapses two states into one.
+  //   allStepsDone=false               → banner: "Complete Onboarding" (link to /onboarding)
+  //   allStepsDone=true, submitted=false → banner: "Submit for Review" (shouldn't normally happen)
+  //   allStepsDone=true, submitted=true  → banner: "Verification Pending"
+  //   isVerified=true                  → no banner
+  const allStepsDone = onboarding?.all_steps_completed === true
+  const hasSubmitted = onboarding?.submitted_for_review === true
+  const hasCompletedOnboarding = allStepsDone && hasSubmitted
+  const recentMessages = (recentActivity ?? []).filter((a: any) => a.type === 'message')
+
+  // Derive accurate counts from real viewingRequests data (fetched from landlord API).
+  // stats.pending_viewings from the backend counts confirmed viewings too -- do not use it
+  // for the banner or stat card. Fall back to 0 while viewings are still loading to prevent flashing.
+  const pendingCount = viewingsLoading
+    ? 0
+    : viewingRequests.filter((v: any) => v.status === 'pending').length
+  const confirmedCount = viewingsLoading
+    ? 0
+    : viewingRequests.filter((v: any) => v.status === 'confirmed').length
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
+  return (
+    <div>
+      <div className="container mx-auto px-4 py-8">
+
+        {/* Hero — same structure as tenant */}
+        <div className="mb-10">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 mb-8">
+            <div className="flex-1">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-3">
+                Welcome back, {getUserName()}!
+              </h1>
+              <p className="text-lg text-gray-600 mb-6">Your property management dashboard</p>
+
+              <div className="flex flex-wrap gap-3">
+                {isVerified ? (
+                  <Link href="/landlord/properties/new">
+                    <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6">
+                      <Plus className="mr-2 h-4 w-4" />Add Property
                     </Button>
+                  </Link>
+                ) : hasCompletedOnboarding ? (
+                  // Don't show primary action button when verification is pending
+                  // User needs to wait for admin review
+                  null
+                ) : (
+                  <Link href="/landlord/onboarding">
+                    <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6">
+                      <Upload className="mr-2 h-4 w-4" />Complete Onboarding
+                    </Button>
+                  </Link>
+                )}
+                <Link href="/landlord/properties">
+                  <Button variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-50">
+                    <Building2 className="mr-2 h-4 w-4" />My Properties
+                  </Button>
+                </Link>
+                <Link href="/landlord/viewings">
+                  <Button variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-50">
+                    <Calendar className="mr-2 h-4 w-4" />Viewings
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
+            {/* Icon-only buttons — same as tenant */}
+            <div className="flex items-center gap-3">
+              <Link href="/landlord/messages">
+                <Button variant="outline" size="lg" className="relative border-orange-200 text-orange-700 hover:bg-orange-50">
+                  <MessageSquare className="h-4 w-4" />
+                  {stats.unread_messages > 0 && (
+                    <span className="absolute -top-1 -right-1 h-5 w-5 bg-orange-500 text-white text-xs rounded-full flex items-center justify-center animate-pulse">
+                      {stats.unread_messages}
+                    </span>
+                  )}
+                </Button>
+              </Link>
+              <Link href="/landlord/settings">
+                <Button variant="outline" size="lg" className="border-orange-200 text-orange-700 hover:bg-orange-50">
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* Progressive Banner */}
+        {progressiveBanner}
+
+        {/* Stats — same 4-card grid as tenant, same card anatomy */}
+        <div className="mb-12">
+          <h2 className="text-2xl font-bold text-slate-900 mb-6">Your Overview</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+
+            <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Building2 className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Total Properties</p>
+                    <p className="text-3xl font-bold text-slate-900">{stats.total_properties}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-          )}
-          
-          <div className="animate-pulse space-y-6">
-            <div className="h-8 bg-slate-200 rounded w-1/3"></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[1, 2, 3, 4].map((i: number) => (
-                <div key={i} className="h-32 bg-slate-200 rounded-xl"></div>
-              ))}
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 h-96 bg-slate-200 rounded-xl"></div>
-              <div className="h-96 bg-slate-200 rounded-xl"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
-  // Error state
-  if (!landlordData) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto px-4">
-          <AlertCircle className="h-16 w-16 text-orange-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Dashboard Unavailable</h2>
-          <p className="text-slate-600 mb-6">
-            The dashboard is currently unavailable. This could be due to server slowness or a temporary issue.
-          </p>
-          <div className="space-y-3">
-            <Button 
-              onClick={handleRefresh} 
-              className="w-full bg-orange-500 hover:bg-orange-600"
-              disabled={refreshing}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              {refreshing ? 'Loading...' : 'Try Again'}
-            </Button>
-            <Link href="/" className="block">
-              <Button variant="outline" className="w-full border-orange-200 text-orange-700 hover:bg-orange-50">
-                Back to Home
-              </Button>
+            <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
+                    <DollarSign className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Monthly Revenue</p>
+                    <p className="text-3xl font-bold text-slate-900">{formatCurrency(stats.monthly_revenue)}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Link href="/landlord/viewings">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                      <Calendar className="h-6 w-6 text-orange-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-600 mb-1">Viewings</p>
+                      <p className="text-3xl font-bold text-slate-900">{pendingCount}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {pendingCount > 0 && (
+                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                            {pendingCount} pending
+                          </span>
+                        )}
+                        {confirmedCount > 0 && (
+                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                            {confirmedCount} confirmed
+                          </span>
+                        )}
+                        {pendingCount === 0 && confirmedCount === 0 && !viewingsLoading && (
+                          <span className="text-xs text-slate-400">none active</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </Link>
-          </div>
-          <p className="text-xs text-slate-500 mt-4">
-            If the problem persists, please contact support.
-          </p>
-        </div>
-      </div>
-    )
-  }
 
-  // const { profile, onboarding, stats, properties = [], recentActivity = [], notifications = [] } = landlordData
-  const profile = landlordData?.profile || null
-  const { onboarding, stats, properties = [], recentActivity = [], notifications = [] } = landlordData || {}
-  const isVerified = profile ? isLandlordVerified(profile) : false
-  const hasCompletedOnboarding = onboarding ? isOnboardingCompleted(onboarding) : false
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
-          <div className="mb-4 lg:mb-0">
-            <h1 className="text-3xl font-bold text-slate-900 mb-2">
-              Welcome back, {userProfile?.full_name || 'Landlord'}!
-            </h1>
-            <p className="text-slate-600">
-              Here's what's happening with your properties today
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="border-slate-200 hover:bg-slate-50"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-            
-            <Link href="/landlord/settings">
-              <Button variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-50">
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </Button>
-            </Link>
+            <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <MessageSquare className="h-6 w-6 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Unread Messages</p>
+                    <p className="text-3xl font-bold text-slate-900">{stats.unread_messages}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
-        {/* Progressive Banner System */}
-        {getProgressiveBanner()}
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="h-12 w-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                  <Building2 className="h-6 w-6 text-blue-600" />
-                </div>
-                <Badge className="bg-blue-100 text-blue-800">
-                  {stats.total_properties}
-                </Badge>
+        {/* Engagement Progress Section */}
+        <div className="mb-12">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">Your Performance Progress</h2>
+              <p className="text-gray-600">Track your landlord engagement and tenant interaction</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-600">Engagement Score:</span>
+                <span className="text-lg font-bold text-orange-600">{engagementMetrics?.engagement_score || 0}/100</span>
               </div>
-              <h3 className="text-2xl font-bold text-slate-900">{stats.total_properties}</h3>
-              <p className="text-sm text-slate-600">Total Properties</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="h-12 w-12 bg-green-100 rounded-xl flex items-center justify-center">
-                  <DollarSign className="h-6 w-6 text-green-600" />
-                </div>
-                <Badge className="bg-green-100 text-green-800">
-                  {stats.active_listings}
-                </Badge>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-600">Trust Score:</span>
+                <span className="text-lg font-bold text-green-600">{engagementMetrics?.trust_score || 0}/100</span>
               </div>
-              <h3 className="text-2xl font-bold text-slate-900">{formatCurrency(stats.monthly_revenue)}</h3>
-              <p className="text-sm text-slate-600">Monthly Revenue</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+            </div>
+          </div>
+          <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="h-12 w-12 bg-orange-100 rounded-xl flex items-center justify-center">
-                  <Calendar className="h-6 w-6 text-orange-600" />
+              <div className="space-y-4">
+                {/* Progress Bar */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="font-medium text-slate-700">Overall Engagement</span>
+                    <span className="text-slate-600">{engagementMetrics?.engagement_score || 0}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-3">
+                    <div 
+                      className="bg-gradient-to-r from-orange-500 to-orange-600 h-3 rounded-full transition-all duration-500"
+                      style={{ width: `${engagementMetrics?.engagement_score || 0}%` }}
+                    ></div>
+                  </div>
                 </div>
-                <Badge className="bg-orange-100 text-orange-800">
-                  {stats.pending_viewings}
-                </Badge>
-              </div>
-              <h3 className="text-2xl font-bold text-slate-900">{stats.pending_viewings}</h3>
-              <p className="text-sm text-slate-600">Pending Viewings</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="h-12 w-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                  <MessageSquare className="h-6 w-6 text-purple-600" />
+                
+                {/* Achievement Badges */}
+                <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                  <div className="flex items-center gap-4">
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
+                      (engagementMetrics?.metrics?.properties_listed || 0) > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'
+                    }`}>
+                      <Building2 className="h-4 w-4" />
+                      <span className="text-sm font-medium">{engagementMetrics?.metrics?.properties_listed || 0} Listed</span>
+                    </div>
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
+                      (engagementMetrics?.metrics?.viewing_responses_count || 0) > 0 ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'
+                    }`}>
+                      <MessageSquare className="h-4 w-4" />
+                      <span className="text-sm font-medium">{engagementMetrics?.metrics?.viewing_responses_count || 0} Responses</span>
+                    </div>
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
+                      (engagementMetrics?.metrics?.messages_sent_count || 0) > 0 ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-400'
+                    }`}>
+                      <Mail className="h-4 w-4" />
+                      <span className="text-sm font-medium">{engagementMetrics?.metrics?.messages_sent_count || 0} Messages</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Award className="h-5 w-5 text-orange-500" />
+                    <span className="text-sm font-medium text-slate-700">
+                      Level: {engagementMetrics?.engagement_level || 'Low'}
+                    </span>
+                  </div>
                 </div>
-                <Badge className="bg-purple-100 text-purple-800">
-                  {stats.unread_messages}
-                </Badge>
+                
+                {/* Quick Stats */}
+                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-100">
+                  <div className="text-center">
+                    <p className="text-lg font-semibold text-slate-900">{engagementMetrics?.metrics?.properties_listed || 0}</p>
+                    <p className="text-xs text-slate-600">Properties Listed</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-semibold text-slate-900">{engagementMetrics?.metrics?.viewing_responses_count || 0}</p>
+                    <p className="text-xs text-slate-600">Responses Sent</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-semibold text-slate-900">{engagementMetrics?.metrics?.avg_response_time_hours || 0}h</p>
+                    <p className="text-xs text-slate-600">Avg Response Time</p>
+                  </div>
+                </div>
               </div>
-              <h3 className="text-2xl font-bold text-slate-900">{stats.unread_messages}</h3>
-              <p className="text-sm text-slate-600">Unread Messages</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Properties List */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Properties Header */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-slate-900">Your Properties</h2>
-              {isVerified && (
-                <Link href="/landlord/properties/new">
-                  <Button className="bg-orange-500 hover:bg-orange-600">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Property
+        {/* Main grid — 3/4 + 1/4 exactly as tenant */}
+        <div className="grid gap-8 lg:grid-cols-4">
+
+          {/* Left 3 cols */}
+          <div className="lg:col-span-3 space-y-8">
+
+            {/* Properties — mirrors tenant "Saved Properties" section */}
+            <section>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 mb-2">Your Properties</h2>
+                  <p className="text-gray-600">Properties you've listed on NuloAfrica</p>
+                </div>
+                <Link href="/landlord/properties">
+                  <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                    View All <ArrowRight className="ml-1 h-4 w-4" />
                   </Button>
                 </Link>
-              )}
-            </div>
-
-            {/* Properties Grid */}
-            {(properties?.length ?? 0) > 0 ? (
-              <div className="grid gap-4">
-                {(properties ?? []).slice(0, 3).map((property) => (
-                  <Card key={property.id} className="border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                    <CardContent className="p-6">
-                      <div className="flex gap-4">
-                        {/* Property Image */}
-                        <div className="w-24 h-24 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0">
-                          <img
-                            src={property.images[0] || DEFAULT_PROPERTY_IMAGE}
-                            alt={property.title}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        
-                        {/* Property Details */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between mb-2">
-                            <h3 className="font-semibold text-slate-900 truncate">{property.title}</h3>
-                            <div className="flex items-center gap-2">
-                              <Badge className={getPropertyStatusColor(property.status)}>
-                                {property.status}
-                              </Badge>
-                              <Badge className={
-                                property.verification_status === 'approved'
-                                  ? 'bg-green-100 text-green-800'
-                                  : property.verification_status === 'rejected'
-                                  ? 'bg-red-100 text-red-800'
-                                  : 'bg-orange-100 text-orange-800'
-                              }>
-                                {property.verification_status === 'approved'
-                                  ? '✓ Approved'
-                                  : property.verification_status === 'rejected'
-                                  ? '✗ Rejected'
-                                  : '⏳ Pending'
-                                }
-                              </Badge>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-2 text-sm text-slate-600 mb-2">
-                            <MapPin className="h-4 w-4" />
-                            <span className="truncate">{property.city}, {property.state}</span>
-                          </div>
-                          
-                          <div className="flex items-center gap-4 text-sm text-slate-600 mb-3">
-                            <div className="flex items-center gap-1">
-                              <Bed className="h-4 w-4" />
-                              <span>{property.beds}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Bath className="h-4 w-4" />
-                              <span>{property.baths}</span>
-                            </div>
-                            {property.sqft && (
-                              <div className="flex items-center gap-1">
-                                <Square className="h-4 w-4" />
-                                <span>{property.sqft.toLocaleString()} sqft</span>
-                              </div>
-                            )}
-                          </div>
-                          
-                          <div className="flex items-center justify-between">
-                            <div className="text-lg font-bold text-orange-600">
-                              {formatCurrency(property.price)}
-                              <span className="text-sm text-slate-500 font-normal">/year</span>
-                            </div>
-                            
-                            <div className="flex items-center gap-3 text-sm text-slate-600">
-                              <div className="flex items-center gap-1">
-                                <Eye className="h-4 w-4" />
-                                <span>{property.view_count}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Users className="h-4 w-4" />
-                                <span>{property.application_count}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Property Actions */}
-                      <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100">
-                        <Link href={`/landlord/properties/${property.id}`}>
-                          <Button size="sm" variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-50">
-                            View Details
-                          </Button>
-                        </Link>
-                        <Link href={`/properties/${property.id}`}>
-                          <Button size="sm" variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-50">
-                            <Eye className="h-4 w-4 mr-1" />
-                            Public View
-                          </Button>
-                        </Link>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
               </div>
-            ) : (
-              <Card className="border-slate-200">
-                <CardContent className="p-12 text-center">
-                  <Building2 className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">No Properties Yet</h3>
-                  <p className="text-slate-600 mb-6">
-                    {isVerified 
-                      ? 'Add your first property to start receiving applications.'
-                      : 'Complete verification to start listing properties.'
-                    }
-                  </p>
-                  {isVerified && (
-                    <Link href="/landlord/properties/new">
-                      <Button className="bg-orange-500 hover:bg-orange-600">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add Your First Property
-                      </Button>
-                    </Link>
+
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+                <CardContent className="p-6">
+                  {(properties?.length ?? 0) === 0 ? (
+                    /* Empty — same anatomy as tenant empty state */
+                    <div className="text-center py-12">
+                      <div className="h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Building2 className="h-8 w-8 text-blue-600" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">No properties listed yet</h3>
+                      <p className="text-slate-600 mb-6">
+                        {isVerified
+                          ? 'Add your first property to start receiving viewing requests from tenants.'
+                          : 'Complete your verification to start listing properties.'}
+                      </p>
+                      {isVerified && (
+                        <Link href="/landlord/properties/new">
+                          <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg">
+                            <Plus className="mr-2 h-4 w-4" />List Your First Property
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  ) : (
+                    /* Cards — exact same card anatomy as tenant property cards */
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      {(properties ?? []).slice(0, 4).map((property: any) => (
+                        <Link key={property.id} href={`/landlord/properties/${property.id}`}>
+                          <div className="group relative bg-white rounded-2xl overflow-hidden border-2 border-slate-200 hover:border-orange-300 hover:shadow-xl transition-all duration-300 cursor-pointer hover:scale-[1.02]">
+                            <div className="relative h-48 overflow-hidden">
+                              <img
+                                src={property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
+                                alt={property.title}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                              />
+                              {/* Verification badge — top right, same position as tenant Heart */}
+                              <div className="absolute top-3 right-3">
+                                <div className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                  property.verification_status === 'approved' ? 'bg-green-500 text-white'
+                                  : property.verification_status === 'rejected' ? 'bg-red-500 text-white'
+                                  : 'bg-orange-500 text-white'
+                                }`}>
+                                  {property.verification_status === 'approved' ? '✓ Approved'
+                                    : property.verification_status === 'rejected' ? '✗ Rejected'
+                                    : '⏳ Pending'}
+                                </div>
+                              </div>
+                              {/* View count — top left, same position as tenant Star rating */}
+                              {property.view_count > 0 && (
+                                <div className="absolute top-3 left-3">
+                                  <div className="bg-white/95 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 text-slate-700 shadow-lg">
+                                    <Eye className="h-3 w-3" />{property.view_count} views
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="p-5">
+                              <div className="flex items-center justify-between mb-3">
+                                <p className="text-2xl font-bold text-orange-600">
+                                  {formatCurrency(property.price)}
+                                  <span className="text-sm font-normal text-slate-500">/yr</span>
+                                </p>
+                                {property.application_count > 0 && (
+                                  <Badge className="bg-purple-100 text-purple-800 text-xs">
+                                    {property.application_count} applicant{property.application_count > 1 ? 's' : ''}
+                                  </Badge>
+                                )}
+                              </div>
+
+                              <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
+                                {property.title}
+                              </h3>
+
+                              <p className="text-sm text-slate-600 flex items-center mb-4">
+                                <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
+                                <span className="line-clamp-1">{property.city}, {property.state}</span>
+                              </p>
+
+                              <div className="flex items-center gap-4 text-sm text-slate-600 pt-4 border-t border-slate-100">
+                                <div className="flex items-center gap-1.5">
+                                  <Bed className="h-4 w-4 text-orange-500" />
+                                  <span className="font-medium">{property.beds}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <Bath className="h-4 w-4 text-orange-500" />
+                                  <span className="font-medium">{property.baths}</span>
+                                </div>
+                                {property.sqft && (
+                                  <div className="flex items-center gap-1.5">
+                                    <Square className="h-4 w-4 text-orange-500" />
+                                    <span className="font-medium">{property.sqft.toLocaleString()} sqft</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
                   )}
                 </CardContent>
               </Card>
+            </section>
+
+            {/* Viewing Requests — sourced from /landlord viewings API, not recentActivity */}
+            <section>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 mb-2">Viewing Requests</h2>
+                  <p className="text-gray-600">Tenants requesting to view your properties</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link href="/landlord/viewings">
+                    <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                      View All <ArrowRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </Link>
+                  <Link href="/landlord/properties">
+                    <Button size="sm" className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white">
+                      Manage Properties
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+                <CardContent className="p-6">
+                  {viewingsLoading ? (
+                    <div className="space-y-3">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="h-20 rounded-xl bg-slate-100 animate-pulse" />
+                      ))}
+                    </div>
+                  ) : viewingRequests.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Calendar className="h-6 w-6 text-blue-600" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">No active viewing requests</h3>
+                      <p className="text-slate-600">Pending and confirmed requests from tenants will appear here</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {viewingRequests.slice(0, 3).map((request: any) => {
+                        const isPending = request.status === 'pending'
+                        const isConfirmed = request.status === 'confirmed'
+                        const tenantName = request.tenant?.full_name || request.tenant?.first_name || 'Tenant'
+                        const propertyTitle = request.property?.title || request.property_title || 'Your Property'
+                        const viewingDate = request.preferred_date || request.scheduled_date || request.created_at
+                        const viewingType = request.viewing_type
+                          ? request.viewing_type.charAt(0) + request.viewing_type.slice(1).toLowerCase().replace('_', ' ')
+                          : 'Physical'
+
+                        return (
+                          <div
+                            key={request.id}
+                            className="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-orange-300 hover:shadow-md transition-all duration-300"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <h4 className="font-semibold text-slate-900 truncate">{tenantName}</h4>
+                                {isConfirmed ? (
+                                  <Badge className="bg-green-100 text-green-800 border-green-200 font-semibold">
+                                    <CheckCircle className="h-3 w-3 mr-1" />Confirmed
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-orange-100 text-orange-800 border-orange-200 font-semibold">
+                                    <AlertCircle className="h-3 w-3 mr-1" />Pending
+                                  </Badge>
+                                )}
+                                <Badge variant="outline" className="text-slate-600 border-slate-300 text-xs">
+                                  {viewingType}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-slate-700 font-medium mb-1 truncate">{propertyTitle}</p>
+                              <p className="text-sm text-slate-600 flex items-center gap-1">
+                                <Calendar className="h-3 w-3 text-orange-500 flex-shrink-0" />
+                                {viewingDate ? formatDate(viewingDate) : 'Date TBD'}
+                              </p>
+                            </div>
+                            <Link href="/landlord/viewings" className="ml-3 flex-shrink-0">
+                              <Button variant="outline" size="sm" className="border-orange-300 text-orange-600 hover:bg-orange-50">
+                                <Eye className="h-4 w-4 mr-1" />Review
+                              </Button>
+                            </Link>
+                          </div>
+                        )
+                      })}
+                      {viewingRequests.length > 3 && (
+                        <Link href="/landlord/viewings">
+                          <Button variant="outline" size="sm" className="w-full border-orange-300 text-orange-600 hover:bg-orange-50">
+                            View all {viewingRequests.length} requests <ArrowRight className="ml-1 h-4 w-4" />
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* Onboarding Progress — only when incomplete */}
+            {onboarding && !hasCompletedOnboarding && (
+              <section>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 mb-2">Onboarding Progress</h2>
+                    <p className="text-gray-600">Complete all steps to get verified and list properties</p>
+                  </div>
+                  <Link href="/landlord/onboarding">
+                    <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                      Continue <ArrowRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+                <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+                  <CardContent className="p-6">
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-slate-700">Step {onboarding.current_step} of 4</span>
+                        <span className="text-sm font-bold text-orange-600">{Math.round(getOnboardingProgress(onboarding))}%</span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-3">
+                        <div
+                          className="bg-gradient-to-r from-orange-500 to-orange-600 h-3 rounded-full transition-all duration-500"
+                          style={{ width: `${getOnboardingProgress(onboarding)}%` }}
+                        />
+                      </div>
+                      <p className="text-sm text-slate-600">
+                        Complete all steps to unlock property listing and receive tenant applications.
+                      </p>
+                      <Link href="/landlord/onboarding">
+                        <Button className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg">
+                          <Upload className="mr-2 h-4 w-4" />Continue Onboarding
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
             )}
-            
-            {(properties?.length ?? 0) > 3 && (
-              <div className="text-center">
-                <Link href="/landlord/properties">
-                  <Button variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-50">
-                    View All Properties ({properties?.length ?? 0})
-                    <ArrowRight className="h-4 w-4 ml-2" />
+
+ 
+
+          </div>
+
+          {/* Sidebar 1/4 — same as tenant */}
+          <div className="space-y-6">
+
+            {/* Notifications — exact same card as tenant sidebar */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900">Notifications</h3>
+                {unreadCount > 0 && (
+                  <Badge className="bg-orange-500 text-white animate-pulse">{unreadCount}</Badge>
+                )}
+              </div>
+
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+                <CardContent className="p-4">
+                  {(!notifications || notifications.length === 0) ? (
+                    <div className="text-center py-8">
+                      <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Bell className="h-6 w-6 text-slate-400" />
+                      </div>
+                      <h3 className="text-sm font-semibold text-slate-900 mb-2">No notifications</h3>
+                      <p className="text-xs text-slate-600">You're all caught up!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                      {notifications.slice(0, 5).map((notification: Notification) => (
+                        <div
+                          key={notification.id}
+                          className="p-3 rounded-xl border border-slate-200 hover:border-orange-300 hover:shadow-md transition-all duration-300 cursor-pointer"
+                          onClick={() => handleNotificationClick(notification)}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="h-8 w-8 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                              {notification.type === 'viewing_requested'    && <Calendar      className="h-4 w-4 text-orange-600" />}
+                              {notification.type === 'viewing_confirmed'    && <CheckCircle   className="h-4 w-4 text-green-600"  />}
+                              {notification.type === 'application_received' && <FileText      className="h-4 w-4 text-purple-600" />}
+                              {notification.type === 'message'              && <MessageSquare className="h-4 w-4 text-blue-600"   />}
+                              {notification.type === 'email_verified'       && <CheckCircle   className="h-4 w-4 text-green-600"  />}
+                              {notification.type === 'system'               && <Bell          className="h-4 w-4 text-slate-600"  />}
+                              {(!notification.type || !['viewing_requested','viewing_confirmed','application_received','message','email_verified','system'].includes(notification.type)) && (
+                                <Bell className="h-4 w-4 text-slate-600" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <p className="text-sm font-semibold text-slate-900 truncate">{notification.title}</p>
+                                {!notification.read && (
+                                  <div className="h-2 w-2 bg-orange-500 rounded-full animate-pulse" />
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-600 line-clamp-2 mb-2">{notification.message}</p>
+                              <p className="text-xs text-slate-400">
+                                {new Date(notification.created_at).toLocaleDateString('en-US', {
+                                  month: 'short', day: 'numeric',
+                                  hour: '2-digit', minute: '2-digit'
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {notifications && notifications.length > 5 && (
+                        <Link href="/landlord/notifications">
+                          <Button variant="outline" size="sm" className="w-full border-orange-300 text-orange-600 hover:bg-orange-50">
+                            View All Notifications
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* Recent Messages — exact same card as tenant sidebar */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900">Recent Messages</h3>
+                <Link href="/landlord/messages">
+                  <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                    View All
                   </Button>
                 </Link>
               </div>
-            )}
-          </div>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Onboarding Progress */}
-            {onboarding && !hasCompletedOnboarding && (
-              <Card className="border-slate-200">
-                <CardHeader className="border-b border-slate-100">
-                  <CardTitle className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                    <FileText className="h-5 w-5" />
-                    Onboarding Progress
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  {renderOnboardingProgress(onboarding)}
-                  
-                  <div className="mt-4">
-                    <Link href="/landlord/onboarding">
-                      <Button size="sm" className="w-full bg-orange-500 hover:bg-orange-600">
-                        Continue Onboarding
-                      </Button>
-                    </Link>
-                  </div>
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+                <CardContent className="p-4">
+                  {recentMessages.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <MessageSquare className="h-6 w-6 text-slate-400" />
+                      </div>
+                      <h3 className="text-sm font-semibold text-slate-900 mb-2">No messages yet</h3>
+                      <p className="text-xs text-slate-600">Messages from tenants will appear here</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {recentMessages.slice(0, 3).map((msg: any) => (
+                        <Link key={msg.id} href="/landlord/messages">
+                          <div className="p-3 rounded-xl border border-slate-200 hover:border-green-300 hover:shadow-md transition-all duration-300 cursor-pointer">
+                            <div className="flex items-start justify-between mb-1">
+                              <p className="text-sm font-semibold text-slate-900 truncate">
+                                {msg.title || 'Tenant'}
+                              </p>
+                              {msg.unread && (
+                                <Badge className="bg-green-500 text-white text-xs">New</Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 line-clamp-2">
+                              {msg.description || 'No preview available'}
+                            </p>
+                          </div>
+                        </Link>
+                      ))}
+                      <Link href="/landlord/messages">
+                        <Button variant="outline" size="sm" className="w-full border-green-300 text-green-600 hover:bg-green-50">
+                          View All Messages
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
-            )}
+            </section>
 
-            {/* Recent Activity */}
-            <Card className="border-slate-200">
-              <CardHeader className="border-b border-slate-100">
-                <CardTitle className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  Recent Activity
-                </CardTitle>
+           {/* Quick Actions — exact same card as tenant */}
+            <Card className="border-2 border-slate-200 rounded-2xl shadow-lg bg-gradient-to-br from-orange-50 to-orange-100">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 bg-orange-200 rounded-lg flex items-center justify-center">
+                    <Zap className="h-5 w-5 text-orange-700" />
+                  </div>
+                  <CardTitle className="text-lg font-bold text-slate-900">Quick Actions</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent className="pt-6">
-                {(recentActivity?.length ?? 0) > 0 ? (
-                  <div className="space-y-4">
-                    {(recentActivity ?? []).slice(0, 5).map((activity) => (
-                      <div key={activity.id} className="flex items-start gap-3">
-                        <div className={`h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          activity.type === 'viewing_request' ? 'bg-blue-100' :
-                          activity.type === 'application' ? 'bg-green-100' :
-                          activity.type === 'message' ? 'bg-purple-100' :
-                          'bg-slate-100'
-                        }`}>
-                          {activity.type === 'viewing_request' ? <Calendar className="h-4 w-4 text-blue-600" /> :
-                           activity.type === 'application' ? <FileText className="h-4 w-4 text-green-600" /> :
-                           activity.type === 'message' ? <MessageSquare className="h-4 w-4 text-purple-600" /> :
-                           <Activity className="h-4 w-4 text-slate-600" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-900">{activity.title}</p>
-                          <p className="text-xs text-slate-600 truncate">{activity.description}</p>
-                          <p className="text-xs text-slate-500 mt-1">{formatDate(activity.created_at)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-6">
-                    <Activity className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                    <p className="text-sm text-slate-600">No recent activity</p>
-                  </div>
-                )}
+              <CardContent className="p-4">
+                <div className="space-y-2">
+                  {isVerified ? (
+                    <>
+                      <Link href="/landlord/properties/new">
+                        <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
+                          <Plus className="mr-2 h-4 w-4" />Add New Property
+                        </Button>
+                      </Link>
+                      <Link href="/landlord/properties">
+                        <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
+                          <Building2 className="mr-2 h-4 w-4" />Manage Properties
+                        </Button>
+                      </Link>
+                      <Link href="/landlord/viewings">
+                        <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
+                          <Calendar className="mr-2 h-4 w-4" />Review Viewings
+                        </Button>
+                      </Link>
+                      <Link href="/landlord/applications">
+                        <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
+                          <FileText className="mr-2 h-4 w-4" />Applications
+                        </Button>
+                      </Link>
+                      <Link href="/landlord/messages">
+                        <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
+                          <MessageSquare className="mr-2 h-4 w-4" />Messages
+                        </Button>
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <Link href="/landlord/onboarding">
+                        <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
+                          <Upload className="mr-2 h-4 w-4" />Complete Onboarding
+                        </Button>
+                      </Link>
+                      <Link href="/landlord/profile">
+                        <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
+                          <User className="mr-2 h-4 w-4" />Update Profile
+                        </Button>
+                      </Link>
+                      <Link href="/landlord/messages">
+                        <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
+                          <MessageSquare className="mr-2 h-4 w-4" />Messages
+                        </Button>
+                      </Link>
+                    </>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
-            {/* Notifications */}
-            <Card className="border-slate-200">
-              <CardHeader className="border-b border-slate-100">
-                <CardTitle className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                  <Bell className="h-5 w-5" />
-                  Notifications
-                </CardTitle>
+            {/* Recent Activity — exact same card as tenant */}
+            <Card className="border-2 border-slate-200 rounded-2xl shadow-lg bg-gradient-to-br from-white to-slate-50">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <Activity className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <CardTitle className="text-lg font-bold text-slate-900">Recent Activity</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent className="pt-6">
-                {(notifications?.length ?? 0) > 0 ? (
-                  <div className="space-y-3">
-                    {(notifications ?? []).slice(0, 5).map((notification) => (
-                      <div
-                        key={notification.id}
-                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                          notification.read 
-                            ? 'border-slate-100 bg-slate-50' 
-                            : 'border-orange-200 bg-orange-50 hover:bg-orange-100'
-                        }`}
-                        onClick={() => handleNotificationClick(notification)}
-                      >
-                        <div className="flex items-start gap-2">
-                          <div className={`h-2 w-2 rounded-full mt-2 flex-shrink-0 ${
-                            notification.read ? 'bg-slate-300' : 'bg-orange-500'
-                          }`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-900">{notification.title}</p>
-                            <p className="text-xs text-slate-600 mt-1">{notification.message}</p>
-                            <p className="text-xs text-slate-500 mt-2">{formatDate(notification.created_at)}</p>
-                          </div>
-                        </div>
+              <CardContent className="p-4">
+                <div className="space-y-3">
+                  {(recentActivity ?? []).length === 0 ? (
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="h-6 w-6 bg-slate-100 rounded-full flex items-center justify-center">
+                        <Activity className="h-3 w-3 text-slate-400" />
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-6">
-                    <Bell className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                    <p className="text-sm text-slate-600">No notifications</p>
-                  </div>
-                )}
+                      <div className="flex-1">
+                        <p className="text-slate-900 font-medium">No activity yet</p>
+                        <p className="text-slate-600 text-xs">Activity from your listings will appear here</p>
+                      </div>
+                    </div>
+                  ) : (recentActivity ?? []).slice(0, 4).map((activity: any) => (
+                    <div key={activity.id} className="flex items-center gap-3 text-sm">
+                      <div className={`h-6 w-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        activity.type === 'viewing_request' ? 'bg-blue-100'
+                        : activity.type === 'application'   ? 'bg-green-100'
+                        : activity.type === 'message'       ? 'bg-purple-100'
+                        : 'bg-slate-100'
+                      }`}>
+                        {activity.type === 'viewing_request' && <Calendar      className="h-3 w-3 text-blue-600"   />}
+                        {activity.type === 'application'     && <FileText      className="h-3 w-3 text-green-600"  />}
+                        {activity.type === 'message'         && <MessageSquare className="h-3 w-3 text-purple-600" />}
+                        {!['viewing_request','application','message'].includes(activity.type) && (
+                          <Activity className="h-3 w-3 text-slate-600" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-slate-900 font-medium">{activity.title}</p>
+                        <p className="text-slate-600 text-xs">{formatDate(activity.created_at)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
-          </div>
-        </div>
 
-        {/* Quick Actions */}
-        <div className="mt-8">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {isVerified ? (
-              <>
-                <Link href="/landlord/properties/new">
-                  <Card className="border-2 border-orange-200 hover:border-orange-500 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 cursor-pointer bg-gradient-to-br from-white to-orange-50/30">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg">
-                          <Plus className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-lg">Add Property</p>
-                          <p className="text-sm text-slate-600">List a new rental</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-                
-                <Link href="/landlord/applications">
-                  <Card className="border-2 border-slate-200 hover:border-slate-400 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 cursor-pointer">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 bg-slate-500 rounded-xl flex items-center justify-center shadow-lg">
-                          <FileText className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-lg">Applications</p>
-                          <p className="text-sm text-slate-600">Review applications</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-                
-                <Link href="/landlord/messages">
-                  <Card className="border-2 border-slate-200 hover:border-slate-400 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 cursor-pointer">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 bg-slate-500 rounded-xl flex items-center justify-center shadow-lg">
-                          <MessageSquare className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-lg">Messages</p>
-                          <p className="text-sm text-slate-600">Chat with tenants</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              </>
-            ) : (
-              <>
-                <Link href="/landlord/onboarding">
-                  <Card className="border-2 border-orange-200 hover:border-orange-500 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 cursor-pointer bg-gradient-to-br from-white to-orange-50/30">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg">
-                          <Upload className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-lg">Complete Onboarding</p>
-                          <p className="text-sm text-slate-600">Finish verification</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-                
-                <Link href="/landlord/profile">
-                  <Card className="border-2 border-slate-200 hover:border-slate-400 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 cursor-pointer">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 bg-slate-500 rounded-xl flex items-center justify-center shadow-lg">
-                          <User className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-lg">Update Profile</p>
-                          <p className="text-sm text-slate-600">Edit your info</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-                
-                <Link href="/help">
-                  <Card className="border-2 border-slate-200 hover:border-slate-400 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 cursor-pointer">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 bg-slate-500 rounded-xl flex items-center justify-center shadow-lg">
-                          <Star className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-lg">Get Help</p>
-                          <p className="text-sm text-slate-600">View resources</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              </>
-            )}
+
           </div>
         </div>
       </div>

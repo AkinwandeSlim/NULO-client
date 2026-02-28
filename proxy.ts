@@ -33,19 +33,8 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Add onboarding routes to public routes for new OAuth users
-  const onboardingRoutes = [
-    '/onboarding/landlord/step-1',
-    '/onboarding/landlord/step-2',
-    '/onboarding/landlord/step-3',
-    '/onboarding/landlord/step-4',
-    '/onboarding/landlord/step-5',
-  ]
-
   const isPublicRoute = publicRoutes.some(route => 
     pathname.startsWith(route) || pathname === route
-  ) || onboardingRoutes.some(route => 
-    pathname.startsWith(route)
   )
 
   if (isPublicRoute) {
@@ -147,46 +136,64 @@ export async function proxy(request: NextRequest) {
   // ========================================
   if (profile.user_type === 'landlord') {
     
-    // Allow onboarding routes always
+    // Get landlord profile for onboarding status - MUST DO THIS FIRST
+    // Network errors here should redirect to signin (not allow through)
+    let landlordProfile = null;
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('first_time_visit, onboarding_completed_at, profile_step_completed, verification_status, onboarding_completed')
+        .eq('id', session.user.id)
+        .single()
+      
+      if (error) {
+        // ❌ Network error or DB error → redirect to signin
+        // This ensures middleware runs again once connection is restored
+        console.warn('⚠️ [MIDDLEWARE] Landlord profile query failed, redirecting to signin:', error.message)
+        const url = request.nextUrl.clone()
+        url.pathname = '/signin'
+        url.searchParams.set('redirectTo', pathname)
+        return NextResponse.redirect(url)
+      }
+      
+      landlordProfile = data
+    } catch (err) {
+      // ❌ Network exception → redirect to signin
+      console.warn('⚠️ [MIDDLEWARE] Landlord profile exception, redirecting to signin:', err)
+      const url = request.nextUrl.clone()
+      url.pathname = '/signin'
+      url.searchParams.set('redirectTo', pathname)
+      return NextResponse.redirect(url)
+    }
+
+    // Allow onboarding routes for authenticated landlords (after successful profile fetch)
     if (pathname.startsWith('/onboarding/landlord')) {
-      console.log('✅ Landlord onboarding route')
+      console.log('✅ Landlord onboarding route (authenticated)')
       return NextResponse.next()
     }
 
-    // Get landlord profile for onboarding status and verification
-    const { data: landlordProfile } = await supabase
-      .from('users')
-      .select('first_time_visit, onboarding_completed_at, profile_step_completed, verification_status, onboarding_completed')
-      .eq('id', session.user.id)
-      .single()
-
-    console.log('🏠 Status:', {
+    console.log('🏠 Landlord Status:', {
       first_time: landlordProfile?.first_time_visit,
-      completed: !!landlordProfile?.onboarding_completed_at,
+      onboarding_completed: landlordProfile?.onboarding_completed_at,
       profile_done: landlordProfile?.profile_step_completed,
       verification_status: landlordProfile?.verification_status,
-      onboarding_completed: landlordProfile?.onboarding_completed
     })
 
-    // FIRST-TIME LANDLORD → Force to onboarding
-    if (landlordProfile?.first_time_visit !== false) {
-      if (!pathname.startsWith('/onboarding/landlord')) {
-        console.log('🔀 First-time → onboarding')
-        const url = request.nextUrl.clone()
-        url.pathname = '/onboarding/landlord/step-1'
-        return NextResponse.redirect(url)
-      }
+    // ✅ EXISTING LANDLORD (completed onboarding) → Allow normal dashboard access
+    if (landlordProfile?.onboarding_completed_at) {
+      console.log('✅ Existing landlord - onboarding complete')
       return NextResponse.next()
     }
 
-    // INCOMPLETE ONBOARDING → Continue onboarding
+    // ❌ NEW LANDLORD (incomplete onboarding) → Force to onboarding
     if (!landlordProfile?.onboarding_completed_at) {
       if (!pathname.startsWith('/onboarding/landlord')) {
-        console.log('🔀 Incomplete onboarding → continue')
+        console.log('🔀 New landlord - incomplete onboarding → redirect to step-1')
         const url = request.nextUrl.clone()
         url.pathname = '/onboarding/landlord/step-1'
         return NextResponse.redirect(url)
       }
+      // Allow access to onboarding pages
       return NextResponse.next()
     }
 
@@ -197,58 +204,6 @@ export async function proxy(request: NextRequest) {
       const url = request.nextUrl.clone()
       url.pathname = '/onboarding/landlord/step-1'
       return NextResponse.redirect(url)
-    }
-
-    // COMPLETED ONBOARDING → Check verification status
-    if (!landlordProfile?.onboarding_completed_at) {
-      if (!pathname.startsWith('/onboarding/landlord')) {
-        console.log('🔀 Incomplete onboarding → continue')
-        const url = request.nextUrl.clone()
-        url.pathname = '/onboarding/landlord/step-1'
-        return NextResponse.redirect(url)
-      }
-      return NextResponse.next()
-    }
-
-    // Check if onboarding is completed but verification is pending/under review
-    if (landlordProfile?.onboarding_completed && 
-        (landlordProfile?.verification_status === 'pending' || landlordProfile?.verification_status === 'under_review')) {
-      // Allow access to verification pending page and dashboard
-      const allowedPaths = [
-        '/onboarding/landlord/verification-pending',
-        '/landlord/overview',
-        '/landlord/profile'
-      ]
-      
-      const isAllowedPath = allowedPaths.some(allowedPath => pathname.startsWith(allowedPath))
-      
-      if (!isAllowedPath) {
-        console.log('🔀 Onboarding completed but verification pending → redirect to verification pending')
-        const url = request.nextUrl.clone()
-        url.pathname = '/onboarding/landlord/verification-pending'
-        return NextResponse.redirect(url)
-      }
-    }
-
-    // Check verification status - restrict property management for unverified users
-    if (landlordProfile?.verification_status !== 'verified') {
-      // Allow access to these pages even if not verified
-      const allowedPaths = [
-        '/onboarding/landlord',
-        '/landlord/overview',
-        '/properties',
-        '/landlord/profile'
-      ]
-      
-      const isAllowedPath = allowedPaths.some(allowedPath => pathname.startsWith(allowedPath))
-      
-      // Block access to property management features if not verified
-      if (!isAllowedPath && (pathname.includes('/landlord/properties') || pathname.includes('/landlord/tenants'))) {
-        console.log('❌ Property management requires verification')
-        const url = request.nextUrl.clone()
-        url.pathname = '/onboarding/landlord/verification-pending'
-        return NextResponse.redirect(url)
-      }
     }
 
     return NextResponse.next()
@@ -307,137 +262,3 @@ export const config = {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import { NextResponse } from 'next/server'
-// import type { NextRequest } from 'next/server'
-// import { createClient } from '@/utils/supabase/server'
-
-// export async function proxy(request: NextRequest) {
-//   const { pathname } = request.nextUrl
-//   const supabase = await createClient()
-
-//   // Public routes that don't require authentication
-//   const publicRoutes = [
-//     '/',
-//     '/signin',
-//     '/signup',
-//     '/auth/callback',
-//     '/auth/verify-email',
-//     '/auth/reset-password',
-//     '/properties',
-//     '/about',
-//     '/contact',
-//     '/api/auth',
-//     '/_next',
-//   ]
-
-//   // Onboarding routes that should be accessible
-//   const onboardingRoutes = ['/landlord/onboarding']
-
-//   // Check if current path is public
-//   const isPublicRoute = publicRoutes.some(route => 
-//     pathname.startsWith(route) || pathname === route
-//   )
-
-//   // Check if current path is onboarding
-//   const isOnboardingRoute = onboardingRoutes.some(route => pathname.startsWith(route))
-
-//   if (isPublicRoute) {
-//     return NextResponse.next()
-//   }
-
-//   // Get user session
-//   const { data: { session } } = await supabase.auth.getSession()
-
-//   // If no session and trying to access protected route, redirect to signin
-//   if (!session && !isPublicRoute) {
-//     const url = request.nextUrl.clone()
-//     url.pathname = '/signin'
-//     return NextResponse.redirect(url)
-//   }
-
-//   // If session exists, get user profile
-//   if (session?.user) {
-//     const { data: profile } = await supabase
-//       .from('users')
-//       .select('*')
-//       .eq('id', session.user.id)
-//       .single()
-
-//     // Tenant email verification check
-//     if (profile?.user_type === 'tenant' && !profile.email_verified) {
-//       if (!pathname.startsWith('/auth/verify-email')) {
-//         const url = request.nextUrl.clone()
-//         url.pathname = '/auth/verify-email'
-//         url.searchParams.set('email', profile.email || '')
-//         return NextResponse.redirect(url)
-//       }
-//     }
-
-//     // Role-based redirects
-//     if (profile?.user_type === 'admin' && !pathname.startsWith('/admin')) {
-//       const url = request.nextUrl.clone()
-//       url.pathname = '/admin'
-//       return NextResponse.redirect(url)
-//     }
-
-//     // ✅ LANDLORD: Smart redirect based on onboarding status
-//     if (profile?.user_type === 'landlord') {
-//       // First-time landlord: Redirect to onboarding (unless already there)
-//       if (profile.first_time_visit && !isOnboardingRoute) {
-//         const url = request.nextUrl.clone()
-//         url.pathname = '/landlord/onboarding'
-//         return NextResponse.redirect(url)
-//       }
-
-//       // Prevent property creation until profile step is complete
-//       if (pathname.includes('/landlord/properties/new') && !profile.profile_step_completed) {
-//         const url = request.nextUrl.clone()
-//         url.pathname = '/landlord/onboarding/profile'
-//         return NextResponse.redirect(url)
-//       }
-
-//       // Returning landlord: Allow all /landlord routes
-//       if (!pathname.startsWith('/landlord')) {
-//         const url = request.nextUrl.clone()
-//         url.pathname = '/landlord/overview'
-//         return NextResponse.redirect(url)
-//       }
-//     }
-
-//     if (profile?.user_type === 'tenant' && !pathname.startsWith('/tenant')) {
-//       const url = request.nextUrl.clone()
-//       url.pathname = '/tenant'
-//       return NextResponse.redirect(url)
-//     }
-//   }
-
-//   return NextResponse.next()
-// }
-
-// export const config = {
-//   matcher: [
-//     /*
-//      * Match all request paths except for the ones starting with:
-//      * - api (API routes)
-//      * - _next/static (static files)
-//      * - _next/image (image optimization files)
-//      * - favicon.ico (favicon file)
-//      */
-//     '/((?!api|_next/static|_next/image|favicon.ico).*)',
-//   ],
-// }

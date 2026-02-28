@@ -43,15 +43,15 @@ export default function EmploymentStep({ formData, errors, onChange }: Employmen
               {formData.employmentStatus === 'self-employed' ? 'Business Name' : 'Employer Name'} *
             </Label>
             <Input
-              id="employer"
-              name="employer"
-              value={formData.employer}
+              id="employer_name"
+              name="employer_name"
+              value={formData.employer_name}
               onChange={onChange}
-              className={`mt-2 ${errors.employer ? 'border-red-500' : ''}`}
+              className={`mt-2 ${errors.employer_name ? 'border-red-500' : ''}`}
               placeholder={formData.employmentStatus === 'self-employed' ? 'Your Business' : 'Company Name'}
             />
-            {errors.employer && (
-              <p className="text-sm text-red-600 mt-1">{errors.employer}</p>
+            {errors.employer_name && (
+              <p className="text-sm text-red-600 mt-1">{errors.employer_name}</p>
             )}
           </div>
 
@@ -77,16 +77,16 @@ export default function EmploymentStep({ formData, errors, onChange }: Employmen
           <div>
             <Label htmlFor="monthlyIncome">Monthly Income (₦) *</Label>
             <Input
-              id="monthlyIncome"
-              name="monthlyIncome"
+              id="monthly_income"
+              name="monthly_income"
               type="number"
-              value={formData.monthlyIncome}
+              value={formData.monthly_income}
               onChange={onChange}
-              className={`mt-2 ${errors.monthlyIncome ? 'border-red-500' : ''}`}
+              className={`mt-2 ${errors.monthly_income ? 'border-red-500' : ''}`}
               placeholder="500000"
             />
-            {errors.monthlyIncome && (
-              <p className="text-sm text-red-600 mt-1">{errors.monthlyIncome}</p>
+            {errors.monthly_income && (
+              <p className="text-sm text-red-600 mt-1">{errors.monthly_income}</p>
             )}
           </div>
 
@@ -130,15 +130,15 @@ export default function EmploymentStep({ formData, errors, onChange }: Employmen
           <div>
             <Label htmlFor="employer">Institution Name *</Label>
             <Input
-              id="employer"
-              name="employer"
-              value={formData.employer}
+              id="employer_name"
+              name="employer_name"
+              value={formData.employer_name}
               onChange={onChange}
-              className={`mt-2 ${errors.employer ? 'border-red-500' : ''}`}
+              className={`mt-2 ${errors.employer_name ? 'border-red-500' : ''}`}
               placeholder="University of Lagos"
             />
-            {errors.employer && (
-              <p className="text-sm text-red-600 mt-1">{errors.employer}</p>
+            {errors.employer_name && (
+              <p className="text-sm text-red-600 mt-1">{errors.employer_name}</p>
             )}
           </div>
           

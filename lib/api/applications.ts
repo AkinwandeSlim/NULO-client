@@ -1,139 +1,157 @@
 /**
  * Applications API Module
  * Handles all application-related API calls to FastAPI backend
+ * Updated to match new database schema (user_id instead of tenant_id)
  */
 
 import apiClient from './client';
 
-// Types
+// Reference interface for JSONB references field
+export interface ApplicationReference {
+  name: string;
+  phone: string;
+  relationship: string;
+}
+
+// Types - Updated to match backend schema
 export interface Application {
   id: string;
   property_id: string;
-  tenant_id: string;
+  user_id: string;  // Updated from tenant_id
+  viewing_id?: string;
   status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
-  personal_info: PersonalInfo;
-  employment_info: EmploymentInfo;
-  references: References;
-  documents: Documents;
-  additional_info: AdditionalInfo;
+  message?: string;
+  employment_status?: string;
+  employer_name?: string;
+  monthly_income?: number;
+  move_in_date?: string;
+  lease_duration?: string;
+  number_of_occupants?: number;
+  has_pets?: boolean;
+  pet_details?: string;
+  references?: {
+    reference1?: ApplicationReference;
+    reference2?: ApplicationReference;
+  };
+  documents?: string[];  // text array of URLs
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  viewed_by_landlord?: boolean;
+  viewed_at?: string;
   created_at: string;
   updated_at: string;
-  property?: any;
-  tenant?: any;
-}
-
-export interface PersonalInfo {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  dateOfBirth: string;
-  nationality: string;
-  maritalStatus?: string;
-  dependents?: string;
-}
-
-export interface EmploymentInfo {
-  employmentStatus: string;
-  employer?: string;
-  jobTitle?: string;
-  monthlyIncome?: string;
-  employmentDuration?: string;
-  previousEmployer?: string;
-}
-
-export interface References {
-  reference1: {
-    name: string;
-    phone: string;
-    relationship: string;
+  // Joined relationships
+  property?: {
+    id: string;
+    title: string;
+    description?: string;
+    property_type?: string;
+    address?: string;
+    full_address?: string;
+    location?: string;
+    city?: string;
+    state?: string;
+    price?: number;
+    security_deposit?: number;
+    beds?: number;
+    baths?: number;
+    sqft?: number;
+    amenities?: string[];
+    rules?: string[];
+    furnished?: boolean;
+    pet_friendly?: boolean;
+    images?: string[];
+    video_tour_url?: string;
+    status?: string;
+    verification_status?: string;
+    view_count?: number;
+    application_count?: number;
   };
-  reference2?: {
-    name: string;
-    phone: string;
-    relationship: string;
+  user?: {
+    id: string;
+    email: string;
+    full_name?: string;
+    phone_number?: string;
+    phone?: string;
+    avatar_url?: string;
+    user_type?: string;
   };
-  emergencyContact: {
-    name: string;
-    phone: string;
-    relationship: string;
-  };
-}
-
-export interface Documents {
-  idDocument: string;
-  proofOfIncome: string;
-  bankStatement?: string;
-  employmentLetter?: string;
-}
-
-export interface AdditionalInfo {
-  moveInDate: string;
-  leaseDuration: string;
-  pets: string;
-  smoking: string;
-  additionalInfo?: string;
 }
 
 export interface CreateApplicationData {
   property_id: string;
-  personal_info: PersonalInfo;
-  employment_info: EmploymentInfo;
-  references: References;
-  additional_info: AdditionalInfo;
+  viewing_id?: string;
+  message?: string;
+  employment_status?: string;
+  employer_name?: string;
+  monthly_income?: number;
+  move_in_date?: string;
+  lease_duration?: string;
+  number_of_occupants?: number;
+  has_pets?: boolean;
+  pet_details?: string;
+  references?: any;
+  documents?: string[];
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
 }
 
 export interface ApplicationsResponse {
   success: boolean;
   applications: Application[];
-  total: number;
+  total?: number;
+}
+
+export interface ApplicationStats {
+  success: boolean;
+  stats: {
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+  };
 }
 
 // Applications API
 export const applicationsAPI = {
   /**
    * Submit new application
+   * Updated to use JSON with document URLs instead of FormData
    */
-  create: async (data: CreateApplicationData, documents: {
-    idDocument: File;
-    proofOfIncome: File;
-    bankStatement?: File;
-    employmentLetter?: File;
-  }): Promise<Application> => {
-    // Create FormData for file upload
-    const formData = new FormData();
-    
-    // Append JSON data
-    formData.append('property_id', data.property_id);
-    formData.append('personal_info', JSON.stringify(data.personal_info));
-    formData.append('employment_info', JSON.stringify(data.employment_info));
-    formData.append('references', JSON.stringify(data.references));
-    formData.append('additional_info', JSON.stringify(data.additional_info));
-    
-    // Append files
-    formData.append('id_document', documents.idDocument);
-    formData.append('proof_of_income', documents.proofOfIncome);
-    if (documents.bankStatement) {
-      formData.append('bank_statement', documents.bankStatement);
-    }
-    if (documents.employmentLetter) {
-      formData.append('employment_letter', documents.employmentLetter);
-    }
-    
-    const response = await apiClient.post<Application>('/api/v1/applications', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    
+  create: async (data: CreateApplicationData): Promise<Application> => {
+    const response = await apiClient.post<Application>('/api/v1/applications/', data);
     return response.data;
   },
 
   /**
-   * Get user's applications
+   * Get tenant's own applications
    */
   getMyApplications: async (): Promise<ApplicationsResponse> => {
-    const response = await apiClient.get<ApplicationsResponse>('/api/v1/applications');
+    const response = await apiClient.get<ApplicationsResponse>('/api/v1/applications/my-applications');
+    return response.data;
+  },
+
+  /**
+   * Get applications received by landlord
+   */
+  getReceivedApplications: async (): Promise<ApplicationsResponse> => {
+    const response = await apiClient.get<ApplicationsResponse>('/api/v1/applications/received');
+    return response.data;
+  },
+
+  /**
+   * Get application statistics
+   */
+  getStats: async (): Promise<ApplicationStats> => {
+    const response = await apiClient.get<ApplicationStats>('/api/v1/applications/stats');
+    return response.data;
+  },
+
+  /**
+   * Get all applications for current user (tenant or landlord)
+   */
+  getAll: async (): Promise<ApplicationsResponse> => {
+    const response = await apiClient.get<ApplicationsResponse>('/api/v1/applications/');
     return response.data;
   },
 
@@ -141,26 +159,27 @@ export const applicationsAPI = {
    * Get application by ID
    */
   getById: async (id: string): Promise<Application> => {
-    const response = await apiClient.get<Application>(`/api/v1/applications/${id}`);
-    return response.data;
+    const response = await apiClient.get<{success: boolean, application: Application}>(`/api/v1/applications/${id}`);
+    return response.data.application;
   },
 
   /**
    * Approve application (landlord only)
    */
   approve: async (id: string): Promise<Application> => {
-    const response = await apiClient.patch<Application>(`/api/v1/applications/${id}/approve`);
-    return response.data;
+    const response = await apiClient.patch<{success: boolean; application: Application; message: string}>(`/api/v1/applications/${id}/approve`);
+    return response.data.application;
   },
 
   /**
    * Reject application (landlord only)
    */
-  reject: async (id: string, reason?: string): Promise<Application> => {
-    const response = await apiClient.patch<Application>(`/api/v1/applications/${id}/reject`, {
+  reject: async (id: string, reason: string): Promise<Application> => {
+    const response = await apiClient.patch<{success: boolean; application: Application; message: string}>(`/api/v1/applications/${id}/reject`, {
       reason,
+      reason_code: 'landlord_rejected'
     });
-    return response.data;
+    return response.data.application;
   },
 
   /**

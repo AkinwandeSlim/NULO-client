@@ -169,7 +169,7 @@ export default function LandlordVerificationDetail() {
   // EFFECTS
   // ============================================================================
 
-  // Auth & access control (same pattern as list page)
+  // Auth & access control - simplified and immediate
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
@@ -182,24 +182,17 @@ export default function LandlordVerificationDetail() {
         return
       }
       
+      // Set data ready immediately and fetch verification
       setDataReady(true)
     }
   }, [user, authLoading, router])
 
-  // Fetch data when ready
+  // Fetch data when auth is ready and we have verification ID
   useEffect(() => {
-    if (dataReady && verificationId) {
+    if (!authLoading && user?.user_type === 'admin' && verificationId) {
       fetchVerificationDetail()
     }
-  }, [dataReady, verificationId])
-
-  // ✅ USE CACHED STATS IF AVAILABLE
-  useEffect(() => {
-    if (cachedStats && !verification) {
-      console.log('💾 [CACHE HIT] Using cached dashboard stats')
-      setDataReady(true)
-    }
-  }, [cachedStats, verification])
+  }, [authLoading, user, verificationId])
 
   // ============================================================================
   // HELPERS
@@ -246,10 +239,10 @@ export default function LandlordVerificationDetail() {
   }
 
   // ============================================================================
-  // LOADING STATE - Smart: only show skeleton if not auth loading and no data
+  // LOADING STATE - Simplified: only show skeleton during auth loading or data fetch
   // ============================================================================
 
-  if (!dataReady || (authLoading && !verification)) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]">
         <div className="container mx-auto max-w-6xl px-4 py-8">

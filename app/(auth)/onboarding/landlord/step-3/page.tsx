@@ -10,13 +10,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { useAuth } from "@/contexts/AuthContext"
 import { useOnboarding } from "@/hooks/useOnboarding"
 
 export default function LandlordOnboardingStep3() {
   const router = useRouter()
-  const { user, loading } = useAuth()
-  const { saveStep3, isProcessing, step3Data } = useOnboarding()
+  // useOnboarding handles ALL auth/redirect guards internally, including the
+  // OAuth fix. isReady is true only after those checks pass.
+  // DO NOT add a separate auth guard useEffect here.
+  const { isReady, saveStep3, isProcessing, step3Data } = useOnboarding()
 
   const [properties, setProperties] = useState([
     {
@@ -31,13 +32,10 @@ export default function LandlordOnboardingStep3() {
     }
   ])
 
-  // ✅ LOAD SAVED DATA ON MOUNT
+  // ── Load saved data on mount ─────────────────────────────────────────────────
   useEffect(() => {
-    console.log('📂 [STEP 3] Loading saved property data...')
-    
-    // Try to load from hook first
+    // Priority 1: hook state (most reliable, already persisted)
     if (step3Data) {
-      console.log('✅ [STEP 3] Loading from hook:', step3Data)
       setProperties([{
         address: step3Data.property_address || '',
         type: step3Data.property_type || 'apartment',
@@ -48,115 +46,41 @@ export default function LandlordOnboardingStep3() {
         images: step3Data.property_images || [],
         ownership_document: step3Data.property_ownership_proof || '',
       }])
-    } else {
-      // Fallback to localStorage
-      const savedDraft = localStorage.getItem('onboarding_step3_draft')
-      if (savedDraft) {
-        try {
-          const data = JSON.parse(savedDraft)
-          console.log('✅ [STEP 3] Loading from localStorage:', data)
-          setProperties(data)
-        } catch (error) {
-          console.error('❌ [STEP 3] Error loading saved data:', error)
-        }
-      }
+      return
+    }
+
+    // Priority 2: autosave draft
+    const autoSaved = localStorage.getItem('onboarding_step3_autosave')
+    if (autoSaved) {
+      try {
+        setProperties(JSON.parse(autoSaved))
+        return
+      } catch { /* ignore */ }
+    }
+
+    // Priority 3: manual draft
+    const savedDraft = localStorage.getItem('onboarding_step3_draft')
+    if (savedDraft) {
+      try {
+        setProperties(JSON.parse(savedDraft))
+      } catch { /* ignore */ }
     }
   }, [step3Data])
 
-  // ✅ AUTO-SAVE: Save form data on every change
+  // ── Autosave on every change ─────────────────────────────────────────────────
   useEffect(() => {
     if (properties.length > 0 && (properties[0].address || properties[0].type)) {
       localStorage.setItem('onboarding_step3_autosave', JSON.stringify(properties))
     }
   }, [properties])
 
-  // ✅ RESTORE: Load auto-saved data on mount
-  useEffect(() => {
-    const autoSaved = localStorage.getItem('onboarding_step3_autosave')
-    if (autoSaved && !step3Data) {
-      try {
-        const data = JSON.parse(autoSaved)
-        console.log('📂 [STEP 3] Restoring auto-saved data:', data)
-        setProperties(data)
-        console.log('✅ [STEP 3] Auto-saved data restored')
-      } catch (error) {
-        console.error('❌ [STEP 3] Error restoring auto-saved data:', error)
-      }
-    }
-  }, [step3Data])
-
-  // Redirect if not authenticated or not a landlord
-  useEffect(() => {
-    if (!loading) {
-      if (!user) {
-        toast.error('Please sign in first')
-        router.push('/signin')
-        return
-      }
-      
-      if (user.user_type !== 'landlord') {
-        toast.error('This page is only for landlords')
-        router.push('/properties')
-        return
-      }
-      
-      // Check if email is verified
-      if (!user.email_verified) {
-        toast.error('Please verify your email first')
-        router.push('/signup/landlord/confirmation')
-        return
-      }
-      
-      // Check if onboarding is already completed
-      if (user.onboarding_completed) {
-        // Check if user actually completed onboarding by checking landlord_onboarding table
-        const checkOnboardingCompletion = async () => {
-          try {
-            const { createClient } = await import("@/utils/supabase/client")
-            const supabase = createClient()
-            
-            const { data: onboardingData } = await supabase
-              .from('landlord_onboarding')
-              .select('all_steps_completed, submitted_for_review')
-              .eq('landlord_id', user.id)
-              .single()
-            
-            // Only redirect if onboarding is actually completed
-            if (onboardingData?.all_steps_completed && onboardingData?.submitted_for_review) {
-              console.log('✅ [STEP 3] Onboarding actually completed, redirecting to overview')
-              router.push('/landlord/overview')
-              return
-            } else {
-              console.log('🔄 [STEP 3] Onboarding flag is stale, resetting and continuing...')
-              // Reset flag in users table since it's stale
-              await supabase
-                .from('users')
-                .update({ onboarding_completed: false })
-                .eq('id', user.id)
-            }
-          } catch (error) {
-            console.error('❌ [STEP 3] Error checking onboarding:', error)
-          }
-        }
-        
-        checkOnboardingCompletion()
-        return
-      }
-    }
-  }, [user, loading, router])
-
+  // ── Property helpers ─────────────────────────────────────────────────────────
   const updateProperty = (index: number, field: string, value: any) => {
-    setProperties(prev => prev.map((prop: any, i: number) => 
-      i === index ? { ...prop, [field]: value } : prop
-    ))
-    
-    // Auto-save to localStorage for better UX
-    const updatedProperties = properties.map((prop: any, i: number) => 
-      i === index ? { ...prop, [field]: value } : prop
-    )
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('onboarding_step3_draft', JSON.stringify(updatedProperties))
-    }
+    setProperties(prev => {
+      const updated = prev.map((prop, i) => i === index ? { ...prop, [field]: value } : prop)
+      localStorage.setItem('onboarding_step3_draft', JSON.stringify(updated))
+      return updated
+    })
   }
 
   const addProperty = () => {
@@ -170,33 +94,25 @@ export default function LandlordOnboardingStep3() {
       images: [] as string[],
       ownership_document: '',
     }
-    setProperties(prev => [...prev, newProperty])
-    
-    // Auto-save to localStorage
-    if (typeof window !== 'undefined') {
-      const updatedProperties = [...properties, newProperty]
-      localStorage.setItem('onboarding_step3_draft', JSON.stringify(updatedProperties))
-    }
+    setProperties(prev => {
+      const updated = [...prev, newProperty]
+      localStorage.setItem('onboarding_step3_draft', JSON.stringify(updated))
+      return updated
+    })
   }
 
   const removeProperty = (index: number) => {
-    if (properties.length > 1) {
-      const updatedProperties = properties.filter((_: any, i: number) => i !== index)
-      setProperties(updatedProperties)
-      
-      // Auto-save to localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('onboarding_step3_draft', JSON.stringify(updatedProperties))
-      }
-    }
+    if (properties.length <= 1) return
+    setProperties(prev => {
+      const updated = prev.filter((_, i) => i !== index)
+      localStorage.setItem('onboarding_step3_draft', JSON.stringify(updated))
+      return updated
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    console.log('📤 [STEP 3] Submitting property data...')
 
-    // ✅ VALIDATION: Check if at least one property has address
     const hasValidProperty = properties.some(prop => prop.address.trim() !== '')
     if (!hasValidProperty) {
       toast.error('Please add at least one property with an address')
@@ -204,9 +120,8 @@ export default function LandlordOnboardingStep3() {
     }
 
     try {
-      // 🚀 SAVE: Use first property for MVP (simplify for now)
       const mainProperty = properties.find(prop => prop.address.trim() !== '') || properties[0]
-      
+
       const success = await saveStep3({
         property_address: mainProperty.address,
         property_type: mainProperty.type,
@@ -215,13 +130,8 @@ export default function LandlordOnboardingStep3() {
       })
 
       if (success) {
-        console.log('✅ [STEP 3] Property data saved successfully')
-        toast.success('Property information saved!')
-        
-        // Navigate to next step
+        toast.success('Step 3 completed!')
         router.push('/onboarding/landlord/step-4')
-      } else {
-        console.error('❌ [STEP 3] Failed to save property data')
       }
     } catch (error: any) {
       console.error('❌ [STEP 3] Error:', error)
@@ -229,6 +139,19 @@ export default function LandlordOnboardingStep3() {
     }
   }
 
+  // ── Loading gate: wait for hook's auth checks to resolve ────────────────────
+  if (!isReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden bg-gradient-to-br from-orange-50 via-white to-slate-50">
       {/* Background Elements */}
@@ -263,22 +186,17 @@ export default function LandlordOnboardingStep3() {
             </div>
             <div className="flex-1 h-1 bg-orange-600 mx-2"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-semibold">
-                3
-              </div>
+              <div className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-semibold">3</div>
               <span className="ml-2 text-sm font-medium text-orange-600">Properties</span>
             </div>
             <div className="flex-1 h-1 bg-slate-200 mx-2"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">
-                4
-              </div>
+              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">4</div>
               <span className="ml-2 text-sm font-medium text-slate-500">Bank Details</span>
             </div>
+            <div className="flex-1 h-1 bg-slate-200 mx-2"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">
-                5
-              </div>
+              <div className="w-8 h-8 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-sm font-semibold">5</div>
               <span className="ml-2 text-sm font-medium text-slate-500">Review</span>
             </div>
           </div>
@@ -302,7 +220,6 @@ export default function LandlordOnboardingStep3() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Properties List */}
               <div className="space-y-6">
                 {properties.map((property, index) => (
                   <Card key={index} className="border border-slate-200">
@@ -335,7 +252,6 @@ export default function LandlordOnboardingStep3() {
                             className="w-full"
                           />
                         </div>
-                        
                         <div className="space-y-2">
                           <Label htmlFor={`type-${index}`}>Property Type *</Label>
                           <select
@@ -351,7 +267,6 @@ export default function LandlordOnboardingStep3() {
                             <option value="penthouse">Penthouse</option>
                           </select>
                         </div>
-                        
                         <div className="space-y-2">
                           <Label htmlFor={`bedrooms-${index}`}>Bedrooms</Label>
                           <Input
@@ -364,7 +279,6 @@ export default function LandlordOnboardingStep3() {
                             className="w-full"
                           />
                         </div>
-                        
                         <div className="space-y-2">
                           <Label htmlFor={`bathrooms-${index}`}>Bathrooms</Label>
                           <Input
@@ -377,7 +291,6 @@ export default function LandlordOnboardingStep3() {
                             className="w-full"
                           />
                         </div>
-                        
                         <div className="space-y-2">
                           <Label htmlFor={`rent-${index}`}>Monthly Rent (₦)</Label>
                           <Input
@@ -391,7 +304,6 @@ export default function LandlordOnboardingStep3() {
                           />
                         </div>
                       </div>
-                      
                       <div className="space-y-2">
                         <Label htmlFor={`description-${index}`}>Property Description</Label>
                         <Textarea
@@ -406,7 +318,7 @@ export default function LandlordOnboardingStep3() {
                     </CardContent>
                   </Card>
                 ))}
-                
+
                 {/* Add Property Button */}
                 <Button
                   type="button"
@@ -420,8 +332,8 @@ export default function LandlordOnboardingStep3() {
               </div>
 
               {/* Submit Button */}
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 text-lg"
                 disabled={isProcessing}
               >

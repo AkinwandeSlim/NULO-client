@@ -59,9 +59,9 @@ export default function ReviewStep({ formData, errors, onChange, property }: Rev
         <SectionHeader icon={Briefcase} title="Employment Information" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InfoRow label="Employment Status" value={formData.employmentStatus} />
-          <InfoRow label="Employer" value={formData.employer} />
+          <InfoRow label="Employer" value={formData.employer_name} />
           <InfoRow label="Job Title" value={formData.jobTitle} />
-          <InfoRow label="Monthly Income" value={formData.monthlyIncome ? `₦${parseInt(formData.monthlyIncome).toLocaleString()}` : ''} />
+          <InfoRow label="Monthly Income" value={formData.monthly_income ? `₦${parseInt(formData.monthly_income).toLocaleString()}` : ''} />
           <InfoRow label="Employment Duration" value={formData.employmentDuration} />
         </div>
       </div>

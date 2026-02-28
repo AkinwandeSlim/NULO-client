@@ -42,6 +42,37 @@ import {
 
 
 
+// ─── Non-blocking signup notification helper ─────────────────────────────────
+// Fires after account creation. Never throws — a broken notification never
+// blocks the user from landing on the confirmation page.
+const _fireSignupNotification = async (
+  userId: string,
+  userEmail: string,
+  userName: string,
+  userType: 'landlord' | 'tenant'
+): Promise<void> => {
+  try {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    await fetch(`${apiUrl}/api/v1/notifications/signup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Service-Key': process.env.NEXT_PUBLIC_INTERNAL_SERVICE_KEY || '',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        user_email: userEmail,
+        user_name: userName,
+        user_type: userType,
+      }),
+    })
+    console.log(`📲 [AUTH] Signup notification fired for ${userType}`)
+  } catch (err) {
+    // Non-fatal — swallow silently
+    console.warn('⚠️ [AUTH] Signup notification failed (non-fatal):', err)
+  }
+}
+
 const isClient = typeof window !== 'undefined';
 
 const syncUserWithBackend = async (
@@ -501,6 +532,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!userType) return null
 
+      // Admins have no tenant_profiles or landlord_profiles row — skip the
+      // fetch entirely to avoid the 406 error on every admin page load.
+      if (userType === 'admin') return null
+
       const table = userType === 'tenant' ? 'tenant_profiles' : 'landlord_profiles'
       const { data, error } = await supabase
         .from(table)
@@ -653,6 +688,10 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
     const callbackUrl = typeof window !== 'undefined' ? localStorage.getItem('signup_callback_url') : null;
     console.log('🔗 [AUTH] Callback URL:', callbackUrl);
     
+    // 🚨 DEVELOPMENT ONLY: Skip email verification for testing
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const shouldSkipEmail = isDevelopment && email.includes('test');
+    
     // Step 1: Create auth user in Supabase
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -671,8 +710,16 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
     });
 
     if (error) {
+      // 🚨 DEVELOPMENT: Handle rate limit with helpful message
+      if (error.message?.includes('rate limit')) {
+        toast.error('Email rate limit exceeded. Try using a different email or wait 5 minutes.');
+        console.error('❌ [AUTH] Rate limit hit - suggest using email aliases:');
+        console.error('   - raphawellnessoptimization+test1@gmail.com');
+        console.error('   - raphawellnessoptimization+test2@gmail.com');
+      } else {
+        toast.error(error.message);
+      }
       console.error('❌ [AUTH] Tenant signup error:', error);
-      toast.error(error.message);
       return { error };
     }
 
@@ -693,6 +740,14 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
       );
       
       console.log('✅ [AUTH] Backend sync complete:', syncResult);
+      
+      // 🔔 Fire signup in-app notification (non-blocking)
+      _fireSignupNotification(
+        data.user.id,
+        email,
+        `${firstName} ${lastName}`,
+        'tenant'
+      )
     } else {
       console.error('❌ [AUTH] No user ID returned from Supabase!');
     }
@@ -773,6 +828,14 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
       );
       
       console.log('✅ [AUTH] Backend sync complete:', syncResult);
+      
+      // 🔔 Fire signup in-app notification (non-blocking)
+      _fireSignupNotification(
+        data.user.id,
+        email,
+        `${firstName} ${lastName}`,
+        'landlord'
+      )
     } else {
       console.error('❌ [AUTH] No user ID returned from Supabase!');
     }
@@ -1019,11 +1082,28 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
       if (!callbackUrl && typeof window !== 'undefined') {
         callbackUrl = localStorage.getItem('signup_callback_url') || undefined;
       }
-      
-      // Build user object DIRECTLY from signIn response - no additional database queries
+
+      // ✅ CRITICAL: Fetch user_type from DB — metadata can be stale or wrong.
+      // This is especially important for OAuth users whose metadata may not have
+      // been updated if they signed up via Google and later sign in via email.
+      let userType = data.user.user_metadata?.user_type || 'tenant';
+      try {
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('user_type, onboarding_completed, verification_status')
+          .eq('id', data.user.id)
+          .single();
+        if (dbUser?.user_type) {
+          userType = dbUser.user_type;
+          console.log('✅ [AUTH] user_type resolved from DB:', userType);
+        }
+      } catch (dbErr) {
+        console.warn('⚠️ [AUTH] Could not fetch user_type from DB, using metadata:', userType);
+      }
+
+      // Build user object DIRECTLY from signIn response
       const firstName = data.user.user_metadata?.first_name || 'User';
       const lastName = data.user.user_metadata?.last_name || 'Name';
-      const userType = data.user.user_metadata?.user_type || 'tenant';
       
       const userData: User = {
         id: data.user.id,
@@ -1061,14 +1141,18 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         console.warn('⚠️ [AUTH] Profile fetch failed (non-blocking):', err);
       });
 
-      // Determine redirect path
-      let redirectPath = callbackUrl || '/';
+      // Determine redirect path - prioritize user type dashboard over callback URL
+      let redirectPath = '/';
       
-      if (!callbackUrl) {
-        if (userData.user_type === 'admin') {
-          redirectPath = '/admin';
-        } else if (userData.user_type === 'landlord') {
-          redirectPath = userData.email_verified ? '/landlord/overview' : '/signup/landlord/confirmation';
+      if (userData.user_type === 'admin') {
+        redirectPath = '/admin';
+      } else if (userData.user_type === 'landlord') {
+        // For landlords, always go to dashboard unless email not verified
+        redirectPath = userData.email_verified ? '/landlord/overview' : '/signup/landlord/confirmation';
+      } else if (userData.user_type === 'tenant') {
+        // For tenants, use callback URL if available (they might be coming from a property page)
+        if (callbackUrl && callbackUrl.startsWith('/properties')) {
+          redirectPath = userData.email_verified ? callbackUrl : '/signup/tenant/confirmation';
         } else {
           redirectPath = userData.email_verified ? '/properties' : '/signup/tenant/confirmation';
         }
@@ -1138,65 +1222,7 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
     }
   };
 
-  // // Sign out
-  // const signOut = async () => {
-  //   try {
-  //     console.log('👋 [AUTH] Signing out...');
-      
-  //     // Sign out from Supabase immediately (don't wait to clear storage first)
-  //     supabase.auth.signOut().catch((error: any) => {
-  //       console.error('❌ [AUTH] Supabase sign out error:', error);
-  //     });
-      
-  //     // Clear auth-related storage keys only (preserve other app data)
-  //     try {
-  //       const keysToClear = [
-  //         'sb-access-token',  // 🔥 NEW: Clear cached API token
-  //         'sb-refresh-token', // 🔥 NEW: Clear cached refresh token
-  //         'sb-auth-token',
-  //         'sb-session',
-  //         'signup_email',
-  //         'pending_profile_completion'
-  //       ];
-  //       keysToClear.forEach(key => {
-  //         localStorage.removeItem(key);
-  //         sessionStorage.removeItem(key);
-  //       });
-        
-  //       // Also clear any Supabase auth keys (they have specific patterns)
-  //       const allKeys = Object.keys(localStorage);
-  //       allKeys.forEach(key => {
-  //         if (key.includes('supabase') || key.includes('auth') || key.includes('session')) {
-  //           localStorage.removeItem(key);
-  //         }
-  //       });
-        
-  //       console.log('🧹 [AUTH] Cleared auth-related storage including cached tokens');
-  //     } catch (e) {
-  //       console.error('Error clearing storage:', e);
-  //     }
-      
-  //     // Clear auth state immediately
-  //     setUser(null);
-  //     setProfile(null);
-  //     setNotifications([]);
-  //     setUnreadCount(0);
-  //     console.log('🧹 [AUTH] Cleared auth state');
-      
-  //     console.log('✅ [AUTH] Sign out successful');
-  //     toast.success('Signed out successfully');
-      
-  //     // Force immediate page redirect - this is synchronous
-  //     window.location.href = '/';
-      
-  //   } catch (error: any) {
-  //     console.error('❌ [AUTH] Sign out error:', error);
-  //     toast.error(error.message || 'Failed to sign out');
-      
-  //     // Force redirect even on error to ensure logout completes
-  //     window.location.href = '/';
-  //   }
-  // };
+
 
   // Reset password
   const resetPassword = async (email: string) => {

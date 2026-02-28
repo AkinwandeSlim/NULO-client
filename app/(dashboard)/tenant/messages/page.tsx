@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAuth } from "@/contexts/AuthContext"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle  } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { 
@@ -59,23 +59,79 @@ export default function MessagesPage() {
   }
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8 max-w-7xl">
       {/* Header */}
-      <div className="mb-6">
-        <Link href="/tenant">
+      <div className="mb-8">
+        <Link href="/dashboard/tenant">
           <Button variant="ghost" size="sm" className="mb-4 text-slate-600 hover:text-slate-900">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Dashboard
           </Button>
         </Link>
-        <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">
-          Messages
-        </h1>
-        <p className="text-slate-600">
-          Chat with landlords about properties
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-3">
+              Messages
+            </h1>
+            <p className="text-slate-600">
+              Chat with tenants about properties
+            </p>
+          </div>
+          <Link href="/properties">
+            <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6">
+              <Home className="mr-2 h-4 w-4" />
+              Browse Properties
+            </Button>
+          </Link>
+        </div>
       </div>
 
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Total Conversations</p>
+                <p className="text-2xl font-bold text-slate-900">{conversations.length}</p>
+              </div>
+              <MessageSquare className="w-8 h-8 text-slate-400" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Unread Messages</p>
+                <p className="text-2xl font-bold text-orange-600">
+                  {conversations.filter(c => c.unread_count > 0).length}
+                </p>
+              </div>
+              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                <span className="text-orange-600 font-bold text-sm">
+                  {conversations.filter(c => c.unread_count > 0).length > 0 ? '!' : '✓'}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Active Chats</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {conversations.filter(c => c.last_message).length}
+                </p>
+              </div>
+              <MessageSquare className="w-8 h-8 text-green-400" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
       {/* Search Bar */}
       {conversations.length > 0 && (
         <div className="mb-6">
@@ -86,62 +142,84 @@ export default function MessagesPage() {
               placeholder="Search conversations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 h-12 rounded-xl border-slate-200 focus:border-orange-300 focus:ring-orange-200"
+              className="pl-12 h-12 rounded-xl border-2 border-slate-200 focus:border-orange-500 focus:outline-none bg-white"
             />
           </div>
         </div>
       )}
 
-      {/* Empty State */}
-      {conversations.length === 0 ? (
-        <Card className="bg-white/90 backdrop-blur-sm border-white/50">
-          <CardContent className="py-16">
-            <div className="text-center">
-              <MessageSquare className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                No conversations yet
-              </h3>
-              <p className="text-slate-600 mb-6">
-                Start browsing properties and contact landlords to begin chatting
+      {/* Main Content Card */}
+      <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>All Conversations</span>
+            <span className="text-sm font-normal text-slate-500">
+              {conversations.length} conversations
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {conversations.length === 0 ? (
+            <div className="text-center py-20 max-w-md mx-auto">
+              <div className="h-16 w-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <MessageSquare className="h-8 w-8 text-orange-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900 mb-3">No conversations yet</h3>
+              <p className="text-slate-600 mb-8">
+                Messages from tenants will appear here
               </p>
-              <Link href="/properties">
-                <Button className="bg-orange-500 hover:bg-orange-600">
-                  <Home className="mr-2 h-4 w-4" />
-                  Browse Properties
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link href="/properties">
+                  <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6">
+                    <Home className="mr-2 h-4 w-4" />
+                    Browse Properties
+                  </Button>
+                </Link>
+                <Button 
+                  variant="outline" 
+                  onClick={() => toast.info('Be polite and clear when messaging landlords about properties!')}
+                  className="border-orange-200 text-orange-700 hover:bg-orange-50"
+                >
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Messaging Tips
                 </Button>
-              </Link>
+              </div>
             </div>
-          </CardContent>
-        </Card>
-      ) : filteredConversations.length === 0 ? (
-        <Card className="bg-white/90 backdrop-blur-sm border-white/50">
-          <CardContent className="py-16">
-            <div className="text-center">
-              <Search className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                No conversations found
-              </h3>
-              <p className="text-slate-600">
+          ) : filteredConversations.length === 0 ? (
+            <div className="text-center py-20 max-w-md mx-auto">
+              <div className="h-16 w-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Search className="h-8 w-8 text-slate-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900 mb-3">No conversations found</h3>
+              <p className="text-slate-600 mb-8">
                 Try searching with different keywords
               </p>
+              <Button 
+                variant="outline" 
+                onClick={() => setSearchQuery('')}
+                className="border-orange-200 text-orange-700 hover:bg-orange-50"
+              >
+                <Search className="mr-2 h-4 w-4" />
+                Clear Search
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredConversations.map((conversation) => (
-            <ConversationCard
-              key={conversation.id}
-              id={conversation.id}
-              property={conversation.property}
-              partner={conversation.partner}
-              lastMessage={conversation.last_message}
-              lastMessageAt={conversation.last_message_at}
-              unreadCount={conversation.unread_count || 0}
-            />
-          ))}
-        </div>
-      )}
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredConversations.map((conversation) => (
+                <ConversationCard
+                  key={conversation.id}
+                  id={conversation.id}
+                  property={conversation.property}
+                  partner={conversation.partner}
+                  lastMessage={conversation.last_message}
+                  lastMessageAt={conversation.last_message_at}
+                  unreadCount={conversation.unread_count || 0}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -128,12 +128,12 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 // Provider
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(notificationReducer, initialState);
-  const { user, userProfile } = useAuth();
+  const { user } = useAuth();
 
   // Fetch notifications from backend
   const fetchNotifications = async () => {
-    if (!user || !userProfile) {
-      console.log('🔔 [NOTIF] No user or profile, skipping fetch');
+    if (!user) {
+      console.log('🔔 [NOTIF] No user, skipping fetch');
       return;
     }
 
@@ -223,29 +223,46 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   // Auto-fetch notifications when user changes
   useEffect(() => {
-    if (user && userProfile) {
+    if (user) {
       console.log('🔔 [NOTIF] User available, fetching notifications');
       fetchNotifications();
     } else {
-      console.log('🔔 [NOTIF] No user or profile, clearing notifications');
+      console.log('🔔 [NOTIF] No user, clearing notifications');
       dispatch({ type: 'SET_NOTIFICATIONS', payload: [] });
     }
-  }, [user, userProfile]);
+  }, [user]);
 
-  // Poll for new notifications every 60 seconds (reduced from 30s to avoid API overload)
+  // Poll for new notifications every 120 seconds (reduced frequency)
   useEffect(() => {
-    if (!user || !userProfile) return;
+    if (!user) return;
 
     const interval = setInterval(() => {
       console.log('🔔 [NOTIF] Polling for new notifications');
       fetchNotifications();
-    }, 60000); // 60 seconds instead of 30
+    }, 120000); // 120 seconds instead of 60 - reduces server load
 
     return () => {
       console.log('🔔 [NOTIF] Cleaning up notification polling');
       clearInterval(interval);
     };
-  }, [user, userProfile]);
+  }, [user]);
+
+  // Only poll if page is visible (reduce unnecessary requests)
+  useEffect(() => {
+    if (!user) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('🔔 [NOTIF] Page became visible, checking notifications');
+        fetchNotifications();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user]);
 
   const value: NotificationContextType = {
     state,

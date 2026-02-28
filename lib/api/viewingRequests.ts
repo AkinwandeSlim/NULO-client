@@ -16,7 +16,7 @@ export interface ViewingRequest {
   contact_number: string;
   tenant_name: string;
   message?: string;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'rejected';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed'; // DB only allows these 4
   landlord_notes?: string;
   confirmed_date?: string;
   confirmed_time?: string;
@@ -43,7 +43,15 @@ export interface CreateViewingRequestData {
   time_slot: 'morning' | 'afternoon' | 'evening';
   contact_number: string;
   tenant_name: string;
+  viewing_type?: 'PHYSICAL' | 'VIRTUAL' | 'LIVE_VIDEO';
   message?: string;
+}
+
+export interface LandlordReviewData {
+  status: 'confirmed' | 'cancelled';
+  landlord_notes?: string;
+  confirmed_date?: string;
+  confirmed_time?: string;
 }
 
 export interface UpdateViewingRequestData {
@@ -115,6 +123,45 @@ export const viewingRequestsAPI = {
   delete: async (requestId: string): Promise<{ success: boolean; message: string }> => {
     const response = await apiClient.delete<{ success: boolean; message: string }>(
       `/api/v1/viewing-requests/${requestId}`
+    );
+    return response.data;
+  },
+
+  /**
+   * Get all viewing requests for landlord's properties
+   */
+  getLandlord: async (statusFilter?: string): Promise<ViewingRequestsResponse> => {
+    const params = statusFilter ? { status_filter: statusFilter } : {};
+    const response = await apiClient.get<ViewingRequestsResponse>(
+      '/api/v1/viewing-requests/landlord',
+      { params }
+    );
+    return response.data;
+  },
+
+  /**
+   * Landlord confirms or cancels a viewing request
+   */
+  review: async (
+    requestId: string,
+    data: LandlordReviewData
+  ): Promise<ViewingRequestResponse> => {
+    const response = await apiClient.patch<ViewingRequestResponse>(
+      `/api/v1/viewing-requests/${requestId}/review`,
+      data
+    );
+    return response.data;
+  },
+
+  /**
+   * Trigger a notification batch for a viewing (landlord-only)
+   */
+  sendSms: async (
+    requestId: string,
+    notificationType: 'confirmation' | 'reminder_24h' | 'reminder_1h' | 'interest'
+  ): Promise<{ status: string; type: string }> => {
+    const response = await apiClient.post<{ status: string; type: string }>(
+      `/api/v1/viewing-requests/${requestId}/send-sms?notification_type=${notificationType}`
     );
     return response.data;
   },

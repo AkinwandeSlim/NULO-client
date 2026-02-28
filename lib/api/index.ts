@@ -18,7 +18,7 @@ export { default as dashboardAPI } from './dashboard'
 
 export { favoritesAPI } from './favorites';
 export { tenantsAPI } from './tenants';
-export { viewingRequestsAPI } from './viewingRequests';
+export { viewingRequestsAPI } from './viewingRequestsLandlord';
 export { messagesAPI } from './messages';
 
 
@@ -37,7 +37,7 @@ export type { Property,PropertySearchParams, CreatePropertyData, UpdatePropertyD
 export type { Application, CreateApplicationData } from './applications';
 export type { Favorite } from './favorites';
 export type { ProfileStatus, TenantProfile, CompleteProfileData } from './tenants';
-export type { ViewingRequest, CreateViewingRequestData } from './viewingRequests';
+export type { ViewingRequest,ViewingRequestsResponse, CreateViewingRequestData,LandlordReviewData,UpdateViewingRequestData } from './viewingRequestsLandlord';
 export type { Message, Conversation, CreateConversationData } from './messages';
 
 
@@ -129,7 +129,7 @@ export type {
 // export { default as applicationsAPI } from './applications';
 // export { favoritesAPI } from './favorites';
 // export { tenantsAPI } from './tenants';
-// export { viewingRequestsAPI } from './viewingRequests';
+// export { viewingRequestsAPI } from './viewingRequestsLandlord';
 // export { messagesAPI } from './messages';
 // export { default as verificationAPI } from './verification';
 // export { default as landlordUsersAPI } from './landlordUsers';
@@ -141,7 +141,7 @@ export type {
 // export type { Application, CreateApplicationData } from './applications';
 // export type { Favorite } from './favorites';
 // export type { ProfileStatus, TenantProfile, CompleteProfileData } from './tenants';
-// export type { ViewingRequest, CreateViewingRequestData } from './viewingRequests';
+// export type { ViewingRequest, CreateViewingRequestData } from './viewingRequestsLandlord';
 // export type { Message, Conversation, CreateConversationData } from './messages';
 
 
@@ -155,7 +155,3 @@ export type {
 //   LandlordListResponse,
 //   LandlordUpdateData
 // } from './landlordUsers';
-
-
-
-
