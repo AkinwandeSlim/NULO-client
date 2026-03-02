@@ -37,6 +37,8 @@ export default function SignInPage() {
   const [apiError, setApiError] = useState<string | null>(null)
 
   // Redirect authenticated users away from signin page
+  const [verifyingOnboarding, setVerifyingOnboarding] = useState(false)
+  
   useEffect(() => {
     if (!loading && user) {
       console.log('🔄 [SIGNIN] User already authenticated, redirecting...')
@@ -44,7 +46,52 @@ export default function SignInPage() {
         if (!user.email_verified) {
           router.replace('/signup/landlord/confirmation')
         } else if (!user.onboarding_completed) {
-          router.replace(`/onboarding/landlord/step-${user.onboarding_step || 1}`)
+          // FIX: For established users with unreliable network, verify in database
+          // Only redirect to onboarding if database confirms it's incomplete
+          const isNewUser = user.created_at && 
+            (Date.now() - new Date(user.created_at).getTime()) < 5 * 60 * 1000; // Created less than 5 min ago
+          
+          if (isNewUser) {
+            // New user - go to onboarding
+            console.log('👤 [SIGNIN] New landlord user, redirecting to onboarding...')
+            router.replace(`/onboarding/landlord/step-${user.onboarding_step || 1}`)
+          } else {
+            // Established user with potentially stale session metadata - verify in database
+            console.log('⏳ [SIGNIN] Established landlord user, verifying onboarding status in database...')
+            setVerifyingOnboarding(true)
+            
+            const verifyOnboarding = async () => {
+              try {
+                const supabase = createClient()
+                const { data } = await supabase
+                  .from('landlord_onboarding')
+                  .select('all_steps_completed, submitted_for_review')
+                  .eq('landlord_id', user.id)
+                  .single()
+                
+                console.log('📊 [SIGNIN] Database check result:', data)
+                
+                // If onboarding is truly incomplete, go to step 1
+                if (!data?.all_steps_completed || !data?.submitted_for_review) {
+                  console.log('🎓 [SIGNIN] Onboarding incomplete, redirecting to step 1...')
+                  router.replace(`/onboarding/landlord/step-${user.onboarding_step || 1}`)
+                } else {
+                  // Onboarding is actually complete, go to dashboard
+                  console.log('✅ [SIGNIN] Onboarding complete, redirecting to dashboard...')
+                  router.replace('/landlord/overview')
+                }
+              } catch (error) {
+                console.error('⚠️ [SIGNIN] Database verification failed:', error)
+                // On error, assume onboarding is complete (safer for established users)
+                console.log('💭 [SIGNIN] Assuming onboarding complete due to verification error...')
+                router.replace('/landlord/overview')
+              } finally {
+                setVerifyingOnboarding(false)
+              }
+            }
+            
+            verifyOnboarding()
+          }
         } else {
           router.replace('/landlord/overview')
         }

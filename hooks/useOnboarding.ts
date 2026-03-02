@@ -180,8 +180,20 @@ export function useOnboarding() {
   // hasn't fired yet, or doesn't set the flag for OAuth users). Sending them to
   // the confirmation page is wrong — they never got a confirmation email.
   // We detect OAuth users via user.auth_provider === 'google'.
+  //
+  // FIX: Also verify onboarding status in database for established users with
+  // potentially stale session metadata (e.g., when network is unreliable)
   useEffect(() => {
-    if (!user || loading) return
+    // Still loading - wait for auth to resolve
+    if (loading) return
+
+    // Auth resolved but no user - redirect to signin
+    if (!user) {
+      console.log('❌ [HOOK] User not authenticated, redirecting to signin...')
+      toast.error('Please sign in to continue')
+      router.push('/signin')
+      return
+    }
 
     // 1. Wrong user type
     if (user.user_type !== 'landlord') {
@@ -201,7 +213,7 @@ export function useOnboarding() {
       return
     }
 
-    // 3. Onboarding already completed — verify against DB before redirecting
+    // 3. Onboarding completed — verify against DB before redirecting
     //    (the flag can go stale on partial submits)
     //    IMPORTANT: Skip this redirect if the user is on a step page right now.
     //    When step-5 submits, it sets onboarding_completed=true which triggers
@@ -236,6 +248,52 @@ export function useOnboarding() {
       }
       verify()
       return
+    }
+
+    // 4. Onboarding NOT completed - but for established users, verify in database
+    //    to avoid incorrect redirects due to stale session metadata
+    if (!user.onboarding_completed && !isOnStepPage) {
+      const isNewUser = user.created_at && 
+        (Date.now() - new Date(user.created_at).getTime()) < 5 * 60 * 1000; // Created less than 5 min ago
+      
+      if (isNewUser) {
+        // New user - allow onboarding flow
+        console.log('👤 [HOOK] New landlord user, allowing onboarding...')
+        setIsReady(true)
+      } else {
+        // Established user with potentially stale session - verify in database
+        console.log('⏳ [HOOK] Established landlord user, verifying onboarding status in database...')
+        const verify = async () => {
+          try {
+            const { createClient } = await import('@/utils/supabase/client')
+            const supabase = createClient()
+            const { data } = await supabase
+              .from('landlord_onboarding')
+              .select('all_steps_completed, submitted_for_review')
+              .eq('landlord_id', user.id)
+              .single()
+
+            console.log('📊 [HOOK] Database check result:', data)
+
+            if (data?.all_steps_completed && data?.submitted_for_review) {
+              // Onboarding actually complete - redirect to dashboard
+              console.log('✅ [HOOK] Onboarding complete, redirecting to dashboard...')
+              router.push('/landlord/overview')
+            } else {
+              // Onboarding incomplete - allow step pages
+              console.log('🎓 [HOOK] Onboarding incomplete, allowing steps...')
+              setIsReady(true)
+            }
+          } catch (error) {
+            console.error('⚠️ [HOOK] Database verification failed:', error)
+            // On error, let the user continue (they might be in the middle of onboarding)
+            console.log('💭 [HOOK] Continuing due to verification error...')
+            setIsReady(true)
+          }
+        }
+        verify()
+        return
+      }
     }
 
     // All checks passed

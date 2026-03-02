@@ -196,7 +196,20 @@ export default function ApplicationPage() {
 
     if (step === 2) {
       if (!formData.employmentStatus)    newErrors.employmentStatus = "Employment status is required"
-      if (!formData.monthly_income)      newErrors.monthly_income   = "Monthly income is required"
+      
+      // Only require monthly_income for employed or self-employed
+      if ((formData.employmentStatus === 'employed' || formData.employmentStatus === 'self-employed') && !formData.monthly_income) {
+        newErrors.monthly_income = "Monthly income is required"
+      }
+      
+      // Only require employer_name and jobTitle for employed, self-employed, or student
+      if ((formData.employmentStatus === 'employed' || formData.employmentStatus === 'self-employed' || formData.employmentStatus === 'student') && !formData.employer_name?.trim()) {
+        newErrors.employer_name = formData.employmentStatus === 'student' ? "Institution name is required" : "Employer name is required"
+      }
+      
+      if ((formData.employmentStatus === 'employed' || formData.employmentStatus === 'self-employed' || formData.employmentStatus === 'student') && !formData.jobTitle?.trim()) {
+        newErrors.jobTitle = formData.employmentStatus === 'student' ? "Course of study is required" : "Job title is required"
+      }
     }
 
     if (step === 3) {

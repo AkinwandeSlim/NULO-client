@@ -2,18 +2,37 @@
 
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
-import { useAuth } from "@/contexts/AuthContext"
+import Link from "next/link"
+import { 
+  ArrowLeft, 
+  User, 
+  Calendar, 
+  DollarSign, 
+  FileText, 
+  Mail, 
+  Phone, 
+  MapPin, 
+  Briefcase,
+  Users,
+  CheckCircle2,
+  X,
+  Loader2,
+  Eye,
+  CheckCircle,
+  Zap,
+  AlertCircle,
+  Download,
+  Shield,
+  Home,
+  Clock,
+  MessageSquare,
+  Building2
+} from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import {
-  ArrowLeft, Download, Phone, Mail, AlertCircle,
-  Loader2, CheckCircle2, X, Shield, Zap, Users,
-  Building2, Briefcase, Home, Clock, CheckCircle,
-  Eye, MessageSquare, FileText, MapPin, Calendar
-} from "lucide-react"
-import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { useAuth } from "@/contexts/AuthContext"
 import { applicationsAPI, type Application } from "@/lib/api/applications"
 import { toast } from "sonner"
 
@@ -778,10 +797,137 @@ export default function LandlordApplicationDetailPage() {
                       </div>
                     )}
                     {application.status === 'approved' && (
-                      <div className="p-3 bg-green-50 border border-green-100 rounded-lg">
-                        <p className="text-sm text-green-800">
-                          ✅ Application approved! Contact the tenant to discuss next steps.
-                        </p>
+                      <div className="space-y-4">
+                        {/* Success Message */}
+                        <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 via-green-50 to-emerald-50">
+                          <CardContent className="pt-6">
+                            <div className="flex items-start gap-4">
+                              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                                <CheckCircle className="h-6 w-6 text-emerald-600" />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="font-bold text-emerald-900 text-lg mb-1">Application Approved! 🎉</h3>
+                                <p className="text-sm text-emerald-700">
+                                  You've successfully approved {application?.user?.full_name}'s rental application for <strong>{application?.property?.title}</strong>.
+                                </p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* What Happens Next */}
+                        <Card className="border-blue-200">
+                          <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/30 border-b border-blue-100">
+                            <CardTitle className="flex items-center gap-2 text-blue-900">
+                              <Clock className="h-5 w-5 text-blue-600" />
+                              What Happens Next
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="pt-6">
+                            <div className="space-y-4">
+                              {/* Step 1 */}
+                              <div className="flex gap-4">
+                                <div className="flex-shrink-0">
+                                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                    <span className="text-sm font-bold text-blue-600">1</span>
+                                  </div>
+                                </div>
+                                <div className="flex-1 pt-1">
+                                  <p className="font-semibold text-slate-900 mb-1">Rental Agreement Generated</p>
+                                  <p className="text-sm text-slate-600">
+                                    A standard Nigerian rental agreement has been automatically created with lease terms, rent amounts, and deposit details.
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Step 2 */}
+                              <div className="flex gap-4">
+                                <div className="flex-shrink-0">
+                                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                    <span className="text-sm font-bold text-blue-600">2</span>
+                                  </div>
+                                </div>
+                                <div className="flex-1 pt-1">
+                                  <p className="font-semibold text-slate-900 mb-1">Tenant Reviews & Signs</p>
+                                  <p className="text-sm text-slate-600">
+                                    The tenant will receive a notification and can review the agreement in their dashboard. They'll sign digitally first.
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Step 3 */}
+                              <div className="flex gap-4">
+                                <div className="flex-shrink-0">
+                                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                    <span className="text-sm font-bold text-blue-600">3</span>
+                                  </div>
+                                </div>
+                                <div className="flex-1 pt-1">
+                                  <p className="font-semibold text-slate-900 mb-1">Your Turn to Sign</p>
+                                  <p className="text-sm text-slate-600">
+                                    Once the tenant signs, you'll receive a notification to review and sign the agreement in your agreements dashboard.
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Step 4 */}
+                              <div className="flex gap-4">
+                                <div className="flex-shrink-0">
+                                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                                    <span className="text-sm font-bold text-green-600">✓</span>
+                                  </div>
+                                </div>
+                                <div className="flex-1 pt-1">
+                                  <p className="font-semibold text-slate-900 mb-1">Agreement Activated</p>
+                                  <p className="text-sm text-slate-600">
+                                    Both signatures complete the agreement. The lease officially begins on the agreed start date.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Quick Actions */}
+                        <Card className="border-orange-200 bg-orange-50">
+                          <CardHeader className="bg-gradient-to-r from-orange-100 to-orange-50 border-b border-orange-100">
+                            <CardTitle className="text-orange-900 text-base">Quick Actions</CardTitle>
+                          </CardHeader>
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <Button 
+                                className="w-full bg-orange-600 hover:bg-orange-700 text-white h-10"
+                                onClick={() => router.push(`/landlord/agreements`)}
+                              >
+                                <FileText className="h-4 w-4 mr-2" />
+                                View Generated Agreement
+                              </Button>
+                              <Button 
+                                variant="outline"
+                                className="w-full border-orange-200 text-orange-700 hover:bg-orange-50 h-10"
+                                onClick={() => router.push(`/landlord/applications`)}
+                              >
+                                <ArrowLeft className="h-4 w-4 mr-2" />
+                                Back to Applications
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Timeline Estimate */}
+                        <Card className="border-slate-200">
+                          <CardContent className="pt-6">
+                            <div className="flex items-start gap-3 text-sm">
+                              <AlertCircle className="h-4 w-4 text-slate-500 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="font-semibold text-slate-900 mb-1">Typical Timeline</p>
+                                <p className="text-slate-600">
+                                  Tenants typically sign within 24 hours. The full agreement process is usually complete within 48 hours.
+                                </p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
                       </div>
                     )}
                   </div>

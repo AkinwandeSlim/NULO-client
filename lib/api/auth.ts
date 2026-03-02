@@ -152,11 +152,11 @@ export const authAPI = {
         console.error('❌ [AUTH API] Response headers:', error.response.headers);
       } else if (error.request) {
         // Request made but no response
-        console.error('❌ [AUTH API] No response received');
-        console.error('❌ [AUTH API] Request:', error.request);
+        console.error(' [AUTH API] No response received');
+        console.error(' [AUTH API] Request:', error.request);
       } else {
         // Error setting up request
-        console.error('❌ [AUTH API] Request setup error:', error.message);
+        console.error(' [AUTH API] Request setup error:', error.message);
       }
       
       throw error;

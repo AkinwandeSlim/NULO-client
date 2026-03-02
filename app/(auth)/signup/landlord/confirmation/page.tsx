@@ -28,10 +28,42 @@ export default function LandlordConfirmationPage() {
       if (user.user_type === 'landlord' && user.email_verified) {
         if (user.onboarding_completed) {
           router.push('/landlord/overview')
-        } else if (user.onboarding_step && user.onboarding_step >= 1) {
-          router.push(`/onboarding/landlord/step-${user.onboarding_step}`)
         } else {
-          router.push('/onboarding/landlord/step-1')
+          // FIX: For established users, verify onboarding status in database
+          const isNewUser = user.created_at && 
+            (Date.now() - new Date(user.created_at).getTime()) < 5 * 60 * 1000; // Created less than 5 min ago
+          
+          if (isNewUser) {
+            // New user - go to onboarding
+            router.push(`/onboarding/landlord/step-${user.onboarding_step || 1}`)
+          } else {
+            // Established user with potentially stale metadata - verify in database
+            console.log('⏳ [CONFIRMATION] Established landlord user, verifying onboarding status...')
+            const verifyOnboarding = async () => {
+              try {
+                const { data } = await supabase
+                  .from('landlord_onboarding')
+                  .select('all_steps_completed, submitted_for_review')
+                  .eq('landlord_id', user.id)
+                  .single()
+                
+                if (data?.all_steps_completed && data?.submitted_for_review) {
+                  // Onboarding complete - go to dashboard
+                  console.log('✅ [CONFIRMATION] Onboarding complete, redirecting to dashboard...')
+                  router.push('/landlord/overview')
+                } else {
+                  // Onboarding incomplete - go to steps
+                  console.log('🎓 [CONFIRMATION] Onboarding incomplete, redirecting to onboarding...')
+                  router.push(`/onboarding/landlord/step-${user.onboarding_step || 1}`)
+                }
+              } catch (error) {
+                console.error('⚠️ [CONFIRMATION] Database verification failed:', error)
+                // On error, assume new user - go to onboarding
+                router.push(`/onboarding/landlord/step-${user.onboarding_step || 1}`)
+              }
+            }
+            verifyOnboarding()
+          }
         }
       } else if (user.user_type === 'landlord' && !user.email_verified) {
         toast.info('Please check your email for the confirmation link')

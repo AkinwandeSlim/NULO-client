@@ -43,8 +43,13 @@ export async function proxy(request: NextRequest) {
   }
 
   // ========================================
-  // AUTHENTICATION CHECK
+  // PROTECTED ROUTES - AUTHENTICATION REQUIRED
   // ========================================
+  // Onboarding routes require authentication
+  if (pathname.startsWith('/onboarding/landlord')) {
+    console.log('🔐 [MIDDLEWARE] Onboarding route detected - checking auth...')
+  }
+
   const { data: { session } } = await supabase.auth.getSession()
 
   if (!session) {
@@ -214,9 +219,11 @@ export async function proxy(request: NextRequest) {
   // ========================================
   if (profile.user_type === 'tenant') {
     
-    // Block access to landlord/admin areas
-    if (pathname.startsWith('/landlord') || pathname.startsWith('/admin')) {
-      console.log('❌ Tenant blocked from landlord/admin')
+    // Block access to landlord/admin areas AND landlord onboarding
+    if (pathname.startsWith('/landlord') || 
+        pathname.startsWith('/admin') ||
+        pathname.startsWith('/onboarding/landlord')) {
+      console.log('❌ Tenant blocked from landlord/admin/onboarding routes')
       const url = request.nextUrl.clone()
       url.pathname = '/properties'
       return NextResponse.redirect(url)

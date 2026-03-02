@@ -14,7 +14,7 @@ import {
   Eye, Plus, MapPin, Bed, Bath, Square,
   ArrowRight, AlertCircle, CheckCircle,
   Bell, Settings, Activity, FileText,
-  Upload, User, Zap, Award, Target, TrendingUp, Mail
+  Upload, User, Zap, Award, Target, TrendingUp, Mail, X
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -28,6 +28,7 @@ import landlordDashboardAPI, {
   formatDate
 } from "@/lib/api/landlordDashboard"
 import { viewingRequestsAPI as landlordViewingRequestsAPI } from "@/lib/api/viewingRequestsLandlord"
+import { applicationsAPI, type Application } from "@/lib/api/applications"
 import { engagementAPI, getEngagementLevelColor, getEngagementLevelTextColor, getEngagementLevelBgColor, getTrustScoreColor, getTrustScoreTextColor, getTrustScoreBgColor, trackEngagement } from "@/lib/api/engagement"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
@@ -50,6 +51,8 @@ export default function LandlordDashboard() {
   const [mounted, setMounted] = useState(false)
   const [viewingRequests, setViewingRequests] = useState<any[]>([])
   const [viewingsLoading, setViewingsLoading] = useState(true)
+  const [applications, setApplications] = useState<Application[]>([])
+  const [applicationsLoading, setApplicationsLoading] = useState(true)
   const [engagementMetrics, setEngagementMetrics] = useState<any>(null)
 
   // Track engagement activities
@@ -115,6 +118,36 @@ export default function LandlordDashboard() {
       }
     }
     fetchViewings()
+  }, [landlordData])
+
+  // Fetch landlord applications (from tenant applicants)
+  useEffect(() => {
+    if (!landlordData) return
+    const fetchApplications = async () => {
+      setApplicationsLoading(true)
+      try {
+        const data = await applicationsAPI.getReceivedApplications()
+        // Handle array or wrapped response
+        const list: Application[] = Array.isArray(data)
+          ? data
+          : Array.isArray((data as any)?.applications)
+          ? (data as any).applications
+          : Array.isArray((data as any)?.data)
+          ? (data as any).data
+          : []
+        // Show only relevant statuses: pending review, approved, rejected (not withdrawn)
+        const filtered = list.filter((app: Application) => 
+          app.status !== 'withdrawn'
+        )
+        setApplications(filtered)
+      } catch (err) {
+        console.error('Failed to fetch applications for overview:', err)
+        setApplications([])
+      } finally {
+        setApplicationsLoading(false)
+      }
+    }
+    fetchApplications()
   }, [landlordData])
 
   // Fetch engagement metrics
@@ -438,6 +471,37 @@ export default function LandlordDashboard() {
               </Card>
             </Link>
 
+            <Link href="/landlord/applications">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
+                      <FileText className="h-6 w-6 text-green-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-600 mb-1">Applications</p>
+                      <p className="text-3xl font-bold text-slate-900">{applications.length}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {applications.filter(a => a.status === 'pending').length > 0 && (
+                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                            {applications.filter(a => a.status === 'pending').length} pending
+                          </span>
+                        )}
+                        {applications.filter(a => a.status === 'approved').length > 0 && (
+                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                            {applications.filter(a => a.status === 'approved').length} approved
+                          </span>
+                        )}
+                        {applications.length === 0 && (
+                          <span className="text-xs text-slate-400">none yet</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+
             <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-center gap-4">
@@ -751,6 +815,110 @@ export default function LandlordDashboard() {
                         <Link href="/landlord/viewings">
                           <Button variant="outline" size="sm" className="w-full border-orange-300 text-orange-600 hover:bg-orange-50">
                             View all {viewingRequests.length} requests <ArrowRight className="ml-1 h-4 w-4" />
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* Applications Section — Track tenant applications */}
+            <section>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 mb-2">Tenant Applications</h2>
+                  <p className="text-gray-600">Applications from tenants interested in your properties</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link href="/landlord/applications">
+                    <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                      View All <ArrowRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </Link>
+                  <Link href="/landlord/properties">
+                    <Button size="sm" className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white">
+                      Manage Properties
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+                <CardContent className="p-6">
+                  {applicationsLoading ? (
+                    <div className="space-y-3">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="h-20 rounded-xl bg-slate-100 animate-pulse" />
+                      ))}
+                    </div>
+                  ) : applications.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <FileText className="h-6 w-6 text-green-600" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">No applications yet</h3>
+                      <p className="text-slate-600">Tenants will submit applications when they're interested in your properties</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {applications.slice(0, 3).map((application) => {
+                        const tenantName = application.user?.full_name || 'Tenant'
+                        const propertyTitle = application.property?.title || 'Property'
+                        const propertyLocation = application.property?.location || 'Location not specified'
+                        
+                        return (
+                          <div
+                            key={application.id}
+                            className="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-green-300 hover:shadow-md transition-all duration-300"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                <h4 className="font-semibold text-slate-900 truncate">{tenantName}</h4>
+                                {application.status === 'approved' && (
+                                  <Badge className="bg-green-100 text-green-800 border-green-200 font-semibold">
+                                    <CheckCircle className="h-3 w-3 mr-1" />Approved
+                                  </Badge>
+                                )}
+                                {application.status === 'pending' && (
+                                  <Badge className="bg-orange-100 text-orange-800 border-orange-200 font-semibold">
+                                    <AlertCircle className="h-3 w-3 mr-1" />Pending
+                                  </Badge>
+                                )}
+                                {application.status === 'rejected' && (
+                                  <Badge className="bg-red-100 text-red-800 border-red-200 font-semibold">
+                                    <X className="h-3 w-3 mr-1" />Rejected
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-700 font-medium mb-1 truncate">{propertyTitle}</p>
+                              <p className="text-sm text-slate-600 flex items-center gap-1">
+                                <MapPin className="h-3 w-3 text-orange-500 flex-shrink-0" />
+                                {propertyLocation}
+                              </p>
+                              <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                                <span>Applied: {formatDate(application.created_at)}</span>
+                                {application.viewed_by_landlord && (
+                                  <span className="text-green-600">
+                                    <Eye className="h-3 w-3 inline mr-1" />
+                                    Viewed
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <Link href={`/landlord/applications/${application.id}`} className="ml-3 flex-shrink-0">
+                              <Button variant="outline" size="sm" className="border-green-300 text-green-600 hover:bg-green-50">
+                                <Eye className="h-4 w-4 mr-1" />Review
+                              </Button>
+                            </Link>
+                          </div>
+                        )
+                      })}
+                      {applications.length > 3 && (
+                        <Link href="/landlord/applications">
+                          <Button variant="outline" size="sm" className="w-full border-green-300 text-green-600 hover:bg-green-50">
+                            View all {applications.length} applications <ArrowRight className="ml-1 h-4 w-4" />
                           </Button>
                         </Link>
                       )}

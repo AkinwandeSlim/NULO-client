@@ -49,6 +49,7 @@ import {
 const tenantSidebarLinks = [
   { href: "/tenant", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tenant/applications", label: "My Applications", icon: FileText },
+  { href: "/tenant/agreements", label: "My Agreements", icon: BookOpen },
   { href: "/tenant/favorites", label: "Saved Properties", icon: Heart },
   { href: "/tenant/viewings", label: "Viewing Requests", icon: Calendar },
   { href: "/tenant/messages", label: "Messages", icon: MessageSquare },
@@ -61,6 +62,7 @@ const landlordSidebarLinks = [
   { href: "/landlord/overview", label: "Dashboard", icon: LayoutDashboard },
   { href: "/landlord/properties", label: "My Properties", icon: Building2 },
   { href: "/landlord/applications", label: "Applications", icon: FileText },
+  { href: "/landlord/agreements", label: "Agreements", icon: BookOpen },
   { href: "/landlord/viewings", label: "Viewing Requests", icon: Calendar },
   { href: "/landlord/messages", label: "Messages", icon: MessageSquare },
   { href: "/landlord/notifications", label: "Notifications", icon: Bell },
@@ -211,8 +213,8 @@ export default function DashboardLayout({
     if (pathname === path) return true
     
     // Special cases: Don't highlight parent routes when on child pages
-    const tenantChildRoutes = ['/tenant/applications', '/tenant/favorites', '/tenant/viewings', '/tenant/messages', '/tenant/notifications', '/tenant/profile']
-    const landlordChildRoutes = ['/landlord/properties', '/landlord/applications', '/landlord/viewings', '/landlord/messages', '/landlord/notifications', '/landlord/profile']
+    const tenantChildRoutes = ['/tenant/applications', '/tenant/agreements', '/tenant/favorites', '/tenant/viewings', '/tenant/messages', '/tenant/notifications', '/tenant/profile']
+    const landlordChildRoutes = ['/landlord/properties', '/landlord/applications', '/landlord/agreements', '/landlord/viewings', '/landlord/messages', '/landlord/notifications', '/landlord/profile']
     
     // For tenant dashboard, don't highlight when on any tenant child route
     if (path === '/tenant' && tenantChildRoutes.some(childRoute => pathname.startsWith(childRoute))) {

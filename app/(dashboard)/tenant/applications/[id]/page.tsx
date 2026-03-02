@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { applicationsAPI, type Application } from "@/lib/api/applications"
+import { agreementsAPI } from "@/lib/api/agreements"
 import { toast } from "sonner"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
@@ -89,8 +90,11 @@ export default function TenantApplicationDetailPage() {
   const applicationId = params.id as string
 
   const [application, setApplication] = useState<Application | null>(null)
+  const [agreement, setAgreement] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isWithdrawing, setIsWithdrawing] = useState(false)
+  const [isCheckingAgreement, setIsCheckingAgreement] = useState(false)
+  const [agreementRetries, setAgreementRetries] = useState(0)
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -99,13 +103,62 @@ export default function TenantApplicationDetailPage() {
     }
   }, [user, isLoading, router])
 
-  // Fetch application on mount
+  // Fetch application and agreement if approved
   useEffect(() => {
     const fetchApplication = async () => {
       try {
         setIsLoading(true)
         const app = await applicationsAPI.getById(applicationId)
         setApplication(app)
+        
+        // If application is approved, fetch the agreement
+        if (app.status === 'approved') {
+          try {
+            console.log('📋 [TENANT APP] Fetching agreements for approved application...')
+            const agreementsResponse = await agreementsAPI.getMyAgreements()
+            console.log('📋 [TENANT APP] Agreements response:', agreementsResponse)
+            
+            // The backend returns direct array, not wrapped object
+            if (Array.isArray(agreementsResponse) && agreementsResponse.length > 0) {
+              console.log('📋 [TENANT APP] Found agreements:', agreementsResponse.length)
+              console.log('📋 [TENANT APP] Looking for agreement with application_id:', applicationId)
+              console.log('📋 [TENANT APP] All agreements details:', agreementsResponse.map(a => ({
+                id: a.id,
+                application_id: a.application_id,
+                status: a.status,
+                created_at: a.created_at
+              })))
+              
+              // Try to find agreement by application_id first
+              let appAgreement = agreementsResponse.find(a => a.application_id === applicationId)
+              
+              console.log('📋 [TENANT APP] Agreement found by application_id:', appAgreement)
+              
+              // If not found by application_id, take the most recent agreement (in case of timing issues)
+              if (!appAgreement && agreementsResponse.length > 0) {
+                console.log('⚠️ [TENANT APP] Agreement not found by application_id, using most recent agreement')
+                appAgreement = agreementsResponse.sort(
+                  (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                )[0]
+                console.log('📋 [TENANT APP] Most recent agreement:', appAgreement)
+              }
+              
+              console.log('📋 [TENANT APP] Final agreement selected:', appAgreement)
+              
+              if (appAgreement) {
+                setAgreement(appAgreement)
+                console.log('✅ [TENANT APP] Agreement set successfully')
+              } else {
+                console.log('❌ [TENANT APP] No agreement found for this application')
+              }
+            } else {
+              console.log('⚠️ [TENANT APP] No agreements found - might still be generating:', agreementsResponse)
+            }
+          } catch (error) {
+            console.error("❌ [TENANT APP] Failed to fetch agreement:", error)
+            // Don't show error for agreement fetching, it might still be generating
+          }
+        }
       } catch (error) {
         console.error("Failed to fetch application:", error)
         toast.error("Failed to load application")
@@ -119,6 +172,65 @@ export default function TenantApplicationDetailPage() {
       fetchApplication()
     }
   }, [user, applicationId, router])
+
+  // Poll for agreement if application is approved but agreement not yet loaded
+  useEffect(() => {
+    if (application?.status !== 'approved' || agreement || agreementRetries > 10) {
+      return // Stop polling if not needed
+    }
+
+    const pollForAgreement = async () => {
+      setIsCheckingAgreement(true)
+      try {
+        console.log(`🔄 [TENANT APP] Polling for agreement (attempt ${agreementRetries + 1})...`)
+        const agreementsResponse = await agreementsAPI.getMyAgreements()
+        
+        if (Array.isArray(agreementsResponse) && agreementsResponse.length > 0) {
+          console.log(`🔄 [TENANT APP] Poll ${agreementRetries + 1}: Found ${agreementsResponse.length} agreements`)
+          console.log('🔄 [TENANT APP] Poll agreements details:', agreementsResponse.map(a => ({
+            id: a.id,
+            application_id: a.application_id,
+            status: a.status,
+            created_at: a.created_at
+          })))
+          
+          // Try to find agreement by application_id first
+          let appAgreement = agreementsResponse.find(a => a.application_id === applicationId)
+          
+          console.log(`🔄 [TENANT APP] Poll ${agreementRetries + 1}: Agreement found by application_id:`, appAgreement)
+          
+          // If not found by application_id, take the most recent agreement
+          if (!appAgreement) {
+            appAgreement = agreementsResponse.sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )[0]
+            console.log(`🔄 [TENANT APP] Poll ${agreementRetries + 1}: Most recent agreement:`, appAgreement)
+          }
+          
+          if (appAgreement) {
+            console.log('✅ [TENANT APP] Agreement found on retry!')
+            setAgreement(appAgreement)
+            setAgreementRetries(0)
+            return
+          }
+        } else {
+          console.log(`🔄 [TENANT APP] Poll ${agreementRetries + 1}: No agreements found yet`, agreementsResponse)
+        }
+        
+        // Agreement not found yet, increment retry counter
+        setAgreementRetries(prev => prev + 1)
+      } catch (error) {
+        console.error("❌ [TENANT APP] Failed to poll for agreement:", error)
+        setAgreementRetries(prev => prev + 1)
+      } finally {
+        setIsCheckingAgreement(false)
+      }
+    }
+
+    // Poll every 3 seconds
+    const timer = setTimeout(pollForAgreement, 3000)
+    return () => clearTimeout(timer)
+  }, [application?.status, agreement, applicationId, agreementRetries])
 
   // Handle withdraw
   const handleWithdraw = async () => {
@@ -626,16 +738,241 @@ export default function TenantApplicationDetailPage() {
           )}
 
           {application.status === 'approved' && (
-            <div className="rounded-lg p-4 border bg-green-50 border-green-200">
-              <div className="flex items-start gap-3">
-                <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-semibold text-green-900 mb-1">Approved</p>
-                  <p className="text-sm text-green-700">
-                    Your application was approved. The landlord will be in touch.
+            <div className="space-y-4">
+              {/* Success Message */}
+              <Card className="border-green-200 bg-gradient-to-br from-green-50 via-emerald-50 to-green-50 shadow-lg">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle className="h-6 w-6 text-green-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-green-900 text-lg mb-1">Application Approved! 🎉</h3>
+                      <p className="text-sm text-green-700 mb-3">
+                        Congratulations! The landlord has approved your rental application for <strong>{application?.property?.title}</strong>. Your journey to move in is underway!
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Agreement Info Card */}
+              <Card className="border-blue-200">
+                <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/30 border-b border-blue-100">
+                  <CardTitle className="flex items-center gap-2 text-blue-900">
+                    <FileText className="h-5 w-5 text-blue-600" />
+                    Your Rental Agreement is Ready
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <p className="text-sm text-slate-700 mb-4">
+                    A formal rental agreement has been automatically generated based on the property details and your application. This document outlines:
                   </p>
+                  <ul className="space-y-2 text-sm text-slate-600 mb-4">
+                    <li className="flex gap-2">
+                      <span className="text-blue-600 font-bold">•</span>
+                      <span>Monthly rent amount and payment terms</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-blue-600 font-bold">•</span>
+                      <span>Security deposit and other charges</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-blue-600 font-bold">•</span>
+                      <span>Lease duration and start date</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-blue-600 font-bold">•</span>
+                      <span>Landlord and tenant responsibilities</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-blue-600 font-bold">•</span>
+                      <span>Termination conditions and notice periods</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
+
+              {/* Step-by-Step Guide */}
+              <Card className="border-orange-200">
+                <CardHeader className="bg-gradient-to-r from-orange-50 to-orange-100/30 border-b border-orange-100">
+                  <CardTitle className="flex items-center gap-2 text-orange-900">
+                    <Clock className="h-5 w-5 text-orange-600" />
+                    How to Complete the Process
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <div className="space-y-4">
+                    {/* Step 1 */}
+                    <div className="flex gap-4 pb-4 border-b border-slate-100">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
+                          <span className="text-sm font-bold text-orange-600">1</span>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-slate-900 mb-1">Review the Agreement</p>
+                        <p className="text-sm text-slate-600">
+                          Click the button below to view the complete rental agreement. Read through all terms carefully, especially rent amount, dates, and responsibilities.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 2 */}
+                    <div className="flex gap-4 pb-4 border-b border-slate-100">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
+                          <span className="text-sm font-bold text-orange-600">2</span>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-slate-900 mb-1">Sign the Agreement</p>
+                        <p className="text-sm text-slate-600">
+                          Add your digital signature. Your signature confirms you've read and accept all terms. The system captures your IP address for verification.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 3 */}
+                    <div className="flex gap-4 pb-4 border-b border-slate-100">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
+                          <span className="text-sm font-bold text-orange-600">3</span>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-slate-900 mb-1">Landlord Reviews</p>
+                        <p className="text-sm text-slate-600">
+                          The landlord will be notified and can review your signature. This typically takes 24-48 hours.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 4 */}
+                    <div className="flex gap-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                          <span className="text-sm font-bold text-green-600">✓</span>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-slate-900 mb-1">Agreement Complete</p>
+                        <p className="text-sm text-slate-600">
+                          Once both parties sign, the agreement is activated. You can then proceed with payment and move-in arrangements.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Important Notes */}
+              <Card className="border-amber-200 bg-amber-50">
+                <CardContent className="pt-6">
+                  <div className="flex gap-3">
+                    <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-amber-900 mb-2">Important Notes</p>
+                      <ul className="space-y-1 text-sm text-amber-800">
+                        <li>• Digital signatures are legally binding in Nigeria</li>
+                        <li>• You'll receive email confirmations at each step</li>
+                        <li>• Keep copies of the signed agreement for your records</li>
+                        <li>• Contact support within 7 days if you notice errors</li>
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Primary CTA */}
+              {agreement ? (
+                <Button
+                  onClick={() => router.push(`/tenant/agreements/${agreement.id}`)}
+                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white h-12 text-base font-semibold rounded-lg shadow-lg"
+                >
+                  <FileText className="h-5 w-5 mr-2" />
+                  View & Sign Rental Agreement
+                </Button>
+              ) : (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <Loader2 className="h-5 w-5 text-blue-600 mt-0.5 animate-spin flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-blue-900 mb-1">
+                        {agreementRetries > 8 ? 'Having Trouble Finding Your Agreement' : 'Generating Your Agreement'}
+                      </p>
+                      <p className="text-sm text-blue-700 mb-3">
+                        {agreementRetries > 8 
+                          ? 'Your agreement is taking longer than expected. This can happen if there was a delay in processing. Try the buttons below to check again.'
+                          : `Your rental agreement is being prepared. Checking... (attempt ${agreementRetries + 1}/11)`
+                        }
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={async () => {
+                            setIsCheckingAgreement(true)
+                            try {
+                              const agreementsResponse = await agreementsAPI.getMyAgreements()
+                              if (agreementsResponse.success && agreementsResponse.agreements && agreementsResponse.agreements.length > 0) {
+                                let appAgreement = agreementsResponse.agreements.find(a => a.application_id === applicationId)
+                                if (!appAgreement) {
+                                  appAgreement = agreementsResponse.agreements.sort(
+                                    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                                  )[0]
+                                }
+                                if (appAgreement) {
+                                  setAgreement(appAgreement)
+                                  toast.success('Agreement found!')
+                                } else {
+                                  toast.error('Agreement still being generated. Try again in a moment.')
+                                }
+                              }
+                            } catch (error) {
+                              toast.error('Failed to check for agreement')
+                              console.error(error)
+                            } finally {
+                              setIsCheckingAgreement(false)
+                            }
+                          }}
+                          disabled={isCheckingAgreement}
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          {isCheckingAgreement ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Checking...
+                            </>
+                          ) : (
+                            'Check Now'
+                          )}
+                        </Button>
+                        <Button
+                          onClick={() => window.location.reload()}
+                          variant="outline"
+                          className="border-blue-200 text-blue-600 hover:bg-blue-100"
+                        >
+                          Refresh Page
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Timeline */}
+              <Card className="border-slate-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3 text-sm">
+                    <Clock className="h-4 w-4 text-slate-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-slate-900 mb-1">Expected Timeline</p>
+                      <p className="text-slate-600">
+                        Most agreements are fully signed within 48 hours. You'll be notified at each step. Average completion time is 24-48 hours from now.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 
