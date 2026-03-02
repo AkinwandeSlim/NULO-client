@@ -34,7 +34,12 @@ import {
   Edit,
   Trash2,
   Eye,
-  Bell
+  Bell,
+  ChevronRight,
+  Briefcase,
+  FileCheck,
+  MapPin,
+  Send
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -45,7 +50,147 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Tenant sidebar links
+// ============================================================================
+// TYPE DEFINITIONS FOR SIDEBAR STRUCTURE
+// ============================================================================
+
+interface SidebarItem {
+  href: string
+  label: string
+  icon: any
+  isMain?: boolean
+  isParent?: boolean
+  indent?: boolean
+  badge?: string
+  external?: boolean
+}
+
+interface SidebarSection {
+  section: string
+  icon?: any
+  collapsible?: boolean
+  items: SidebarItem[]
+}
+
+// Tenant sidebar with grouped sections
+const tenantSidebarSections: SidebarSection[] = [
+  {
+    section: "Dashboard",
+    items: [
+      { href: "/tenant", label: "Dashboard", icon: LayoutDashboard, isMain: true },
+    ]
+  },
+  {
+    section: "Application Journey",
+    icon: Briefcase,
+    items: [
+      { href: "/tenant/viewings", label: "Viewing Requests", icon: Calendar },
+      { href: "/tenant/applications", label: "My Applications", icon: FileText, badge: "pending" },
+      { href: "/tenant/agreements", label: "My Agreements", icon: FileCheck },
+    ]
+  },
+  {
+    section: "Billing & Payments",
+    icon: FileCheck,
+    items: [
+      { href: "/tenant/payments", label: "Make Payment", icon: Send },
+      { href: "/tenant/payment-history", label: "Payment History", icon: BookOpen },
+      { href: "/tenant/invoices", label: "Invoices", icon: FileText },
+    ]
+  },
+  {
+    section: "Explore & Save",
+    icon: Heart,
+    items: [
+      { href: "/properties", label: "Browse Properties", icon: Home, external: true },
+      { href: "/tenant/favorites", label: "Saved Properties", icon: Heart },
+    ]
+  },
+  {
+    section: "Communication",
+    icon: MessageSquare,
+    items: [
+      { href: "/tenant/messages", label: "Messages", icon: MessageSquare, badge: "messages" },
+      { href: "/tenant/notifications", label: "Notifications", icon: Bell, badge: "notifications" },
+    ]
+  },
+]
+
+// Landlord sidebar with grouped sections
+const landlordSidebarSections: SidebarSection[] = [
+  {
+    section: "Dashboard",
+    items: [
+      { href: "/landlord/overview", label: "Dashboard", icon: LayoutDashboard, isMain: true },
+    ]
+  },
+  {
+    section: "Property Management",
+    icon: Building2,
+    collapsible: true,
+    items: [
+      { href: "/landlord/properties", label: "My Properties", icon: Building2, isParent: true },
+      { href: "/landlord/viewings", label: "Viewing Requests", icon: Eye, indent: true },
+      { href: "/landlord/applications", label: "Applications", icon: FileText, indent: true },
+      { href: "/landlord/agreements", label: "Agreements", icon: BookOpen, indent: true },
+    ]
+  },
+  {
+    section: "Financial Management",
+    icon: FileCheck,
+    items: [
+      { href: "/landlord/transactions", label: "Transaction History", icon: BookOpen },
+      { href: "/landlord/invoices", label: "Invoices Issued", icon: FileText },
+      { href: "/landlord/reports", label: "Payment Reports", icon: FileCheck },
+    ]
+  },
+  {
+    section: "Communication",
+    icon: MessageSquare,
+    items: [
+      { href: "/landlord/messages", label: "Messages", icon: MessageSquare, badge: "messages" },
+      { href: "/landlord/notifications", label: "Notifications", icon: Bell, badge: "notifications" },
+    ]
+  },
+]
+
+// Admin sidebar sections
+const adminSidebarSections: SidebarSection[] = [
+  {
+    section: "Dashboard",
+    items: [
+      { href: "/admin", label: "Admin Dashboard", icon: Shield, isMain: true },
+    ]
+  },
+  {
+    section: "User Management",
+    icon: Users,
+    collapsible: true,
+    items: [
+      { href: "/admin/users/tenants", label: "Manage Tenants", icon: User, indent: true },
+      { href: "/admin/users/landlords", label: "Manage Landlords", icon: Building2, indent: true },
+      { href: "/admin/users/create", label: "Create New User", icon: UserPlus, indent: true },
+    ]
+  },
+  {
+    section: "Verification & Compliance",
+    icon: CheckCircle,
+    items: [
+      { href: "/admin/landlord-verification", label: "Landlord Verification", icon: Building2 },
+      { href: "/admin/property-verification", label: "Property Verification", icon: Home },
+      { href: "/admin/verifications", label: "All Verifications", icon: CheckCircle },
+    ]
+  },
+  {
+    section: "Communication",
+    icon: Bell,
+    items: [
+      { href: "/admin/notifications", label: "Notifications", icon: Bell },
+    ]
+  },
+]
+
+// Public navigation links
 const tenantSidebarLinks = [
   { href: "/tenant", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tenant/applications", label: "My Applications", icon: FileText },
@@ -108,6 +253,7 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
   const pathname = usePathname()
   const router = useRouter()
   
@@ -116,6 +262,25 @@ export default function DashboardLayout({
   
   // ✅ Initialize dashboard cache at layout level (benefits all child pages!)
   const { fetchDashboardStats } = useDashboard()
+  
+  // Toggle section collapse
+  const toggleSection = (sectionName: string) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [sectionName]: !prev[sectionName]
+    }))
+  }
+  
+  // Get sidebar sections based on user type
+  const getSidebarSections = () => {
+    if (userType === 'admin') {
+      return adminSidebarSections
+    } else if (userType === 'landlord') {
+      return landlordSidebarSections
+    } else {
+      return tenantSidebarSections
+    }
+  }
   
   // Mount check
   useEffect(() => {
@@ -190,7 +355,8 @@ export default function DashboardLayout({
     }
   }
 
-  const sidebarLinks = getSidebarLinks()
+  // Don't use old sidebar links - we're using getSidebarSections() now
+  // const sidebarLinks = getSidebarLinks()
   
   // Get dashboard home URL based on user type
   const getDashboardHome = () => {
@@ -199,10 +365,29 @@ export default function DashboardLayout({
     return '/tenant'
   }
 
-  // Check if a nav link is active
+  // Check if a nav link is active (precise matching to avoid multi-highlighting)
   const isNavLinkActive = (path: string) => {
-    if (path === '/') return pathname === '/'
-    return pathname.startsWith(path)
+    // Main dashboard pages - exact match ONLY (don't highlight when on child pages)
+    if (path === '/tenant' || path === '/landlord/overview' || path === '/admin') {
+      return pathname === path
+    }
+    
+    // Exact match for other pages
+    if (pathname === path) return true
+    
+    // Check if this is a nested route under this path
+    // Only match if the next character is a slash (prevents false positives)
+    if (pathname.startsWith(path + '/')) return true
+    
+    // Special cases: Billing pages
+    if (path === '/tenant/payments' && (pathname === '/tenant/payments/new' || pathname.startsWith('/tenant/payments/'))) return true
+    if (path === '/tenant/payment-history' && pathname.startsWith('/tenant/payment-history')) return true
+    if (path === '/tenant/invoices' && pathname.startsWith('/tenant/invoices')) return true
+    if (path === '/landlord/transactions' && pathname.startsWith('/landlord/transactions')) return true
+    if (path === '/landlord/invoices' && pathname.startsWith('/landlord/invoices')) return true
+    if (path === '/landlord/reports' && pathname.startsWith('/landlord/reports')) return true
+    
+    return false
   }
 
   // Enhanced active detection for dashboard links (handles nested routes)
@@ -280,171 +465,77 @@ export default function DashboardLayout({
             {/* Dashboard Section Header */}
             <div className="mb-4">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2">
-                {userType === 'admin' ? 'Admin Tools' : userType === 'landlord' ? 'Property Management' : 'My Dashboard'}
+                {userType === 'admin' ? 'Admin Control Panel' : userType === 'landlord' ? 'Property Management' : 'Rental Journey'}
               </p>
             </div>
 
-            {/* Navigation Links */}
-            <nav className="flex-1 space-y-2 overflow-y-auto">
-              
-              {/* {sidebarLinks.map((link) => {
-                const Icon = link.icon
-                const isActive = pathname === link.href
-                
-                if (link.isDropdown) {
-                  return (
-                    <DropdownMenu key={link.href}>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant={pathname.startsWith(link.href) ? "default" : "ghost"}
-                          className={`w-full justify-start gap-3 ${
-                            pathname.startsWith(link.href)
-                              ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700"
-                              : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
-                          }`}
-                        >
-                          <Icon className="h-5 w-5" />
-                          {link.label}
-                          <ChevronDown className="h-4 w-4 ml-auto" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-56" align="start">
-                        <DropdownMenuLabel>User Management Options</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {link.dropdownItems?.map((item) => {
-                          const ItemIcon = item.icon
-                          const isItemActive = pathname === item.href
-                          return (
-                            <DropdownMenuItem key={item.href} asChild>
-                              <Link 
-                                href={item.href}
-                                onClick={() => setSidebarOpen(false)}
-                                className={`w-full p-2 flex items-center gap-3 ${
-                                  isItemActive ? "bg-orange-50 text-orange-600" : ""
-                                }`}
-                              >
-                                <ItemIcon className="h-4 w-4" />
-                                <div className="flex-1">
-                                  <p className="font-medium">{item.label}</p>
-                                  <p className="text-xs text-gray-500">{item.description}</p>
-                                </div>
-                              </Link>
-                            </DropdownMenuItem>
-                          )
-                        })}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )
-                }
+            {/* Navigation Links with Sections */}
+            <nav className="flex-1 space-y-1 overflow-y-auto">
+              {getSidebarSections().map((sectionGroup, idx) => {
+                const isCollapsed = collapsedSections[sectionGroup.section]
+                const SectionIcon = sectionGroup.icon
                 
                 return (
-                  <Link key={link.href} href={link.href}>
-                    <Button
-                      variant={isActive ? "default" : "ghost"}
-                      className={`w-full justify-start gap-3 ${
-                        isActive
-                          ? "bg-orange-500 text-white hover:bg-orange-600"
-                          : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
-                      }`}
-                      onClick={() => setSidebarOpen(false)}
-                    >
-                      <Icon className="h-5 w-5" />
-                      {link.label}
-                    </Button>
-                  </Link>
-                )
-              })} */}
+                  <div key={`${sectionGroup.section}-${idx}`}>
+                    {/* Section Header (if collapsible) */}
+                    {sectionGroup.collapsible ? (
+                      <button
+                        onClick={() => toggleSection(sectionGroup.section)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-slate-100 transition-colors group"
+                      >
+                        <div className="flex items-center gap-3 flex-1">
+                          {SectionIcon && <SectionIcon className="h-4 w-4 text-slate-600 group-hover:text-orange-600" />}
+                          <span className="text-sm font-semibold text-slate-700 group-hover:text-orange-600">
+                            {sectionGroup.section}
+                          </span>
+                        </div>
+                        <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
+                      </button>
+                    ) : (
+                      <div className="px-3 py-2 mb-2">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          {sectionGroup.section}
+                        </p>
+                      </div>
+                    )}
 
-          {userType === 'admin' ? adminSidebarLinks.map((link) => {
-                          const Icon = link.icon
-                          const isActive = pathname === link.href
-                          
-                          if (link.isDropdown) {
-                            return (
-                              <DropdownMenu key={link.href}>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant={pathname.startsWith(link.href) ? "default" : "ghost"}
-                                    className={`w-full justify-start gap-3 ${
-                                      pathname.startsWith(link.href)
-                                        ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700"
-                                        : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
-                                    }`}
-                                  >
-                                    <Icon className="h-5 w-5" />
-                                    {link.label}
-                                    <ChevronDown className="h-4 w-4 ml-auto" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent className="w-56" align="start">
-                                  <DropdownMenuLabel>User Management Options</DropdownMenuLabel>
-                                  <DropdownMenuSeparator />
-                                  {link.dropdownItems?.map((item) => {
-                                    const ItemIcon = item.icon
-                                    const isItemActive = pathname === item.href
-                                    return (
-                                      <DropdownMenuItem key={item.href} asChild>
-                                        <Link 
-                                          href={item.href}
-                                          onClick={() => setSidebarOpen(false)}
-                                          className={`w-full p-2 flex items-center gap-3 ${
-                                            isItemActive ? "bg-orange-50 text-orange-600" : ""
-                                          }`}
-                                        >
-                                          <ItemIcon className="h-4 w-4" />
-                                          <div className="flex-1">
-                                            <p className="font-medium">{item.label}</p>
-                                            <p className="text-xs text-gray-500">{item.description}</p>
-                                          </div>
-                                        </Link>
-                                      </DropdownMenuItem>
-                                    )
-                                  })}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )
-                          }
+                    {/* Section Items */}
+                    {!isCollapsed && (
+                      <div className={sectionGroup.collapsible ? "pl-2 space-y-1 mb-3" : "space-y-1 mb-3"}>
+                        {sectionGroup.items.map((item) => {
+                          const Icon = item.icon
+                          const isActive = isNavLinkActive(item.href)
                           
                           return (
-                            <Link key={link.href} href={link.href}>
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              onClick={() => setSidebarOpen(false)}
+                            >
                               <Button
                                 variant={isActive ? "default" : "ghost"}
-                                className={`w-full justify-start gap-3 ${
-                                  isActive
-                                    ? "bg-orange-500 text-white hover:bg-orange-600"
-                                    : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
-                                }`}
-                                onClick={() => setSidebarOpen(false)}
-                              >
-                                <Icon className="h-5 w-5" />
-                                {link.label}
-                              </Button>
-                            </Link>
-                          )
-                        }) :sidebarLinks.map((link) => {
-                          const Icon = link.icon
-                          const isActive = isDashboardLinkActive(link.href)
-                          
-                          return (
-                            <Link key={link.href} href={link.href}>
-                              <Button
-                                variant={isActive ? "default" : "ghost"}
-                                className={`w-full justify-start gap-3 ${
+                                className={`w-full justify-start gap-3 text-sm ${
+                                  item.indent ? 'pl-8' : ''
+                                } ${
                                   isActive
                                     ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 shadow-sm"
                                     : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
                                 }`}
-                                onClick={() => setSidebarOpen(false)}
                               >
-                                <Icon className="h-5 w-5" />
-                                {link.label}
+                                <Icon className="h-4 w-4 flex-shrink-0" />
+                                <span className="flex-1 text-left">{item.label}</span>
                                 {isActive && (
-                                  <div className="ml-auto w-2 h-2 bg-white rounded-full animate-pulse" />
+                                  <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
                                 )}
                               </Button>
                             </Link>
                           )
-                        })} 
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </nav>
 
             {/* Bottom Actions */}
