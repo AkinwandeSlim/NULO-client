@@ -96,7 +96,9 @@ export const engagementAPI = {
   // Get user engagement metrics
   async getEngagementMetrics(userId: string): Promise<EngagementMetrics> {
     try {
-      const response = await apiClient.get(`/api/v1/engagement/${userId}`);
+      const response = await apiClient.get(`/api/v1/engagement/${userId}`, {
+        timeout: 60000 // 60 seconds - slow endpoint
+      });
       return response.data;
     } catch (error) {
       console.error('Failed to fetch engagement metrics:', error);

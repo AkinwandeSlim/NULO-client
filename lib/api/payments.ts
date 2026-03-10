@@ -17,6 +17,7 @@ export interface Transaction {
   tenant_id: string
   landlord_id: string
   property_id: string
+  agreement_id: string | null
   application_id: string | null
   amount: number           // NGN
   currency: string
@@ -124,6 +125,17 @@ export const paymentsAPI = {
     const response = await apiClient.get<PaymentStatusResponse>(`/api/v1/payments/${transactionId}`);
     return response.data.payment;
   },
-};
 
-export default paymentsAPI;
+  /**
+   * Dev only: Manually confirm a payment by triggering webhook simulation.
+   * Used for localhost testing since Paystack webhooks can't reach localhost.
+   * POST /api/v1/payments/confirm-webhook-manually?reference=NULO-...
+   */
+  confirmWebhookManually: async (reference: string): Promise<{ success: boolean; message?: string; detail?: string }> => {
+    const response = await apiClient.post<{ success: boolean; message?: string; detail?: string }>(
+      `/api/v1/payments/confirm-webhook-manually?reference=${encodeURIComponent(reference)}`,
+      {}
+    );
+    return response.data;
+  },
+};

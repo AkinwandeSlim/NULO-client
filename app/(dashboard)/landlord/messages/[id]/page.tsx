@@ -61,13 +61,13 @@ export default function ChatPage() {
 
   const fetchConversation = async () => {
     try {
-      const data = await messagesAPI.getConversations()
-      const conv = data.conversations.find((c: any) => c.id === conversationId)
+      const conversations = await messagesAPI.getConversations()
+      const conv = conversations.find((c: any) => c.id === conversationId)
       if (conv) {
         setConversation(conv)
       } else {
         toast.error('Conversation not found')
-        router.push('/dashboard/tenant/messages')
+        router.push('/landlord/messages')
       }
     } catch (error: any) {
       console.error('Failed to fetch conversation:', error)
@@ -95,10 +95,10 @@ export default function ChatPage() {
 
   const handleSendMessage = async (content: string) => {
     try {
-      const data = await messagesAPI.sendMessage(conversationId, { content })
+      const response = await messagesAPI.sendMessage(conversationId, content)
       
       // Add new message to list
-      setMessages([...messages, data.message])
+      setMessages(prev => [...prev, response])
       
       // Update conversation
       if (conversation) {
@@ -133,7 +133,7 @@ export default function ChatPage() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <p className="text-slate-600 mb-4">Conversation not found</p>
-          <Link href="/dashboard/tenant/messages">
+          <Link href="/landlord/messages">
             <Button className="bg-orange-500 hover:bg-orange-600">
               Back to Messages
             </Button>
@@ -149,7 +149,7 @@ export default function ChatPage() {
   return (
     <div className="max-w-5xl mx-auto">
       {/* Back Button */}
-      <Link href="/dashboard/tenant/messages">
+      <Link href="/landlord/messages">
         <Button variant="ghost" size="sm" className="mb-4 text-slate-600 hover:text-slate-900">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Messages

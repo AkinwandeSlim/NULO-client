@@ -14,7 +14,8 @@ import {
   Eye, Plus, MapPin, Bed, Bath, Square,
   ArrowRight, AlertCircle, CheckCircle,
   Bell, Settings, Activity, FileText,
-  Upload, User, Zap, Award, Target, TrendingUp, Mail, X
+  Upload, User, Zap, Award, Target, TrendingUp, Mail, X,
+  FileCheck, AlertTriangle, Loader2, RefreshCw
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -29,6 +30,8 @@ import landlordDashboardAPI, {
 } from "@/lib/api/landlordDashboard"
 import { viewingRequestsAPI as landlordViewingRequestsAPI } from "@/lib/api/viewingRequestsLandlord"
 import { applicationsAPI, type Application } from "@/lib/api/applications"
+import { agreementsAPI } from "@/lib/api/agreements"
+import { paymentsAPI } from "@/lib/api/payments"
 import { engagementAPI, getEngagementLevelColor, getEngagementLevelTextColor, getEngagementLevelBgColor, getTrustScoreColor, getTrustScoreTextColor, getTrustScoreBgColor, trackEngagement } from "@/lib/api/engagement"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
@@ -49,11 +52,31 @@ export default function LandlordDashboard() {
   } = useLandlordDashboard()
 
   const [mounted, setMounted] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [viewingRequests, setViewingRequests] = useState<any[]>([])
   const [viewingsLoading, setViewingsLoading] = useState(true)
   const [applications, setApplications] = useState<Application[]>([])
   const [applicationsLoading, setApplicationsLoading] = useState(true)
   const [engagementMetrics, setEngagementMetrics] = useState<any>(null)
+  const [agreements, setAgreements] = useState<any[]>([])
+  const [agreementsLoading, setAgreementsLoading] = useState(true)
+  const [receivedPayments, setReceivedPayments] = useState<any[]>([])
+  const [paymentsLoading, setPaymentsLoading] = useState(true)
+
+  // Handle dashboard refresh
+  const handleRefresh = useCallback(async () => {
+    if (!user?.id || isRefreshing) return
+    setIsRefreshing(true)
+    try {
+      invalidateLandlordCache?.()
+      await fetchLandlordDashboard()
+      toast.success("Dashboard refreshed")
+    } catch {
+      toast.error("Failed to refresh dashboard")
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [user?.id, isRefreshing, invalidateLandlordCache, fetchLandlordDashboard])
 
   // Track engagement activities
   const trackActivity = useCallback(async (activityType: any, metadata?: any) => {
@@ -66,6 +89,14 @@ export default function LandlordDashboard() {
   const getUserName = useMemo(() => () =>
     userProfile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'there'
   , [userProfile, user])
+
+  // Calculate agreement stats from fetched data
+  const agreementStats = useMemo(() => {
+    const totalCount = agreements.length
+    const fullySignedCount = agreements.filter(a => a.status === 'SIGNED' || a.status === 'ACTIVE').length
+    const pendingCount = agreements.filter(a => a.status === 'PENDING_LANDLORD' || a.status === 'PENDING_TENANT').length
+    return { totalCount, fullySignedCount, pendingCount }
+  }, [agreements])
 
   const handleNotificationClick = useCallback(async (notification: Notification) => {
     if (!notification.read) {
@@ -92,13 +123,23 @@ export default function LandlordDashboard() {
   }, [mounted, user, landlordData])
 
   // Fetch viewing requests once landlordData is available.
-  // Tied to landlordData (not mounted/user) to avoid race conditions during auth hydration.
-  // Mirrors the tenant dashboard pattern: direct fetch, no user_type re-check needed.
+  // First check if data is in cache, otherwise fetch separately
   useEffect(() => {
     if (!landlordData) return
+    
     const fetchViewings = async () => {
-      setViewingsLoading(true)
       try {
+        // 💾 CHECK CACHE FIRST: Use cached data if available
+        if (landlordData.viewingRequests && landlordData.viewingRequests.length > 0) {
+          console.log('📦 [OVERVIEW] Using cached viewing requests')
+          setViewingRequests(landlordData.viewingRequests.filter((v: any) => v.status === 'pending' || v.status === 'confirmed'))
+          setViewingsLoading(false)
+          return
+        }
+
+        // 🔄 FALLBACK: Fetch separately if not in cache
+        console.log('🔄 [OVERVIEW] Fetching viewing requests from API...')
+        setViewingsLoading(true)
         const data = await landlordViewingRequestsAPI.getLandlord()
         // getLandlord() returns typed objects directly -- handle array or wrapped response
         const list: any[] = Array.isArray(data)
@@ -111,7 +152,7 @@ export default function LandlordDashboard() {
         // Show pending + confirmed only -- completed/cancelled not actionable on overview
         setViewingRequests(list.filter((v: any) => v.status === 'pending' || v.status === 'confirmed'))
       } catch (err) {
-        console.error('Failed to fetch viewings for overview:', err)
+        console.error('❌ Failed to fetch viewings for overview:', err)
         setViewingRequests([])
       } finally {
         setViewingsLoading(false)
@@ -121,11 +162,23 @@ export default function LandlordDashboard() {
   }, [landlordData])
 
   // Fetch landlord applications (from tenant applicants)
+  // First check if data is in cache, otherwise fetch separately
   useEffect(() => {
     if (!landlordData) return
+    
     const fetchApplications = async () => {
-      setApplicationsLoading(true)
       try {
+        // 💾 CHECK CACHE FIRST: Use cached data if available
+        if (landlordData.receivedApplications && landlordData.receivedApplications.length > 0) {
+          console.log('📦 [OVERVIEW] Using cached received applications')
+          setApplications(landlordData.receivedApplications as any[])
+          setApplicationsLoading(false)
+          return
+        }
+
+        // 🔄 FALLBACK: Fetch separately if not in cache
+        console.log('🔄 [OVERVIEW] Fetching applications from API...')
+        setApplicationsLoading(true)
         const data = await applicationsAPI.getReceivedApplications()
         // Handle array or wrapped response
         const list: Application[] = Array.isArray(data)
@@ -141,7 +194,7 @@ export default function LandlordDashboard() {
         )
         setApplications(filtered)
       } catch (err) {
-        console.error('Failed to fetch applications for overview:', err)
+        console.error('❌ Failed to fetch applications for overview:', err)
         setApplications([])
       } finally {
         setApplicationsLoading(false)
@@ -150,28 +203,183 @@ export default function LandlordDashboard() {
     fetchApplications()
   }, [landlordData])
 
+  // Fetch landlord agreements
+  // First check if data is in cache, otherwise fetch separately
+  useEffect(() => {
+    if (!landlordData) return
+    
+    const fetchAgreements = async () => {
+      try {
+        // 💾 CHECK CACHE FIRST: Use cached data if available
+        if (landlordData.agreements && landlordData.agreements.length > 0) {
+          console.log('📦 [OVERVIEW] Using cached agreements')
+          setAgreements(landlordData.agreements)
+          setAgreementsLoading(false)
+          return
+        }
+
+        // 🔄 FALLBACK: Fetch separately if not in cache
+        console.log('🔄 [OVERVIEW] Fetching agreements from API...')
+        setAgreementsLoading(true)
+        const data = await agreementsAPI.getMyAgreements()
+        // Handle array or wrapped response
+        const list: any[] = Array.isArray(data)
+          ? data
+          : Array.isArray((data as any)?.agreements)
+          ? (data as any).agreements
+          : Array.isArray((data as any)?.data)
+          ? (data as any).data
+          : []
+        // Show all agreements with relevant statuses
+        const filtered = list.filter((agreement: any) => 
+          ['ACTIVE', 'SIGNED', 'PENDING_LANDLORD', 'PENDING_TENANT', 'EXPIRED'].includes(agreement.status)
+        )
+        setAgreements(filtered)
+      } catch (err) {
+        console.error('❌ Failed to fetch agreements for overview:', err)
+        setAgreements([])
+      } finally {
+        setAgreementsLoading(false)
+      }
+    }
+    fetchAgreements()
+  }, [landlordData])
+
   // Fetch engagement metrics
+  // First check if data is in cache, otherwise fetch separately
   useEffect(() => {
     if (!user?.id) return
     
     const fetchEngagementMetrics = async () => {
       try {
+        // 💾 CHECK CACHE FIRST: Use cached data if available
+        if (landlordData?.engagementMetrics) {
+          console.log('📦 [OVERVIEW] Using cached engagement metrics')
+          setEngagementMetrics(landlordData.engagementMetrics)
+          return
+        }
+
+        // 🔄 FALLBACK: Fetch separately if not in cache
+        console.log('🔄 [OVERVIEW] Fetching engagement metrics from API...')
         const engagementData = await engagementAPI.getEngagementMetrics(user.id)
         setEngagementMetrics(engagementData)
       } catch (error) {
-        console.error('Failed to fetch engagement metrics:', error)
+        console.error('❌ Failed to fetch engagement metrics:', error)
       }
     }
     
     fetchEngagementMetrics()
-  }, [user?.id])
+  }, [user?.id, landlordData?.engagementMetrics])
+
+  // Fetch received payments
+  useEffect(() => {
+    if (!user?.id) return
+    
+    const fetchPayments = async () => {
+      try {
+        console.log('🔄 [OVERVIEW] Fetching received payments...')
+        setPaymentsLoading(true)
+        const data = await paymentsAPI.getReceivedPayments()
+        setReceivedPayments(data.payments || [])
+      } catch (error) {
+        console.error('❌ Failed to fetch payments:', error)
+        setReceivedPayments([])
+      } finally {
+        setPaymentsLoading(false)
+      }
+    }
+    
+    fetchPayments()
+  }, [user?.id, paymentsAPI.getReceivedPayments]) // Add paymentsAPI.getReceivedPayments to dependency array
+
+  // Calculate payment amounts by type
+  const totalRentAmount = useMemo(() => {
+    return receivedPayments
+      .filter(p => p.status === 'released' && p.transaction_type === 'rent_payment')
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [receivedPayments])
+
+  const totalSecurityDeposits = useMemo(() => {
+    return receivedPayments
+      .filter(p => p.status === 'released' && p.transaction_type === 'security_deposit')
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [receivedPayments])
+
+  const totalReceivedAmount = useMemo(() => {
+    return totalRentAmount + totalSecurityDeposits
+  }, [totalRentAmount, totalSecurityDeposits])
+
+  // Calculate pending amount
+  const totalPendingAmount = useMemo(() => {
+    return receivedPayments
+      .filter(p => p.status === 'pending')
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [receivedPayments])
+
+  // ─── Helper Functions ───────────────────────────────────────────────────────────
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case 'viewing_requested':
+        return <Calendar className="h-4 w-4 text-blue-600" />
+      case 'viewing_confirmed':
+        return <CheckCircle className="h-4 w-4 text-green-600" />
+      case 'application_received':
+        return <FileText className="h-4 w-4 text-purple-600" />
+      case 'message':
+        return <MessageSquare className="h-4 w-4 text-blue-600" />
+      case 'email_verified':
+        return <CheckCircle className="h-4 w-4 text-green-600" />
+      case 'system':
+        return <Bell className="h-4 w-4 text-slate-600" />
+      default:
+        return <Activity className="h-4 w-4 text-slate-600" />
+    }
+  }
+
+  const getActivityTitle = (type: string, activity: any) => {
+    switch (type) {
+      case 'viewing_requested':
+        return `Viewing Request from ${activity.tenant?.full_name || 'Tenant'}`
+      case 'viewing_confirmed':
+        return `Viewing Confirmed with ${activity.tenant?.full_name || 'Tenant'}`
+      case 'application_received':
+        return `Application from ${activity.tenant?.full_name || 'Tenant'}`
+      case 'message':
+        return `Message from ${activity.sender?.full_name || activity.tenant?.full_name || 'User'}`
+      case 'email_verified':
+        return 'Email Verified'
+      case 'system':
+        return activity.title || 'System Update'
+      default:
+        return activity.title || 'Activity'
+    }
+  }
+
+  const getActivityDescription = (type: string, activity: any) => {
+    switch (type) {
+      case 'viewing_requested':
+        return `Requested viewing for ${activity.property?.title || 'Property'}`
+      case 'viewing_confirmed':
+        return `Viewing confirmed for ${activity.property?.title || 'Property'}`
+      case 'application_received':
+        return `Applied to ${activity.property?.title || 'Property'}`
+      case 'message':
+        return activity.message || 'New message'
+      case 'email_verified':
+        return 'Email address verified successfully'
+      case 'system':
+        return activity.message || activity.title || 'System update'
+      default:
+        return activity.message || activity.title || 'Activity update'
+    }
+  }
 
   // Memoize viewing requests list to prevent unnecessary re-renders
   const viewingRequestsList = useMemo(() => viewingRequests, [viewingRequests])
 
   // Memoize progressive banner to prevent unnecessary re-renders
   const progressiveBanner = useMemo(() => {
-    // State 1: Onboarding steps not all done
+    // ── State 1: Onboarding incomplete ────────────────────────────────────────
     if (!landlordData?.onboarding?.all_steps_completed) {
       return (
         <Card className="mb-8 border-orange-200 bg-orange-50">
@@ -196,7 +404,7 @@ export default function LandlordDashboard() {
       )
     }
 
-    // State 2: All steps done + submitted → awaiting admin review
+    // ── State 2: Submitted + awaiting admin review ─────────────────────────────
     if (landlordData?.onboarding?.all_steps_completed && landlordData?.onboarding?.submitted_for_review && landlordData?.profile && !isLandlordVerified(landlordData.profile)) {
       return (
         <Card className="mb-8 border-blue-200 bg-blue-50">
@@ -216,6 +424,7 @@ export default function LandlordDashboard() {
       )
     }
 
+    // ── State 3: Verified but no properties yet ────────────────────────────────
     if (landlordData?.profile && isLandlordVerified(landlordData.profile) && landlordData?.stats?.total_properties === 0) {
       return (
         <Card className="mb-8 border-green-200 bg-green-50">
@@ -240,7 +449,156 @@ export default function LandlordDashboard() {
       )
     }
 
+    // ── State 4: Payment received (within last 48 hours) ──────────────────────
+    // Shown BEFORE the viewings banner so the landlord sees the post-payment
+    // next steps immediately — not buried below other noise.
+    // Window is 48h (not 5min) because landlords don't live on the dashboard.
+    if (!paymentsLoading && receivedPayments.length > 0) {
+      const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000
+      const recentPayment = receivedPayments.find((p: any) =>
+        p.status === 'released' && new Date(p.released_at ?? p.created_at).getTime() > fortyEightHoursAgo
+      )
+
+      if (recentPayment) {
+        const tenantName = recentPayment.tenant?.full_name || 'your tenant'
+        const propertyTitle = recentPayment.property?.title || 'your property'
+        const isRent = recentPayment.transaction_type === 'rent_payment'
+        const isDeposit = recentPayment.transaction_type === 'security_deposit'
+
+        return (
+          <Card className="mb-8 border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-start gap-4">
+                <div className="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <h3 className="font-bold text-green-900">
+                      {isRent ? 'Rent Payment Confirmed' : isDeposit ? 'Security Deposit Received' : 'Payment Confirmed'}
+                    </h3>
+                    <Badge className="bg-green-600 text-white border-0">
+                      {formatCurrency(recentPayment.amount)}
+                    </Badge>
+                  </div>
+
+                  <p className="text-green-800 text-sm mb-1">
+                    <span className="font-semibold">{tenantName}</span> has paid for{' '}
+                    <span className="font-semibold">{propertyTitle}</span>.
+                    {isRent && ' Their tenancy agreement is now active.'}
+                  </p>
+
+                  {/* Next-step checklist */}
+                  <div className="mt-3 mb-4 space-y-1.5">
+                    <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-2">Your next steps</p>
+                    <div className="flex items-center gap-2 text-sm text-green-800">
+                      <div className="h-5 w-5 rounded-full border-2 border-green-400 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-green-600">1</span>
+                      </div>
+                      <span>Message <span className="font-semibold">{tenantName}</span> to confirm move-in date and key handover</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-green-800">
+                      <div className="h-5 w-5 rounded-full border-2 border-green-400 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-green-600">2</span>
+                      </div>
+                      <span>Review the signed agreement to confirm move-in date and terms</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-green-800">
+                      <div className="h-5 w-5 rounded-full border-2 border-green-400 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-green-600">3</span>
+                      </div>
+                      <span>Prepare the property — ensure utilities, access, and keys are ready</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {recentPayment.tenant_id && (
+                      <Link href={`/landlord/messages?tenant=${recentPayment.tenant_id}`}>
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
+                          <Mail className="h-4 w-4 mr-2" />Message {tenantName.split(' ')[0]}
+                        </Button>
+                      </Link>
+                    )}
+                    <Link href="/landlord/agreements">
+                      <Button size="sm" variant="outline" className="border-green-400 text-green-700 hover:bg-green-100">
+                        <FileCheck className="h-4 w-4 mr-2" />View Agreement
+                      </Button>
+                    </Link>
+                    <Link href="/landlord/payments">
+                      <Button size="sm" variant="ghost" className="text-green-700 hover:bg-green-100">
+                        <DollarSign className="h-4 w-4 mr-2" />Payment Details
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+                <Badge className="bg-green-100 text-green-800 border-green-300 flex-shrink-0">New</Badge>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      }
+    }
+
+    // ── State 5: ACTIVE agreement — coordinate move-in (no very recent payment,
+    //    but tenant is active and landlord may still need to action things)   ────
+    // Show if there's an ACTIVE agreement whose status changed in the last 7 days
+    // and the landlord hasn't sent a message to this tenant recently.
+    // We use `agreement.updated_at` as a proxy for "recently activated".
+    if (!agreementsLoading && agreements.length > 0) {
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+      const newlyActiveAgreement = agreements.find((a: any) =>
+        a.status === 'ACTIVE' && new Date(a.updated_at ?? a.created_at).getTime() > sevenDaysAgo
+      )
+
+      if (newlyActiveAgreement) {
+        const tenantName = newlyActiveAgreement.tenant?.full_name || 'Your tenant'
+        const propertyTitle = newlyActiveAgreement.property?.title || 'your property'
+        const startDate = newlyActiveAgreement.start_date
+          ? new Date(newlyActiveAgreement.start_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })
+          : null
+
+        return (
+          <Card className="mb-8 border-emerald-200 bg-emerald-50">
+            <CardContent className="p-5">
+              <div className="flex items-start gap-4">
+                <div className="h-10 w-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Building2 className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-emerald-900 mb-1">
+                    New Active Tenancy — Coordinate Move-In
+                  </h3>
+                  <p className="text-emerald-800 text-sm mb-3">
+                    <span className="font-semibold">{tenantName}</span> is now your active tenant at{' '}
+                    <span className="font-semibold">{propertyTitle}</span>.
+                    {startDate && <> Move-in date: <span className="font-semibold">{startDate}</span>.</>}
+                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {newlyActiveAgreement.tenant_id && (
+                      <Link href={`/landlord/messages?tenant=${newlyActiveAgreement.tenant_id}`}>
+                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                          <Mail className="h-4 w-4 mr-2" />Welcome Tenant
+                        </Button>
+                      </Link>
+                    )}
+                    <Link href={`/landlord/agreements/${newlyActiveAgreement.id}`}>
+                      <Button size="sm" variant="outline" className="border-emerald-400 text-emerald-700 hover:bg-emerald-100">
+                        <FileCheck className="h-4 w-4 mr-2" />View Agreement
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 flex-shrink-0">Move-In</Badge>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      }
+    }
+
+    // ── State 6: Pending viewing requests ─────────────────────────────────────
     if (viewingRequestsList.filter((v: any) => v.status === 'pending').length > 0) {
+      const pendingViewings = viewingRequestsList.filter((v: any) => v.status === 'pending').length
       return (
         <Card className="mb-8 border-blue-200 bg-blue-50">
           <CardContent className="p-4">
@@ -248,7 +606,7 @@ export default function LandlordDashboard() {
               <Calendar className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
                 <h3 className="font-semibold text-blue-900 mb-1">
-                  You have {viewingRequestsList.filter((v: any) => v.status === 'pending').length} viewing request{viewingRequestsList.filter((v: any) => v.status === 'pending').length > 1 ? 's' : ''}
+                  You have {pendingViewings} viewing request{pendingViewings > 1 ? 's' : ''}
                 </h3>
                 <p className="text-blue-700 text-sm mb-3">
                   Tenants are interested in your properties! Review and respond promptly.
@@ -259,7 +617,7 @@ export default function LandlordDashboard() {
                   </Button>
                 </Link>
               </div>
-              <Badge className="bg-blue-100 text-blue-800">{viewingRequestsList.filter((v: any) => v.status === 'pending').length} Pending</Badge>
+              <Badge className="bg-blue-100 text-blue-800">{pendingViewings} Pending</Badge>
             </div>
           </CardContent>
         </Card>
@@ -267,7 +625,7 @@ export default function LandlordDashboard() {
     }
 
     return null
-  }, [landlordData, viewingRequestsList])
+  }, [landlordData, viewingRequestsList, receivedPayments, paymentsLoading, agreements, agreementsLoading])
 
   // ─── Loading — same spinner as tenant ────────────────────────────────────────
   if (!mounted || loading) {
@@ -385,6 +743,11 @@ export default function LandlordDashboard() {
 
             {/* Icon-only buttons — same as tenant */}
             <div className="flex items-center gap-3">
+              <Button variant="outline" size="lg"
+                className="border-orange-200 text-orange-700 hover:bg-orange-50"
+                onClick={handleRefresh} disabled={isRefreshing} title="Refresh dashboard">
+                {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              </Button>
               <Link href="/landlord/messages">
                 <Button variant="outline" size="lg" className="relative border-orange-200 text-orange-700 hover:bg-orange-50">
                   <MessageSquare className="h-4 w-4" />
@@ -407,57 +770,105 @@ export default function LandlordDashboard() {
         {/* Progressive Banner */}
         {progressiveBanner}
 
-        {/* Stats — same 4-card grid as tenant, same card anatomy */}
+        {/* Stats — Responsive 4-card grid with improved text sizing */}
         <div className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">Your Overview</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-6">Your Overview</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
 
             <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Building2 className="h-6 w-6 text-blue-600" />
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="h-10 w-10 sm:h-12 sm:w-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Building2 className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-600 mb-1">Total Properties</p>
-                    <p className="text-3xl font-bold text-slate-900">{stats.total_properties}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Total Properties</p>
+                    <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{stats.total_properties}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
             <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-                    <DollarSign className="h-6 w-6 text-green-600" />
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex items-start gap-3 sm:gap-4">
+                  <div className="h-10 w-10 sm:h-12 sm:w-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-600 mb-1">Monthly Revenue</p>
-                    <p className="text-3xl font-bold text-slate-900">{formatCurrency(stats.monthly_revenue)}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Annual Revenue</p>
+                    <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{formatCurrency((stats.monthly_revenue || 0) * 12)}</p>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-1.5 mt-1">
+                      <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full inline-block w-fit">
+                        {formatCurrency(stats.monthly_revenue || 0)}/month
+                      </span>
+                      <span className="text-xs text-slate-500 truncate">
+                        from {stats.total_properties} propert{stats.total_properties !== 1 ? 'ies' : ''}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
+
+            <Link href="/landlord/payments">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Total Collected</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{formatCurrency(totalReceivedAmount)}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {totalRentAmount > 0 && (
+                          <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full inline-block">
+                            {formatCurrency(totalRentAmount)} rent
+                          </span>
+                        )}
+                        {totalSecurityDeposits > 0 && (
+                          <span className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-block">
+                            {formatCurrency(totalSecurityDeposits)} deposits
+                          </span>
+                        )}
+                        {totalPendingAmount > 0 && (
+                          <span className="text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full inline-block">
+                            {formatCurrency(totalPendingAmount)} pending
+                          </span>
+                        )}
+                        {totalReceivedAmount === 0 && totalPendingAmount === 0 && !paymentsLoading && (
+                          <span className="text-xs text-slate-400">no payments yet</span>
+                        )}
+                        {paymentsLoading && (
+                          <span className="text-xs text-slate-400">loading...</span>
+                        )}
+                        <span className="text-xs text-purple-600 group-hover:text-purple-700 hidden sm:inline">View breakdown →</span>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
 
             <Link href="/landlord/viewings">
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                      <Calendar className="h-6 w-6 text-orange-600" />
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-600 mb-1">Viewings</p>
-                      <p className="text-3xl font-bold text-slate-900">{pendingCount}</p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Viewings</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{pendingCount}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
                         {pendingCount > 0 && (
-                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full inline-block">
                             {pendingCount} pending
                           </span>
                         )}
                         {confirmedCount > 0 && (
-                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full inline-block">
                             {confirmedCount} confirmed
                           </span>
                         )}
@@ -473,17 +884,17 @@ export default function LandlordDashboard() {
 
             <Link href="/landlord/applications">
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-                      <FileText className="h-6 w-6 text-green-600" />
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-600 mb-1">Applications</p>
-                      <p className="text-3xl font-bold text-slate-900">{applications.length}</p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Applications</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{applications.length}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
                         {applications.filter(a => a.status === 'pending').length > 0 && (
-                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full inline-block">
                             {applications.filter(a => a.status === 'pending').length} pending
                           </span>
                         )}
@@ -502,19 +913,62 @@ export default function LandlordDashboard() {
               </Card>
             </Link>
 
-            <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <MessageSquare className="h-6 w-6 text-purple-600" />
+            <Link href="/landlord/messages">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Unread Messages</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{stats.unread_messages}</p>
+                      <div className="flex items-center gap-1 mt-1">
+                        {stats.unread_messages > 0 && (
+                          <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full inline-block">
+                            {stats.unread_messages} unread
+                          </span>
+                        )}
+                        {stats.unread_messages === 0 && (
+                          <span className="text-xs text-slate-400">all read</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-600 mb-1">Unread Messages</p>
-                    <p className="text-3xl font-bold text-slate-900">{stats.unread_messages}</p>
+                </CardContent>
+              </Card>
+            </Link>
+
+            <Link href="/landlord/agreements">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileCheck className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Agreements</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{agreementStats.totalCount}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {agreementStats.fullySignedCount > 0 && (
+                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full inline-block">
+                            {agreementStats.fullySignedCount} signed
+                          </span>
+                        )}
+                        {agreementStats.pendingCount > 0 && (
+                          <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full inline-block">
+                            {agreementStats.pendingCount} pending
+                          </span>
+                        )}
+                        {agreementStats.totalCount === 0 && (
+                          <span className="text-xs text-slate-400">none yet</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </Link>
           </div>
         </div>
 
@@ -657,8 +1111,19 @@ export default function LandlordDashboard() {
                                 alt={property.title}
                                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                               />
-                              {/* Verification badge — top right, same position as tenant Heart */}
-                              <div className="absolute top-3 right-3">
+                              {/* Status & Verification badges - top right */}
+                              <div className="absolute top-3 right-3 flex flex-col gap-2">
+                                {/* Rental Status Badge */}
+                                <div className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                  property.status === 'rented' ? 'bg-red-500 text-white' 
+                                  : property.status === 'vacant' ? 'bg-green-500 text-white'
+                                  : 'bg-slate-500 text-white'
+                                }`}>
+                                  {property.status === 'rented' ? '🔒 Rented'
+                                    : property.status === 'vacant' ? '✅ Available'
+                                    : '⏳ Draft'}
+                                </div>
+                                {/* Verification badge */}
                                 <div className={`px-2 py-1 rounded-full text-xs font-bold ${
                                   property.verification_status === 'approved' ? 'bg-green-500 text-white'
                                   : property.verification_status === 'rejected' ? 'bg-red-500 text-white'
@@ -928,6 +1393,205 @@ export default function LandlordDashboard() {
               </Card>
             </section>
 
+            {/* Agreements Management Section */}
+            <section>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 mb-2">Agreements Management</h2>
+                  <p className="text-gray-600">Track and manage all tenant rental agreements</p>
+                </div>
+                <Link href="/landlord/agreements">
+                  <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                    View All <ArrowRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
+
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+                <CardContent className="p-6">
+                {agreementsLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-20 rounded-xl bg-slate-100 animate-pulse" />
+                    ))}
+                  </div>
+                ) : agreements.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <FileCheck className="h-6 w-6 text-blue-600" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">No agreements yet</h3>
+                    <p className="text-slate-600">When tenants are approved for your properties, agreements will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {agreements.slice(0, 3).map((agreement) => (
+                      <div key={agreement.id} className="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-300">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h4 className="font-semibold text-slate-900">{agreement.tenant?.full_name || 'Tenant'}</h4>
+                            {agreement.status === 'ACTIVE' && (
+                              <Badge className="bg-green-100 text-green-800 border-green-200 font-semibold">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Active
+                              </Badge>
+                            )}
+                            {agreement.status === 'SIGNED' && (
+                              <Badge className="bg-green-100 text-green-800 border-green-200 font-semibold">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Fully Signed
+                              </Badge>
+                            )}
+                            {agreement.status === 'PENDING_LANDLORD' && (
+                              <Badge className="bg-amber-100 text-amber-800 border-amber-200 font-semibold">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Awaiting Your Signature
+                              </Badge>
+                            )}
+                            {agreement.status === 'PENDING_TENANT' && (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200 font-semibold">
+                                <FileText className="h-3 w-3 mr-1" />
+                                Tenant Signing
+                              </Badge>
+                            )}
+                            {agreement.status === 'EXPIRED' && (
+                              <Badge className="bg-slate-100 text-slate-800 border-slate-200 font-semibold">
+                                Expired
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-600 flex items-center mb-2">
+                            <Building2 className="h-3 w-3 mr-2 text-orange-500" />
+                            {agreement.property?.title || 'Property'}
+                          </p>
+                          <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                            {agreement.start_date && (
+                              <span>From: {formatDate(agreement.start_date)}</span>
+                            )}
+                            {agreement.end_date && (
+                              <span>Until: {formatDate(agreement.end_date)}</span>
+                            )}
+                            {agreement.monthly_rent && (
+                              <span className="text-orange-600 font-semibold">{formatCurrency(agreement.monthly_rent)}/mo</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Link href={`/landlord/agreements/${agreement.id}`} className="ml-3 flex-shrink-0">
+                            <Button variant="outline" size="sm" className="border-blue-300 text-blue-600 hover:bg-blue-50 text-xs gap-1.5">
+                              <Eye className="h-3.5 w-3.5" />View Agreement
+                            </Button>
+                          </Link>
+                          {agreement.status === 'PENDING_LANDLORD' && (
+                            <Link href={`/landlord/agreements/${agreement.id}/sign`} className="ml-3 flex-shrink-0">
+                              <Button size="sm" className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-xs gap-1.5">
+                                <FileCheck className="h-3.5 w-3.5" />Sign Now
+                              </Button>
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {agreements.length > 3 && (
+                      <Link href="/landlord/agreements">
+                        <Button variant="outline" size="sm" className="w-full border-blue-300 text-blue-600 hover:bg-blue-50">
+                          View all {agreements.length} agreements <ArrowRight className="ml-1 h-4 w-4" />
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                )}
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* Property Maintenance — for rented properties */}
+            {properties?.some((p: any) => p.status === 'rented') && (
+              <section>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 mb-2">Property Maintenance</h2>
+                    <p className="text-gray-600">Track maintenance status for your rented properties</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Link href="/landlord/maintenance">
+                      <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                        Manage Maintenance <ArrowRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    </Link>
+                    <Button size="sm" className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white">
+                      <Plus className="mr-2 h-4 w-4" />New Request
+                    </Button>
+                  </div>
+                </div>
+
+                <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+                  <CardContent className="p-6">
+                    <div className="space-y-4">
+                      {properties?.filter((p: any) => p.status === 'rented').slice(0, 3).map((property: any) => (
+                        <div key={property.id} className="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-orange-300 hover:shadow-md transition-all duration-300">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <h4 className="font-semibold text-slate-900 truncate">{property.title}</h4>
+                              <Badge className="bg-red-100 text-red-800 border-red-200 font-semibold">
+                                <AlertCircle className="h-3 w-3 mr-1" />Rented
+                              </Badge>
+                              <Badge variant="outline" className="text-green-600 border-green-300 text-xs">
+                                <CheckCircle className="h-3 w-3 mr-1" />Good Condition
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-slate-600 flex items-center mb-2">
+                              <MapPin className="h-3 w-3 mr-2 text-orange-500" />
+                              {property.city}, {property.state}
+                            </p>
+                            <div className="flex items-center gap-4 text-xs text-slate-500">
+                              <span>Tenant: {property.current_tenant?.full_name || 'Active Tenant'}</span>
+                              {property.lease_end && (
+                                <span>Lease ends: {formatDate(property.lease_end)}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <Link href={`/landlord/properties/${property.id}/maintenance`} className="flex-shrink-0">
+                              <Button variant="outline" size="sm" className="border-orange-300 text-orange-600 hover:bg-orange-50 text-xs gap-1.5">
+                                <Settings className="h-3.5 w-3.5" />Maintenance
+                              </Button>
+                            </Link>
+                            <Link href={`/landlord/properties/${property.id}/inspection`} className="flex-shrink-0">
+                              <Button variant="ghost" size="sm" className="text-blue-600 hover:bg-blue-50 text-xs gap-1.5">
+                                <Eye className="h-3.5 w-3.5" />Inspect
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                        <div className="flex items-center gap-4 text-sm text-slate-600">
+                          <div className="flex items-center gap-1.5">
+                            <div className="h-2 w-2 bg-green-500 rounded-full"></div>
+                            <span>Good Condition</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="h-2 w-2 bg-yellow-500 rounded-full"></div>
+                            <span>Needs Attention</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="h-2 w-2 bg-red-500 rounded-full"></div>
+                            <span>Urgent</span>
+                          </div>
+                        </div>
+                        <Link href="/landlord/maintenance">
+                          <Button variant="outline" size="sm" className="border-orange-300 text-orange-600 hover:bg-orange-50">
+                            View All Maintenance <ArrowRight className="ml-1 h-4 w-4" />
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
+            )}
+
             {/* Onboarding Progress — only when incomplete */}
             {onboarding && !hasCompletedOnboarding && (
               <section>
@@ -1131,6 +1795,11 @@ export default function LandlordDashboard() {
                           <FileText className="mr-2 h-4 w-4" />Applications
                         </Button>
                       </Link>
+                      <Link href="/landlord/payments">
+                        <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
+                          <DollarSign className="mr-2 h-4 w-4" />Payment History
+                        </Button>
+                      </Link>
                       <Link href="/landlord/messages">
                         <Button variant="outline" className="w-full justify-start border-slate-300 hover:bg-white hover:border-orange-500 hover:text-orange-600">
                           <MessageSquare className="mr-2 h-4 w-4" />Messages
@@ -1182,32 +1851,23 @@ export default function LandlordDashboard() {
                         <p className="text-slate-600 text-xs">Activity from your listings will appear here</p>
                       </div>
                     </div>
-                  ) : (recentActivity ?? []).slice(0, 4).map((activity: any) => (
-                    <div key={activity.id} className="flex items-center gap-3 text-sm">
-                      <div className={`h-6 w-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        activity.type === 'viewing_request' ? 'bg-blue-100'
-                        : activity.type === 'application'   ? 'bg-green-100'
-                        : activity.type === 'message'       ? 'bg-purple-100'
-                        : 'bg-slate-100'
-                      }`}>
-                        {activity.type === 'viewing_request' && <Calendar      className="h-3 w-3 text-blue-600"   />}
-                        {activity.type === 'application'     && <FileText      className="h-3 w-3 text-green-600"  />}
-                        {activity.type === 'message'         && <MessageSquare className="h-3 w-3 text-purple-600" />}
-                        {!['viewing_request','application','message'].includes(activity.type) && (
-                          <Activity className="h-3 w-3 text-slate-600" />
-                        )}
+                  ) : (
+                    recentActivity?.slice(0, 5).map((activity: any, index: number) => (
+                      <div key={index} className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 transition-colors">
+                        <div className="flex-shrink-0">
+                          {getActivityIcon(activity.type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 mb-1">{getActivityTitle(activity.type, activity)}</p>
+                          <p className="text-xs text-slate-600 mb-2">{getActivityDescription(activity.type, activity)}</p>
+                          <p className="text-xs text-slate-400">{formatDate(activity.created_at)}</p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <p className="text-slate-900 font-medium">{activity.title}</p>
-                        <p className="text-slate-600 text-xs">{formatDate(activity.created_at)}</p>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
-
-
           </div>
         </div>
       </div>

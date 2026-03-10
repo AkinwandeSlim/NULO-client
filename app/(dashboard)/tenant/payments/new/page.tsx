@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   ArrowLeft, Banknote, Calendar, Home, Shield,
-  Loader2, AlertCircle, FileText, CheckCircle2
+  Loader2, AlertCircle, FileText, CheckCircle2, Eye
 } from "lucide-react"
 import Link from "next/link"
 import { paymentsAPI, type Transaction } from "@/lib/api/payments"
@@ -48,6 +48,32 @@ export default function TenantPaymentNewPage() {
   const [agreement, setAgreement] = useState<AgreementWithDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isInitiating, setIsInitiating] = useState(false)
+  const [existingPayments, setExistingPayments] = useState<Transaction[]>([])
+  const [checkingPayments, setCheckingPayments] = useState(false)
+
+  // ── Check for existing payments ─────────────────────────────────────────────
+  
+  const checkExistingPayments = useCallback(async () => {
+    if (!agreementId || !user?.id) return
+    
+    try {
+      setCheckingPayments(true)
+      const response = await paymentsAPI.getMyPayments()
+      
+      if (response.success && response.payments) {
+        // Filter payments for this specific agreement
+        const agreementPayments = response.payments.filter((payment: Transaction) => 
+          payment.agreement_id === agreementId
+        )
+        setExistingPayments(agreementPayments)
+      }
+    } catch (error) {
+      console.error("[PaymentNew] check payments error:", error)
+      // Don't show error for this check, just log it
+    } finally {
+      setCheckingPayments(false)
+    }
+  }, [agreementId, user?.id])
 
   // ── Fetch agreement ────────────────────────────────────────────────────────
 
@@ -92,8 +118,11 @@ export default function TenantPaymentNewPage() {
 
   useEffect(() => {
     if (!user) { router.push("/signin"); return }
-    if (agreementId) fetchAgreement()
-  }, [user, agreementId, fetchAgreement])
+    if (agreementId) {
+      fetchAgreement()
+      checkExistingPayments()
+    }
+  }, [user, agreementId, fetchAgreement, checkExistingPayments])
 
   // ── Calculate payment breakdown ─────────────────────────────────────────────
 
@@ -106,6 +135,30 @@ export default function TenantPaymentNewPage() {
 
   const handleInitiatePayment = async () => {
     if (!agreement) return
+
+    // Check if there's already a successful payment for this agreement
+    const hasSuccessfulPayment = existingPayments.some(payment => 
+      payment.agreement_id === agreement.id && 
+      (payment.status === 'released' || payment.status === 'held')
+    )
+
+    if (hasSuccessfulPayment) {
+      toast.error("Payment already completed for this agreement")
+      router.push("/tenant/payments")
+      return
+    }
+
+    // Check if there's a pending payment
+    const hasPendingPayment = existingPayments.some(payment => 
+      payment.agreement_id === agreement.id && 
+      (payment.status === 'pending' || payment.status === 'held')
+    )
+
+    if (hasPendingPayment) {
+      toast.error("Payment already in progress for this agreement")
+      router.push("/tenant/payments")
+      return
+    }
 
     setIsInitiating(true)
     try {
@@ -274,28 +327,79 @@ export default function TenantPaymentNewPage() {
           </CardContent>
         </Card>
 
-        {/* ── Payment Button ── */}
+        {/* ── Payment Status & Actions ── */}
         <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
           <CardContent className="pt-6">
-            <Button
-              onClick={handleInitiatePayment}
-              disabled={isInitiating}
-              className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold py-4 text-lg shadow-sm transition-all duration-300"
-            >
-              {isInitiating ? (
-                <>
-                  <Loader2 className="mr-3 h-5 w-5 animate-spin" />
-                  Initiating Payment...
-                </>
-              ) : (
-                <>
-                  <Banknote className="mr-3 h-5 w-5" />
-                  Pay {formatNGN(totalDue)} Now
-                </>
-              )}
-            </Button>
+            {/* Check for existing payments */}
+            {checkingPayments ? (
+              <div className="text-center py-4">
+                <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3 text-orange-500" />
+                <p className="text-slate-600">Checking payment status...</p>
+              </div>
+            ) : existingPayments.length > 0 ? (
+              <div className="space-y-4">
+                {/* Show existing payment status */}
+                {existingPayments.some(payment => 
+                  payment.agreement_id === agreement.id && 
+                  (payment.status === 'released' || payment.status === 'held')
+                ) ? (
+                  <div className="text-center py-4">
+                    <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-3" />
+                    <h3 className="text-lg font-semibold text-green-800 mb-2">Payment Completed</h3>
+                    <p className="text-slate-600 mb-4">
+                      This agreement has already been paid for. You can view your payment history for more details.
+                    </p>
+                    <Link href="/tenant/payments">
+                      <Button variant="outline" className="border-green-300 text-green-700 hover:bg-green-50">
+                        <Eye className="mr-2 h-4 w-4" />
+                        View Payment History
+                      </Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <AlertCircle className="h-12 w-12 text-orange-600 mx-auto mb-3" />
+                    <h3 className="text-lg font-semibold text-orange-800 mb-2">Payment In Progress</h3>
+                    <p className="text-slate-600 mb-4">
+                      A payment for this agreement is currently being processed. Please check your payment history for status updates.
+                    </p>
+                    <Link href="/tenant/payments">
+                      <Button variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50">
+                        <Eye className="mr-2 h-4 w-4" />
+                        Check Payment Status
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* No existing payments - show payment button */
+              <Button
+                onClick={handleInitiatePayment}
+                disabled={isInitiating}
+                className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold py-4 text-lg shadow-sm transition-all duration-300"
+              >
+                {isInitiating ? (
+                  <>
+                    <Loader2 className="mr-3 h-5 w-5 animate-spin" />
+                    Initiating Payment...
+                  </>
+                ) : (
+                  <>
+                    <Banknote className="mr-3 h-5 w-5" />
+                    Pay {formatNGN(totalDue)} Now
+                  </>
+                )}
+              </Button>
+            )}
+            
             <p className="text-xs text-slate-500 text-center mt-3">
-              You will be redirected to a secure payment page to complete your transaction.
+              {!checkingPayments && existingPayments.length === 0 && 
+                "You will be redirected to a secure payment page to complete your transaction."
+              }
+              {existingPayments.length > 0 && 
+                "Check your payment history for details and status updates."
+              }
             </p>
           </CardContent>
         </Card>

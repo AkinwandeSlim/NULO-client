@@ -135,7 +135,9 @@ export const applicationsAPI = {
    * Get applications received by landlord
    */
   getReceivedApplications: async (): Promise<ApplicationsResponse> => {
-    const response = await apiClient.get<ApplicationsResponse>('/api/v1/applications/received');
+    const response = await apiClient.get<ApplicationsResponse>('/api/v1/applications/received', {
+      timeout: 60000 // 60 seconds - slow endpoint
+    });
     return response.data;
   },
 

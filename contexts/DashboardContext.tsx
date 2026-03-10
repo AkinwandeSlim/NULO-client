@@ -16,6 +16,7 @@ import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import adminDashboardAPI from '@/lib/api/adminDashboard'
 import landlordDashboardAPI from '@/lib/api/landlordDashboard'
+import { tenantDashboardAPI } from '@/lib/api/tenantDashboard'
 import {
   getDashboardCache,
   initializeDashboardCache,
@@ -25,6 +26,7 @@ import {
 } from '@/lib/cache/dashboardCache'
 import type { AdminDashboardStats, RecentActivityResponse } from '@/lib/api/adminDashboard'
 import type { LandlordDashboardData } from '@/lib/api/landlordDashboard'
+import type { TenantDashboardData } from '@/lib/api/tenantDashboard'
 
 // ============================================================================
 // CONTEXT TYPES
@@ -45,6 +47,12 @@ interface DashboardContextType {
   landlordRefreshing: boolean
   landlordLastRefreshTime: number | null
   
+  // Tenant Dashboard State
+  tenantData: TenantDashboardData | null
+  tenantLoading: boolean
+  tenantRefreshing: boolean
+  tenantLastRefreshTime: number | null
+  
   // Admin Methods
   fetchDashboardStats: (forceRefresh?: boolean) => Promise<void>
   fetchRecentActivity: (days?: number, forceRefresh?: boolean) => Promise<void>
@@ -55,6 +63,10 @@ interface DashboardContextType {
   // Landlord Methods
   fetchLandlordDashboard: (forceRefresh?: boolean) => Promise<void>
   invalidateLandlordCache: () => void
+  
+  // Tenant Methods
+  fetchTenantDashboard: (forceRefresh?: boolean) => Promise<void>
+  invalidateTenantCache: () => void
   
   // Configuration
   setCacheTTL: (key: keyof CacheConfig, ttl: number) => void
@@ -92,6 +104,12 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
   const [landlordLoading, setLandlordLoading] = useState(false)
   const [landlordRefreshing, setLandlordRefreshing] = useState(false)
   const [landlordLastRefreshTime, setLandlordLastRefreshTime] = useState<number | null>(null)
+
+  // Tenant Dashboard State
+  const [tenantData, setTenantData] = useState<TenantDashboardData | null>(null)
+  const [tenantLoading, setTenantLoading] = useState(false)
+  const [tenantRefreshing, setTenantRefreshing] = useState(false)
+  const [tenantLastRefreshTime, setTenantLastRefreshTime] = useState<number | null>(null)
 
   // Initialize cache on mount
   useEffect(() => {
@@ -298,6 +316,70 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
   )
 
   // ============================================================================
+  // FETCH TENANT DASHBOARD WITH CACHING
+  // ============================================================================
+
+  const fetchTenantDashboard = useCallback(
+    async (forceRefresh = false) => {
+      // ✅ CHECK: Only fetch if user is authenticated and is tenant
+      if (!user || user?.user_type !== 'tenant') {
+        console.log('🚫 [TENANT DASHBOARD] Skipping tenant dashboard - user not authenticated or not tenant')
+        setTenantLoading(false)
+        return
+      }
+
+      // Prevent concurrent requests
+      if (tenantLoading && !forceRefresh) {
+        console.log('🚫 [TENANT DASHBOARD] Request already in progress, skipping...')
+        return
+      }
+
+      try {
+        // Only show loading state if we don't have data yet (not on refreshes)
+        if (!tenantData) {
+          setTenantLoading(true)
+        }
+
+        console.log('📊 [TENANT DASHBOARD] Fetching dashboard data...')
+
+        const freshData = forceRefresh
+          ? await tenantDashboardAPI.refreshTenantDashboard(user.id)
+          : await tenantDashboardAPI.getTenantDashboard(user.id)
+
+        // Update state
+        setTenantData(freshData)
+        setTenantLastRefreshTime(Date.now())
+
+        console.log('✅ [TENANT DASHBOARD] Dashboard data retrieved successfully')
+
+        if (forceRefresh) {
+          toast.success('Dashboard refreshed')
+        }
+      } catch (error: any) {
+        console.error('❌ [TENANT DASHBOARD] Failed to fetch dashboard:', error)
+        
+        // 🚀 IMPROVEMENT: Don't show error toast if we have cached data
+        // Just log it and continue with cached data
+        if (!tenantData) {
+          // Only show error if we have no data at all
+          if (error.message?.includes('timeout')) {
+            toast.error('Dashboard is loading slowly. Please try refreshing.')
+          } else {
+            toast.error(error.message || 'Failed to load dashboard data')
+          }
+        } else {
+          // We have cached data, just show a subtle info message
+          console.log('📋 [TENANT DASHBOARD] Using cached data due to API error')
+        }
+      } finally {
+        setTenantLoading(false)
+        setTenantRefreshing(false)
+      }
+    },
+    [user, tenantData]
+  )
+
+  // ============================================================================
   // CACHE MANAGEMENT FUNCTIONS
   // ============================================================================
 
@@ -320,6 +402,12 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
     cache.invalidate('landlord:dashboard')
     console.log('🔄 [LANDLORD DASHBOARD] Cache invalidated')
   }, [])
+
+  const invalidateTenantCache = useCallback(() => {
+    if (!user) return
+    tenantDashboardAPI.invalidateUserCache(user.id)
+    console.log('🔄 [TENANT DASHBOARD] Cache invalidated')
+  }, [user])
 
   const getCacheStats = useCallback(() => {
     const cache = getDashboardCache()
@@ -395,6 +483,14 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
     fetchLandlordDashboard,
     invalidateLandlordCache,
     
+    // Tenant Dashboard
+    tenantData,
+    tenantLoading,
+    tenantRefreshing,
+    tenantLastRefreshTime,
+    fetchTenantDashboard,
+    invalidateTenantCache,
+    
     // Configuration
     setCacheTTL,
   }
@@ -438,6 +534,27 @@ export function useLandlordDashboard() {
     lastRefreshTime: context.landlordLastRefreshTime,
     fetchLandlordDashboard: context.fetchLandlordDashboard,
     invalidateLandlordCache: context.invalidateLandlordCache,
+  }
+}
+
+// ============================================================================
+// TENANT DASHBOARD HOOK
+// ============================================================================
+
+export function useTenantDashboard() {
+  const context = useContext(DashboardContext)
+
+  if (context === undefined) {
+    throw new Error('useTenantDashboard must be used within a DashboardProvider')
+  }
+
+  return {
+    tenantData: context.tenantData,
+    loading: context.tenantLoading,
+    refreshing: context.tenantRefreshing,
+    lastRefreshTime: context.tenantLastRefreshTime,
+    fetchTenantDashboard: context.fetchTenantDashboard,
+    invalidateTenantCache: context.invalidateTenantCache,
   }
 }
 

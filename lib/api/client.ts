@@ -32,21 +32,31 @@ apiClient.interceptors.request.use(
       const cachedRefreshToken = localStorage.getItem('sb-refresh-token');
       
       if (cachedToken && config.headers) {
-        // Validate token format (basic check)
-        if (cachedToken.startsWith('eyJ') && cachedToken.length > 100) {
-          config.headers.Authorization = `Bearer ${cachedToken}`;
-          
-          // Also set token for middleware access (backup)
-          if (typeof document !== 'undefined') {
-            document.cookie = `access_token=${cachedToken}; path=/; max-age=3600; SameSite=Lax`;
+        // Validate token format more thoroughly
+        try {
+          // Simple JWT structure check: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCt9
+          const parts = cachedToken.split('.');
+          if (parts.length === 3) {
+            const header = JSON.parse(atob(parts[0]));
+            const payload = JSON.parse(atob(parts[1]));
+            
+            // Check if token has required claims and is not expired
+            if (header.alg === 'HS256' && payload.exp && payload.exp > Date.now() / 1000) {
+              config.headers.Authorization = `Bearer ${cachedToken}`;
+              
+              // Also set token for middleware access (backup)
+              if (typeof document !== 'undefined') {
+                document.cookie = `access_token=${cachedToken}; path=/; max-age=3600; SameSite=Lax`;
+              }
+              
+              console.log('✅ [API CLIENT] Using valid cached token');
+              return config;
+            }
           }
-          
-          console.log('🔐 [API CLIENT] Using cached token (bypass):', {
-            url: config.url,
-            hasToken: !!cachedToken,
-            tokenLength: cachedToken.length
-          });
-          return config;
+        } catch (tokenError) {
+          console.warn('⚠️ [API CLIENT] Invalid cached token, clearing...');
+          localStorage.removeItem('sb-access-token');
+          localStorage.removeItem('sb-refresh-token');
         }
       }
       

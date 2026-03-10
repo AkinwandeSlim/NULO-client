@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
+import { paymentsAPI, type Transaction } from "@/lib/api/payments"
 import { toast } from "sonner"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,14 +169,38 @@ export default function TenantAgreementDetailPage() {
   const { user } = useAuth()
   const agreementId = params.id as string
 
-  // FIX: typed as AgreementWithDetails — not (Agreement & { landlord?: any })
-  // FIX: single state — no separate property/landlord states; backend enriches everything
   const [agreement, setAgreement] = useState<AgreementWithDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [existingPayments, setExistingPayments] = useState<Transaction[]>([])
+  const [checkingPayments, setCheckingPayments] = useState(false)
   const [isSigning, setIsSigning] = useState(false)
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   // Checkbox must be checked before signing — per handoff spec
   const [termsAccepted, setTermsAccepted] = useState(false)
+
+  // ── Check for existing payments ─────────────────────────────────────────────
+  
+  const checkExistingPayments = useCallback(async () => {
+    if (!agreementId || !user?.id) return
+    
+    try {
+      setCheckingPayments(true)
+      const response = await paymentsAPI.getMyPayments()
+      
+      if (response.success && response.payments) {
+        // Filter payments for this specific agreement
+        const agreementPayments = response.payments.filter((payment: Transaction) => 
+          payment.agreement_id === agreementId
+        )
+        setExistingPayments(agreementPayments)
+      }
+    } catch (error) {
+      console.error("[AgreementDetail] check payments error:", error)
+      // Don't show error for this check, just log it
+    } finally {
+      setCheckingPayments(false)
+    }
+  }, [agreementId, user?.id])
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -203,8 +228,11 @@ export default function TenantAgreementDetailPage() {
 
   useEffect(() => {
     if (!user) { router.push("/signin"); return }
-    if (agreementId) fetchAgreement()
-  }, [user, agreementId, fetchAgreement, router])
+    if (agreementId) {
+      fetchAgreement()
+      checkExistingPayments()
+    }
+  }, [user, agreementId, fetchAgreement, checkExistingPayments, router])
 
   // ── Sign ───────────────────────────────────────────────────────────────────
 
@@ -661,13 +689,64 @@ export default function TenantAgreementDetailPage() {
                       </p>
                     </div>
                   </div>
-                  {/* TODO: replace href with real payment route once /tenant/payments is built */}
-                  <Link href={`/tenant/payments/new?agreement_id=${agreement.id}`} className="block">
-                    <Button className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold shadow-sm transition-all duration-300">
-                      <Banknote className="mr-2 h-4 w-4" />
-                      Proceed to Payment
-                    </Button>
-                  </Link>
+
+                  {/* Check for existing payments */}
+                  {checkingPayments ? (
+                    <div className="text-center py-4">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3 text-orange-500" />
+                      <p className="text-slate-600">Checking payment status...</p>
+                    </div>
+                  ) : existingPayments.length > 0 ? (
+                    <div className="space-y-3">
+                      {/* Show existing payment status */}
+                      {existingPayments.some(payment => 
+                        payment.agreement_id === agreement.id && 
+                        (payment.status === 'released' || payment.status === 'held')
+                      ) ? (
+                        <div className="text-center py-4">
+                          <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-3" />
+                          <h3 className="text-lg font-semibold text-green-800 mb-2">Payment Completed</h3>
+                          <p className="text-slate-600 mb-4">
+                            This agreement has already been paid. You can view your payment history for more details.
+                          </p>
+                          <Link href="/tenant/payments">
+                            <Button variant="outline" className="border-green-300 text-green-700 hover:bg-green-50">
+                              <Eye className="mr-2 h-4 w-4" />
+                              View Payment History
+                            </Button>
+                          </Link>
+                        </div>
+                      ) : (
+                        <div className="text-center py-4">
+                          <AlertCircle className="h-12 w-12 text-orange-600 mx-auto mb-3" />
+                          <h3 className="text-lg font-semibold text-orange-800 mb-2">Payment In Progress</h3>
+                          <p className="text-slate-600 mb-4">
+                            A payment for this agreement is currently being processed. Please check your payment history for status updates.
+                          </p>
+                          <Link href="/tenant/payments">
+                            <Button variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50">
+                              <Eye className="mr-2 h-4 w-4" />
+                              Check Payment Status
+                            </Button>
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* No existing payments - show payment button */
+                    <div>
+                      <p className="text-sm text-slate-600 mb-4">
+                        Click below to initiate your secure payment through Paystack.
+                      </p>
+                      {/* TODO: replace href with real payment route once /tenant/payments is built */}
+                      <Link href={`/tenant/payments/new?agreement_id=${agreement.id}`} className="block">
+                        <Button className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold shadow-sm transition-all duration-300">
+                          <Banknote className="mr-2 h-4 w-4" />
+                          Proceed to Payment
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}

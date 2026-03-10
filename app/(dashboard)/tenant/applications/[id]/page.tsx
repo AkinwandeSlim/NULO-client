@@ -118,11 +118,11 @@ export default function TenantApplicationDetailPage() {
             const agreementsResponse = await agreementsAPI.getMyAgreements()
             console.log('📋 [TENANT APP] Agreements response:', agreementsResponse)
             
-            // The backend returns direct array, not wrapped object
-            if (Array.isArray(agreementsResponse) && agreementsResponse.length > 0) {
-              console.log('📋 [TENANT APP] Found agreements:', agreementsResponse.length)
+            // Backend returns {success, agreements[], count} - check the agreements array
+            if (agreementsResponse?.agreements && agreementsResponse.agreements.length > 0) {
+              console.log('📋 [TENANT APP] Found agreements:', agreementsResponse.agreements.length)
               console.log('📋 [TENANT APP] Looking for agreement with application_id:', applicationId)
-              console.log('📋 [TENANT APP] All agreements details:', agreementsResponse.map(a => ({
+              console.log('📋 [TENANT APP] All agreements details:', agreementsResponse.agreements.map(a => ({
                 id: a.id,
                 application_id: a.application_id,
                 status: a.status,
@@ -130,14 +130,14 @@ export default function TenantApplicationDetailPage() {
               })))
               
               // Try to find agreement by application_id first
-              let appAgreement = agreementsResponse.find(a => a.application_id === applicationId)
+              let appAgreement = agreementsResponse.agreements.find(a => a.application_id === applicationId)
               
               console.log('📋 [TENANT APP] Agreement found by application_id:', appAgreement)
               
               // If not found by application_id, take the most recent agreement (in case of timing issues)
-              if (!appAgreement && agreementsResponse.length > 0) {
+              if (!appAgreement && agreementsResponse.agreements.length > 0) {
                 console.log('⚠️ [TENANT APP] Agreement not found by application_id, using most recent agreement')
-                appAgreement = agreementsResponse.sort(
+                appAgreement = agreementsResponse.agreements.sort(
                   (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                 )[0]
                 console.log('📋 [TENANT APP] Most recent agreement:', appAgreement)
@@ -185,9 +185,9 @@ export default function TenantApplicationDetailPage() {
         console.log(`🔄 [TENANT APP] Polling for agreement (attempt ${agreementRetries + 1})...`)
         const agreementsResponse = await agreementsAPI.getMyAgreements()
         
-        if (Array.isArray(agreementsResponse) && agreementsResponse.length > 0) {
-          console.log(`🔄 [TENANT APP] Poll ${agreementRetries + 1}: Found ${agreementsResponse.length} agreements`)
-          console.log('🔄 [TENANT APP] Poll agreements details:', agreementsResponse.map(a => ({
+        if (agreementsResponse?.agreements && agreementsResponse.agreements.length > 0) {
+          console.log(`🔄 [TENANT APP] Poll ${agreementRetries + 1}: Found ${agreementsResponse.agreements.length} agreements`)
+          console.log('🔄 [TENANT APP] Poll agreements details:', agreementsResponse.agreements.map(a => ({
             id: a.id,
             application_id: a.application_id,
             status: a.status,
@@ -195,13 +195,13 @@ export default function TenantApplicationDetailPage() {
           })))
           
           // Try to find agreement by application_id first
-          let appAgreement = agreementsResponse.find(a => a.application_id === applicationId)
+          let appAgreement = agreementsResponse.agreements.find(a => a.application_id === applicationId)
           
           console.log(`🔄 [TENANT APP] Poll ${agreementRetries + 1}: Agreement found by application_id:`, appAgreement)
           
           // If not found by application_id, take the most recent agreement
           if (!appAgreement) {
-            appAgreement = agreementsResponse.sort(
+            appAgreement = agreementsResponse.agreements.sort(
               (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
             )[0]
             console.log(`🔄 [TENANT APP] Poll ${agreementRetries + 1}: Most recent agreement:`, appAgreement)

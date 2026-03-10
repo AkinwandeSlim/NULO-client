@@ -61,13 +61,13 @@ export default function ChatPage() {
 
   const fetchConversation = async () => {
     try {
-      const data = await messagesAPI.getConversations()
-      const conv = data.conversations.find((c: any) => c.id === conversationId)
+      const conversations = await messagesAPI.getConversations()
+      const conv = conversations.find((c: any) => c.id === conversationId)
       if (conv) {
         setConversation(conv)
       } else {
         toast.error('Conversation not found')
-        router.push('/dashboard/tenant/messages')
+        router.push('/tenant/messages')
       }
     } catch (error: any) {
       console.error('Failed to fetch conversation:', error)
@@ -95,10 +95,10 @@ export default function ChatPage() {
 
   const handleSendMessage = async (content: string) => {
     try {
-      const data = await messagesAPI.sendMessage(conversationId, { content })
+      const response = await messagesAPI.sendMessage(conversationId, content)
       
       // Add new message to list
-      setMessages([...messages, data.message])
+      setMessages(prev => [...prev, response])
       
       // Update conversation
       if (conversation) {

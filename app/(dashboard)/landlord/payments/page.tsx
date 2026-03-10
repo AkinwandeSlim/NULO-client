@@ -34,6 +34,39 @@ const formatDate = (dateStr: string) => {
   })
 }
 
+const getTransactionTypeBadge = (type: Transaction["transaction_type"]) => {
+  switch (type) {
+    case "rent_payment":
+      return (
+        <Badge className="bg-green-100 text-green-700 border-green-200">
+          <Banknote className="w-3 h-3 mr-1" />
+          Rent Payment
+        </Badge>
+      )
+    case "security_deposit":
+      return (
+        <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+          <Banknote className="w-3 h-3 mr-1" />
+          Security Deposit
+        </Badge>
+      )
+    case "guarantee_contribution":
+      return (
+        <Badge className="bg-purple-100 text-purple-700 border-purple-200">
+          <Banknote className="w-3 h-3 mr-1" />
+          Guarantee Fee
+        </Badge>
+      )
+    default:
+      return (
+        <Badge className="bg-slate-100 text-slate-700 border-slate-200">
+          <Banknote className="w-3 h-3 mr-1" />
+          Other
+        </Badge>
+      )
+  }
+}
+
 const getStatusBadge = (status: Transaction["status"]) => {
   switch (status) {
     case "released":
@@ -101,6 +134,7 @@ function TransactionCard({ transaction, onViewDetails, onMessageTenant }: Transa
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2">
+              {getTransactionTypeBadge(transaction.transaction_type)}
               {getStatusBadge(transaction.status)}
               <span className="text-xs text-slate-500">
                 {formatDate(transaction.created_at)}
@@ -125,7 +159,9 @@ function TransactionCard({ transaction, onViewDetails, onMessageTenant }: Transa
               {formatNGN(transaction.amount)}
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              {transaction.transaction_type.replace("_", " ")}
+              {transaction.transaction_type === "rent_payment" ? "Annual Rent" : 
+               transaction.transaction_type === "security_deposit" ? "Security Deposit" : 
+               transaction.transaction_type.replace("_", " ")}
             </p>
           </div>
         </div>
@@ -189,6 +225,8 @@ export default function LandlordPaymentsPage() {
     } catch (error) {
       console.error("[LandlordPayments] fetch error:", error)
       toast.error("Failed to load payment history")
+    } finally {
+      setIsLoading(false)
     }
   }, [])
 
@@ -224,6 +262,13 @@ export default function LandlordPaymentsPage() {
     received: transactions.filter(t => t.status === "released").length,
     processing: transactions.filter(t => t.status === "pending" || t.status === "held").length,
     failed: transactions.filter(t => t.status === "failed").length,
+    // Separate rent and security deposits
+    totalRentAmount: transactions
+      .filter(t => t.status === "released" && t.transaction_type === "rent_payment")
+      .reduce((sum, t) => sum + t.amount, 0),
+    totalSecurityDeposits: transactions
+      .filter(t => t.status === "released" && t.transaction_type === "security_deposit")
+      .reduce((sum, t) => sum + t.amount, 0),
     totalAmount: transactions
       .filter(t => t.status === "released")
       .reduce((sum, t) => sum + t.amount, 0)
@@ -281,35 +326,52 @@ export default function LandlordPaymentsPage() {
             </div>
           </div>
           <p className="text-slate-600">
-            Track all rental payments received from your tenants
+            Track all rental payments and security deposits received from your tenants. Annual rent payments are shown as received when tenants complete their payments.
           </p>
         </div>
 
         {/* ── Stats Cards ── */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <Card className="border-green-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
             <CardContent className="pt-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Payments</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-1">{stats.total}</p>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rent Collected</p>
+                  <p className="text-2xl font-bold text-green-700 mt-1">{formatNGN(stats.totalRentAmount)}</p>
+                  <p className="text-xs text-green-600 mt-1">Annual rent payments</p>
                 </div>
-                <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                  <Banknote className="w-6 h-6 text-orange-600" />
+                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <Banknote className="w-6 h-6 text-green-600" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-green-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
+          <Card className="border-blue-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
             <CardContent className="pt-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Received</p>
-                  <p className="text-2xl font-bold text-green-700 mt-1">{stats.received}</p>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Security Deposits</p>
+                  <p className="text-2xl font-bold text-blue-700 mt-1">{formatNGN(stats.totalSecurityDeposits)}</p>
+                  <p className="text-xs text-blue-600 mt-1">Held in escrow</p>
                 </div>
-                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <CheckCircle2 className="w-6 h-6 text-green-600" />
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Banknote className="w-6 h-6 text-blue-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-purple-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
+            <CardContent className="pt-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Received</p>
+                  <p className="text-2xl font-bold text-purple-700 mt-1">{formatNGN(stats.totalAmount)}</p>
+                  <p className="text-xs text-purple-600 mt-1">All payments received</p>
+                </div>
+                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <Banknote className="w-6 h-6 text-purple-600" />
                 </div>
               </div>
             </CardContent>
@@ -321,23 +383,10 @@ export default function LandlordPaymentsPage() {
                 <div>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Processing</p>
                   <p className="text-2xl font-bold text-amber-700 mt-1">{stats.processing}</p>
+                  <p className="text-xs text-amber-600 mt-1">Pending payments</p>
                 </div>
                 <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
                   <Clock className="w-6 h-6 text-amber-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
-            <CardContent className="pt-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Received</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-1">{formatNGN(stats.totalAmount)}</p>
-                </div>
-                <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center">
-                  <Banknote className="w-6 h-6 text-slate-600" />
                 </div>
               </div>
             </CardContent>

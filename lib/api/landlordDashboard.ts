@@ -17,6 +17,10 @@ export interface LandlordDashboardData {
   properties: LandlordProperties[]
   recentActivity: RecentActivity[]
   notifications: Notification[]
+  viewingRequests?: LandlordViewingRequest[]
+  receivedApplications?: LandlordReceivedApplication[]
+  agreements?: LandlordAgreement[]
+  engagementMetrics?: EngagementMetrics
 }
 
 export interface LandlordProfile {
@@ -119,6 +123,55 @@ export interface Notification {
   data?: any
   user_id: string
   created_at: string
+}
+
+export interface LandlordViewingRequest {
+  id: string
+  property_id: string
+  tenant_id: string
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
+  preferred_date?: string
+  scheduled_date?: string
+  viewing_type?: 'physical' | 'virtual'
+  property?: { title?: string }
+  tenant?: { full_name?: string; first_name?: string }
+  created_at: string
+}
+
+export interface LandlordReceivedApplication {
+  id: string
+  property_id: string
+  tenant_id: string
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn'
+  property?: { title?: string; location?: string; price?: number }
+  user?: { full_name?: string }
+  created_at: string
+  viewed_by_landlord?: boolean
+}
+
+export interface LandlordAgreement {
+  id: string
+  tenant_id?: string
+  property_id?: string
+  status: 'ACTIVE' | 'SIGNED' | 'PENDING_LANDLORD' | 'PENDING_TENANT' | 'EXPIRED' | 'TERMINATED'
+  start_date?: string
+  end_date?: string
+  monthly_rent?: number
+  tenant?: { full_name?: string }
+  property?: { title?: string }
+  created_at: string
+}
+
+export interface EngagementMetrics {
+  engagement_score?: number
+  trust_score?: number
+  engagement_level?: string
+  metrics?: {
+    properties_listed?: number
+    viewing_responses_count?: number
+    messages_sent_count?: number
+    avg_response_time_hours?: number
+  }
 }
 
 export interface OnboardingStep {

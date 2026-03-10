@@ -130,7 +130,7 @@ export const notificationsAPI = {
       const response = await apiClient.patch<{ success: boolean; message: string; updated_count?: number }>(
         '/api/v1/notifications/mark-all-read',
         {},
-        { timeout: 5000 } // 5 second timeout
+        { timeout: 30000 } // 30 second timeout
       );
       
       console.log('✅ [NOTIFICATIONS API] Marked all as read:', response.data);

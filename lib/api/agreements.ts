@@ -152,7 +152,10 @@ export const agreementsAPI = {
    */
   getMyAgreements: async (statusFilter?: string): Promise<AgreementsListResponse> => {
     const params = statusFilter ? { status_filter: statusFilter } : undefined;
-    const response = await apiClient.get<AgreementsListResponse>('/api/v1/agreements/', { params });
+    const response = await apiClient.get<AgreementsListResponse>('/api/v1/agreements/', {
+      params,
+      timeout: 60000 // 60 seconds - slow endpoint
+    });
     return response.data;
   },
 

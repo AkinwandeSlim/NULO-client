@@ -30,14 +30,15 @@ export default function PropertiesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>('all')
 
-  const fetchProperties = useCallback(async () => {
+  const fetchProperties = useCallback(async (filter?: string) => {
     try {
       setLoading(true)
       setError(null)
-      console.log('� [PROPERTIES PAGE] Fetching properties...')
+      console.log('🔄 [PROPERTIES PAGE] Fetching properties...')
       
-      const data = await propertiesAPI.getMyProperties(1, 20)
+      const data = await propertiesAPI.getMyProperties(1, 20, filter || statusFilter)
       console.log('📦 [PROPERTIES PAGE] Properties data received:', data.properties?.length || 0)
       
       setProperties(data.properties || [])
@@ -48,11 +49,16 @@ export default function PropertiesPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [statusFilter])
 
   useEffect(() => {
     fetchProperties()
   }, [fetchProperties])
+
+  const handleStatusFilterChange = (newFilter: string) => {
+    setStatusFilter(newFilter)
+    fetchProperties(newFilter)
+  }
 
   const handleDeleteProperty = async (propertyId: string, propertyTitle: string) => {
     if (!confirm(`Are you sure you want to delete "${propertyTitle}"? This action cannot be undone.`)) {
@@ -99,7 +105,7 @@ export default function PropertiesPage() {
               <AlertCircle className="w-20 h-20 text-red-500 mx-auto mb-6" />
               <h3 className="text-xl font-semibold text-slate-900 mb-2">Failed to Load Properties</h3>
               <p className="text-slate-600 mb-6">{error}</p>
-              <Button onClick={fetchProperties} className="bg-orange-500 hover:bg-orange-600">
+              <Button onClick={() => fetchProperties()} className="bg-orange-500 hover:bg-orange-600">
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Try Again
               </Button>
@@ -155,6 +161,42 @@ export default function PropertiesPage() {
                   </Button>
                 </Link>
               </div>
+            </div>
+
+            {/* Status Filter Buttons */}
+            <div className="flex flex-wrap gap-2 mb-8">
+              <Button
+                variant={statusFilter === 'all' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => handleStatusFilterChange('all')}
+                className={statusFilter === 'all' ? 'bg-orange-500 text-white' : 'border-orange-200 text-orange-700 hover:bg-orange-50'}
+              >
+                All Properties
+              </Button>
+              <Button
+                variant={statusFilter === 'vacant' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => handleStatusFilterChange('vacant')}
+                className={statusFilter === 'vacant' ? 'bg-green-500 text-white' : 'border-green-200 text-green-700 hover:bg-green-50'}
+              >
+                ✅ Available
+              </Button>
+              <Button
+                variant={statusFilter === 'rented' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => handleStatusFilterChange('rented')}
+                className={statusFilter === 'rented' ? 'bg-red-500 text-white' : 'border-red-200 text-red-700 hover:bg-red-50'}
+              >
+                🔒 Rented
+              </Button>
+              <Button
+                variant={statusFilter === 'draft' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => handleStatusFilterChange('draft')}
+                className={statusFilter === 'draft' ? 'bg-slate-500 text-white' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}
+              >
+                ⏳ Draft
+              </Button>
             </div>
 
             {/* Stats Summary */}
@@ -223,17 +265,19 @@ export default function PropertiesPage() {
                     />
                   </Link>
                   
-                  {/* Status Badge — Top Left */}
+                  {/* Rental Status Badge — Top Left */}
                   <Badge 
                     className={`absolute top-3 left-3 ${
                       property.status === 'vacant' 
                         ? 'bg-green-500 text-white' 
                         : property.status === 'rented'
-                        ? 'bg-slate-500 text-white'
-                        : 'bg-orange-500 text-white'
+                        ? 'bg-red-500 text-white'
+                        : 'bg-slate-500 text-white'
                     }`}
                   >
-                    {property.status}
+                    {property.status === 'rented' ? '🔒 Rented'
+                      : property.status === 'vacant' ? '✅ Available'
+                      : '⏳ Draft'}
                   </Badge>
                   
                   {/* Verification Status — Top Right */}

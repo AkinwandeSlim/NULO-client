@@ -148,12 +148,15 @@ export default function TenantPaymentsPage() {
       
       if (response.success && response.payments) {
         setTransactions(response.payments)
+        setIsLoading(false)
       } else {
         toast.error(response.error ?? "Failed to load payment history")
+        setIsLoading(false)
       }
     } catch (error) {
       console.error("[TenantPayments] fetch error:", error)
       toast.error("Failed to load payment history")
+      setIsLoading(false)
     }
   }, [])
 

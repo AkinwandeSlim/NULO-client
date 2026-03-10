@@ -400,10 +400,9 @@ export default function ViewingsPage() {
 
   const stats = {
     total: viewingRequests.length,
-    // ✅ FIX 6: "Scheduled" stat = all pending + future confirmed
+    // ✅ FIX 6: "Scheduled" stat = all confirmed viewings (landlord confirmed, regardless of date)
     scheduled: viewingRequests.filter(r => 
-      (r.status === 'pending' || r.status === 'confirmed') && 
-      new Date(r.preferred_date) >= new Date()
+      r.status === 'confirmed'
     ).length,
     confirmed: viewingRequests.filter(r => r.status === 'confirmed').length,
     completed: viewingRequests.filter(r => r.status === 'completed').length

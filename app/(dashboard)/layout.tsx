@@ -9,13 +9,14 @@ import { useDashboard } from "@/contexts/DashboardContext"
 import { toast } from "sonner"
 import { Navbar } from "@/components/navigation/Navbar"
 import { NotificationBadge } from "@/components/notifications/NotificationBadge"
+import { MessageBadge } from "@/components/messages/MessageBadge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   LayoutDashboard,
   Heart,
   MessageSquare,
   User,
-  Settings,
+  Settings as SettingsIcon,
   LogOut,
   Menu,
   X,
@@ -26,20 +27,15 @@ import {
   Home,
   Users,
   CheckCircle,
-  Info,
-  BookOpen,
-  Phone,
   ChevronDown,
   UserPlus,
-  Edit,
-  Trash2,
   Eye,
   Bell,
   ChevronRight,
   Briefcase,
   FileCheck,
-  MapPin,
-  Send
+  Send,
+  BookOpen
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -87,14 +83,15 @@ const tenantSidebarSections: SidebarSection[] = [
       { href: "/tenant/viewings", label: "Viewing Requests", icon: Calendar },
       { href: "/tenant/applications", label: "My Applications", icon: FileText, badge: "pending" },
       { href: "/tenant/agreements", label: "My Agreements", icon: FileCheck },
+      { href: "/tenant/maintenance", label: "Maintenance Requests", icon: SettingsIcon },
     ]
   },
   {
     section: "Billing & Payments",
     icon: FileCheck,
     items: [
-      { href: "/tenant/payments", label: "Make Payment", icon: Send },
-      { href: "/tenant/payment-history", label: "Payment History", icon: BookOpen },
+      { href: "/tenant/payments/new", label: "Make Payment", icon: Send },
+      { href: "/tenant/payments", label: "Payment History", icon: BookOpen },
       { href: "/tenant/invoices", label: "Invoices", icon: FileText },
     ]
   },
@@ -133,6 +130,7 @@ const landlordSidebarSections: SidebarSection[] = [
       { href: "/landlord/viewings", label: "Viewing Requests", icon: Eye, indent: true },
       { href: "/landlord/applications", label: "Applications", icon: FileText, indent: true },
       { href: "/landlord/agreements", label: "Agreements", icon: BookOpen, indent: true },
+      { href: "/landlord/maintenance", label: "Maintenance", icon: SettingsIcon, indent: true },
     ]
   },
   {
@@ -190,60 +188,8 @@ const adminSidebarSections: SidebarSection[] = [
   },
 ]
 
-// Public navigation links
-const tenantSidebarLinks = [
-  { href: "/tenant", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/tenant/applications", label: "My Applications", icon: FileText },
-  { href: "/tenant/agreements", label: "My Agreements", icon: BookOpen },
-  { href: "/tenant/favorites", label: "Saved Properties", icon: Heart },
-  { href: "/tenant/viewings", label: "Viewing Requests", icon: Calendar },
-  { href: "/tenant/messages", label: "Messages", icon: MessageSquare },
-  { href: "/tenant/notifications", label: "Notifications", icon: Bell },
-  { href: "/tenant/profile", label: "Profile", icon: User },
-]
 
-// Landlord sidebar links
-const landlordSidebarLinks = [
-  { href: "/landlord/overview", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/landlord/properties", label: "My Properties", icon: Building2 },
-  { href: "/landlord/applications", label: "Applications", icon: FileText },
-  { href: "/landlord/agreements", label: "Agreements", icon: BookOpen },
-  { href: "/landlord/viewings", label: "Viewing Requests", icon: Calendar },
-  { href: "/landlord/messages", label: "Messages", icon: MessageSquare },
-  { href: "/landlord/notifications", label: "Notifications", icon: Bell },
-  { href: "/landlord/profile", label: "Profile", icon: User },
-]
 
-// Admin sidebar links with dropdown for user management
-const adminSidebarLinks = [
-  { href: "/admin", label: "Admin Dashboard", icon: Shield },
-  { 
-    href: "/admin/users", 
-    label: "Manage Users", 
-    icon: Users,
-    isDropdown: true,
-    dropdownItems: [
-      { href: "/admin/users/tenants", label: "Tenant Management", icon: User, description: "View, edit, delete tenants" },
-      { href: "/admin/users/landlords", label: "Landlord Management", icon: Building2, description: "View, edit, delete landlords" },
-      { href: "/admin/users/create", label: "Create New User", icon: UserPlus, description: "Add new tenant or landlord" },
-    ]
-  },
-  // { href: "/admin/tenant-verification", label: "Tenant Verification", icon: User },
-  { href: "/admin/landlord-verification", label: "Landlord Verification", icon: Building2 },
-  { href: "/admin/property-verification", label: "Property Verification", icon: FileText },
-  { href: "/admin/verifications", label: "All Verifications", icon: CheckCircle },
-  { href: "/admin/notifications", label: "Notifications", icon: Bell },
-  
-]
-
-// ✅ NEW: Public navigation links to show in dashboard navbar
-const publicNavLinks = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/properties", label: "Marketplace", icon: Building2 },
-  { href: "/about", label: "About", icon: Info },
-  { href: "/blog", label: "Blog", icon: BookOpen },
-  { href: "/contact", label: "Contact", icon: Phone },
-]
 
 export default function DashboardLayout({
   children,
@@ -288,15 +234,14 @@ export default function DashboardLayout({
   }, [])
 
   // ✅ Initialize dashboard cache when user is authenticated
+  // fetchDashboardStats is excluded from deps intentionally — it's called once on mount.
+  // Including it risks infinite refetch loops if the context doesn't memoize the function.
   useEffect(() => {
     if (mounted && !loading && user) {
-      // Initialize cache for all dashboard pages
-      // This runs once and all child pages benefit from the cached data
       fetchDashboardStats()
-      
-      console.log('🚀 [DASHBOARD LAYOUT] Initialized cache for all dashboard pages')
     }
-  }, [mounted, loading, user, fetchDashboardStats])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, loading, user?.id])
   
   // Redirect if not authenticated (only after initial load)
   useEffect(() => {
@@ -344,20 +289,8 @@ export default function DashboardLayout({
   // FIXED: Use user for user_type
   const userType = user?.user_type || 'tenant'
 
-  // Determine which sidebar links to show based on user type
-  const getSidebarLinks = () => {
-    if (userType === 'admin') {
-      return adminSidebarLinks
-    } else if (userType === 'landlord') {
-      return landlordSidebarLinks
-    } else {
-      return tenantSidebarLinks
-    }
-  }
 
-  // Don't use old sidebar links - we're using getSidebarSections() now
-  // const sidebarLinks = getSidebarLinks()
-  
+
   // Get dashboard home URL based on user type
   const getDashboardHome = () => {
     if (userType === 'admin') return '/admin'
@@ -380,8 +313,7 @@ export default function DashboardLayout({
     if (pathname.startsWith(path + '/')) return true
     
     // Special cases: Billing pages
-    if (path === '/tenant/payments' && (pathname === '/tenant/payments/new' || pathname.startsWith('/tenant/payments/'))) return true
-    if (path === '/tenant/payment-history' && pathname.startsWith('/tenant/payment-history')) return true
+    if (path === '/tenant/payments' && (pathname === '/tenant/payments' || pathname.startsWith('/tenant/payments/'))) return true
     if (path === '/tenant/invoices' && pathname.startsWith('/tenant/invoices')) return true
     if (path === '/landlord/transactions' && pathname.startsWith('/landlord/transactions')) return true
     if (path === '/landlord/invoices' && pathname.startsWith('/landlord/invoices')) return true
@@ -390,33 +322,8 @@ export default function DashboardLayout({
     return false
   }
 
-  // Enhanced active detection for dashboard links (handles nested routes)
-  const isDashboardLinkActive = (path: string) => {
-    if (path === '/') return pathname === '/'
-    
-    // Exact match for main pages
-    if (pathname === path) return true
-    
-    // Special cases: Don't highlight parent routes when on child pages
-    const tenantChildRoutes = ['/tenant/applications', '/tenant/agreements', '/tenant/favorites', '/tenant/viewings', '/tenant/messages', '/tenant/notifications', '/tenant/profile']
-    const landlordChildRoutes = ['/landlord/properties', '/landlord/applications', '/landlord/agreements', '/landlord/viewings', '/landlord/messages', '/landlord/notifications', '/landlord/profile']
-    
-    // For tenant dashboard, don't highlight when on any tenant child route
-    if (path === '/tenant' && tenantChildRoutes.some(childRoute => pathname.startsWith(childRoute))) {
-      return false
-    }
-    
-    // For landlord dashboard, don't highlight when on any landlord child route
-    if (path === '/landlord/overview' && landlordChildRoutes.some(childRoute => pathname.startsWith(childRoute))) {
-      return false
-    }
-    
-    // Check for nested routes (e.g., /landlord/applications/[id] should highlight /landlord/applications)
-    // This comes AFTER the special cases to avoid double-highlighting
-    if (pathname.startsWith(path + '/')) return true
-    
-    return false
-  }
+
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]">
@@ -432,35 +339,6 @@ export default function DashboardLayout({
           }`}
         >
           <div className="flex flex-col h-full p-4">
-            {/* NEW: Mobile Public Navigation Links */}
-            <div className="mb-4 lg:hidden space-y-1 pb-4 border-b border-slate-200">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 mb-2">
-                Navigation
-              </p>
-              {publicNavLinks.map((link) => {
-                const Icon = link.icon
-                const isActive = isNavLinkActive(link.href)
-                return (
-                  <Link 
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setSidebarOpen(false)}
-                  >
-                    <Button
-                      variant={isActive ? "default" : "ghost"}
-                      className={`w-full justify-start gap-3 ${
-                        isActive
-                          ? "bg-orange-500 text-white hover:bg-orange-600"
-                          : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" />
-                      {link.label}
-                    </Button>
-                  </Link>
-                )
-              })}
-            </div>
 
             {/* Dashboard Section Header */}
             <div className="mb-4">
@@ -527,6 +405,8 @@ export default function DashboardLayout({
                                 {isActive && (
                                   <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
                                 )}
+                                {item.badge === 'messages' && <MessageBadge />}
+                                {item.badge === 'notifications' && <NotificationBadge />}
                               </Button>
                             </Link>
                           )
@@ -541,10 +421,10 @@ export default function DashboardLayout({
             {/* Bottom Actions */}
             <div className="space-y-2 pt-4 border-t border-slate-200 mt-4">
               {/* Browse Properties - Only for tenants */}
-
+              {userType === 'tenant' && (
                 <Link href="/properties">
-                  <Button 
-                    variant="ghost" 
+                  <Button
+                    variant="ghost"
                     className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
                     onClick={() => setSidebarOpen(false)}
                   >
@@ -552,11 +432,12 @@ export default function DashboardLayout({
                     Browse Properties
                   </Button>
                 </Link>
+              )}
               
               
               {/* Add Property - Only for landlords */}
               {userType === 'landlord' && (
-                <Link href="/dashboard/landlord/properties/new">
+                <Link href="/landlord/properties/new">
                   <Button 
                     variant="ghost" 
                     className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
@@ -575,7 +456,7 @@ export default function DashboardLayout({
                   className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
                   onClick={() => setSidebarOpen(false)}
                 >
-                  <Settings className="h-5 w-5" />
+                  <SettingsIcon className="h-5 w-5" />
                   Settings
                 </Button>
               </Link>
@@ -606,6 +487,20 @@ export default function DashboardLayout({
           </div>
         </aside>
 
+        {/* Mobile top bar — hamburger to open sidebar. Hidden on desktop where sidebar is always visible. */}
+        <div className="lg:hidden fixed top-14 left-0 right-0 z-30 bg-white/95 backdrop-blur-sm border-b border-slate-200 px-4 h-11 flex items-center gap-3 shadow-sm">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-1.5 rounded-lg text-slate-600 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+            aria-label="Open navigation"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <span className="text-sm font-medium text-slate-600 truncate">
+            {userType === 'admin' ? 'Admin Panel' : userType === 'landlord' ? 'Property Management' : 'My Dashboard'}
+          </span>
+        </div>
+
         {/* Overlay for mobile */}
         {sidebarOpen && (
           <div
@@ -615,7 +510,7 @@ export default function DashboardLayout({
         )}
 
         {/* ✅ FIXED: Main Content with notification sidebar */}
-        <main className="lg:pl-64">
+        <main className="lg:pl-64 pt-11 lg:pt-0">
           <div className="flex gap-6">
             {/* Main Content Area */}
             <div className="flex-1 p-3 sm:p-4">

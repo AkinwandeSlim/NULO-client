@@ -21,7 +21,7 @@ import {
 import { toast } from "sonner"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { messagesAPI } from "@/lib/api"
+import { messagesAPI, Message } from "@/lib/api"
 import { useAuth } from "@/contexts/AuthContext"
 
 interface ChatModalProps {
@@ -36,15 +36,6 @@ interface ChatModalProps {
   landlordAvatar: string
   landlordVerified: boolean
   landlordResponseTime: string
-}
-
-interface Message {
-  id: string
-  senderId: string
-  senderName: string
-  content: string
-  timestamp: Date
-  status: 'sent' | 'delivered' | 'read'
 }
 
 const quickTemplates = [
@@ -93,19 +84,39 @@ export function ChatModal({
       const existingMessages: Message[] = [
         {
           id: "1",
-          senderId: "tenant-1",
-          senderName: "You",
+          conversation_id: "simulated-conversation",
+          sender_id: currentUserId,
+          recipient_id: landlordId,
           content: "Hi, I'm interested in this property. Is it still available?",
-          timestamp: new Date(Date.now() - 3600000),
-          status: "read"
+          property_id: propertyId.toString(),
+          message_type: "text",
+          read: true,
+          read_at: new Date(Date.now() - 3000000).toISOString(),
+          timestamp: new Date(Date.now() - 3600000).toISOString(),
+          sender: {
+            id: currentUserId,
+            full_name: null,
+            first_name: "You",
+            avatar_url: null
+          }
         },
         {
           id: "2",
-          senderId: "landlord-1",
-          senderName: landlordName,
+          conversation_id: "simulated-conversation",
+          sender_id: landlordId,
+          recipient_id: currentUserId,
           content: `Yes, it's available! Would you like to schedule a viewing? I typically respond ${landlordResponseTime}.`,
-          timestamp: new Date(Date.now() - 3000000),
-          status: "read"
+          property_id: propertyId.toString(),
+          message_type: "text",
+          read: true,
+          read_at: new Date(Date.now() - 2400000).toISOString(),
+          timestamp: new Date(Date.now() - 3000000).toISOString(),
+          sender: {
+            id: landlordId,
+            full_name: landlordName,
+            first_name: null,
+            avatar_url: landlordAvatar
+          }
         }
       ]
       // Only show if this is a returning conversation
@@ -144,24 +155,42 @@ export function ChatModal({
 
         // Close modal and redirect to chat page
         onClose()
-        router.push(`/dashboard/tenant/messages/${response.conversation_id}`)
+        router.push(`/tenant/messages?conversation=${response.conversation_id}`)
       } else {
         // Send message in existing conversation
-        const response = await messagesAPI.sendMessage(conversationId, {
-          content: messageContent
-        })
+        const response = await messagesAPI.sendMessage(conversationId, messageContent)
         
         const message: Message = {
-          id: response.message.id,
-          senderId: response.message.sender_id,
-          senderName: "You",
-          content: response.message.content,
-          timestamp: new Date(response.message.timestamp),
-          status: "sent"
+          id: response.id,
+          conversation_id: response.conversation_id,
+          sender_id: response.sender_id,
+          recipient_id: response.recipient_id,
+          content: response.content,
+          property_id: response.property_id,
+          message_type: response.message_type,
+          read: response.read,
+          read_at: response.read_at,
+          timestamp: response.timestamp,
+          sender: response.sender
         }
         setMessages(prev => [...prev, message])
 
-        toast.success("Message sent!")
+        toast.success(
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold">✅ Message sent!</p>
+              <p className="text-xs text-slate-600">
+                Your message has been delivered to {landlordName}
+              </p>
+            </div>
+            <Link 
+              href={`/tenant/messages?conversation=${conversationId}`}
+              className="ml-4 text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded hover:bg-orange-200 transition-colors"
+            >
+              View in Messages →
+            </Link>
+          </div>
+        )
       }
     } catch (error: any) {
       console.error('Failed to send message:', error)
@@ -184,17 +213,6 @@ export function ChatModal({
       minute: '2-digit',
       hour12: true 
     })
-  }
-
-  const getStatusIcon = (status: Message['status']) => {
-    switch (status) {
-      case 'sent':
-        return <Clock className="h-3 w-3 text-slate-400" />
-      case 'delivered':
-        return <CheckCircle2 className="h-3 w-3 text-slate-400" />
-      case 'read':
-        return <CheckCircle2 className="h-3 w-3 text-blue-500" />
-    }
   }
 
   return (
@@ -288,7 +306,7 @@ export function ChatModal({
           )}
 
           {messages.map((message) => {
-            const isOwn = message.senderId === currentUserId
+            const isOwn = message.sender_id === currentUserId
             return (
               <div
                 key={message.id}
@@ -306,9 +324,15 @@ export function ChatModal({
                   </div>
                   <div className={`flex items-center gap-1 mt-1 px-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
                     <span className="text-xs text-slate-500">
-                      {formatTime(message.timestamp)}
+                      {formatTime(new Date(message.timestamp))}
                     </span>
-                    {isOwn && getStatusIcon(message.status)}
+                    {isOwn && (
+                      message.read ? (
+                        <CheckCircle2 className="h-3 w-3 text-blue-500" />
+                      ) : (
+                        <CheckCircle2 className="h-3 w-3 text-slate-400" />
+                      )
+                    )}
                   </div>
                 </div>
               </div>

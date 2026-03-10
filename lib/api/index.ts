@@ -20,7 +20,7 @@ export { favoritesAPI } from './favorites';
 export { tenantsAPI } from './tenants';
 export { viewingRequestsAPI } from './viewingRequestsLandlord';
 export { messagesAPI } from './messages';
-
+export { agreementsAPI } from './agreements';
 
 // Re-export types
 export type { RegisterData, LoginData, AuthResponse, User } from './auth';
@@ -38,7 +38,8 @@ export type { Application, CreateApplicationData } from './applications';
 export type { Favorite } from './favorites';
 export type { ProfileStatus, TenantProfile, CompleteProfileData } from './tenants';
 export type { ViewingRequest,ViewingRequestsResponse, CreateViewingRequestData,LandlordReviewData,UpdateViewingRequestData } from './viewingRequestsLandlord';
-export type { Message, Conversation, CreateConversationData } from './messages';
+export type { Message, Conversation, ConversationDetail, MessagesPagination, ConversationPartner, ConversationProperty, MessageSender } from './messages';
+export type { AgreementWithDetails } from './agreements';
 
 
 
@@ -107,51 +108,3 @@ export type {
 
 
 
-
-
-
-
-
-
-
-
-
-
-// /**
-//  * API Module Index
-//  * Central export for all API modules
-//  */
-
-// export { default as apiClient, storage, getErrorMessage } from './client';
-// export { default as authAPI } from './auth';
-// export { default as adminAPI } from './admin';
-// export { default as propertiesAPI } from './properties';
-// export { default as applicationsAPI } from './applications';
-// export { favoritesAPI } from './favorites';
-// export { tenantsAPI } from './tenants';
-// export { viewingRequestsAPI } from './viewingRequestsLandlord';
-// export { messagesAPI } from './messages';
-// export { default as verificationAPI } from './verification';
-// export { default as landlordUsersAPI } from './landlordUsers';
-
-// // Re-export types
-// export type { RegisterData, LoginData, AuthResponse, User } from './auth';
-// export type { AdminRegisterData, AdminProfileData, AdminAuthResponse, AdminProfileResponse } from './admin';
-// export type { Property, PropertySearchParams, CreatePropertyData } from './properties';
-// export type { Application, CreateApplicationData } from './applications';
-// export type { Favorite } from './favorites';
-// export type { ProfileStatus, TenantProfile, CompleteProfileData } from './tenants';
-// export type { ViewingRequest, CreateViewingRequestData } from './viewingRequestsLandlord';
-// export type { Message, Conversation, CreateConversationData } from './messages';
-
-
-
-// // Landlord Users types
-// export type {
-//   LandlordUser,
-//   LandlordStats,
-//   LandlordDetail,
-//   LandlordListParams,
-//   LandlordListResponse,
-//   LandlordUpdateData
-// } from './landlordUsers';

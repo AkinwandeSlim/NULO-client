@@ -377,11 +377,7 @@ export default function PropertyDetailPage() {
 
 
 
-
-
-
-
-      {/* ── Gallery ─────────────────────────────────────────────────────────── */}
+            {/* ── Gallery ─────────────────────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 md:px-6 pt-5 pb-3">
         <div className="grid grid-cols-4 gap-1.5 h-[260px] md:h-[480px] rounded-2xl overflow-hidden">
           {/* Main image — left 50% */}
@@ -516,35 +512,68 @@ export default function PropertyDetailPage() {
                   ))}
                 </div>
 
-                {/* Pricing breakdown */}
-                <div className="bg-gradient-to-r from-orange-50/70 to-blue-50/70 border border-orange-100 rounded-xl p-4 md:p-5">
-                  <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-                    <TrendingDown className="h-4 w-4 text-green-600" />
-                    Cost Breakdown
-                    <span className="ml-auto text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Zero Agency Fee</span>
-                  </h3>
-                  <div className="space-y-2">
-                    {[
-                      { label: "Monthly Rent",    val: formatPrice(propertyData.price),                        highlight: false },
-                      { label: "Agency Fee",      val: "₦0 — Waived",                                          highlight: true  },
-                      { label: "Service Charge",  val: "₦0 — Waived",                                          highlight: true  },
-                      { label: "Caution Deposit", val: "1 month rent",                                         highlight: false },
-                      { label: "Platform Fee",    val: `${formatPrice(propertyData.price * 0.1)} (10%)`,        highlight: false },
-                    ].map(({ label, val, highlight }) => (
-                      <div key={label} className="flex justify-between items-center text-sm">
-                        <span className="text-slate-600">{label}</span>
-                        <span className={`font-semibold ${highlight ? "text-green-600" : "text-slate-900"}`}>{val}</span>
+                {/* Pricing breakdown — matches agreement & application pages exactly */}
+                {(() => {
+                  const monthlyRent    = propertyData.price || 0
+                  const annualRent     = monthlyRent * 12
+                  // Use the actual field from the property; fall back to 1 month rent if not set
+                  const cautionFee     = propertyData.security_deposit ?? propertyData.caution_fee ?? monthlyRent
+                  const platformFee    = propertyData.platform_fee ?? 0
+                  const serviceCharge  = propertyData.service_charge ?? 0
+                  const totalDue       = annualRent + cautionFee + platformFee + serviceCharge
+
+                  return (
+                    <div className="bg-gradient-to-r from-orange-50/70 to-blue-50/70 border border-orange-100 rounded-xl p-4 md:p-5">
+                      <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                        <TrendingDown className="h-4 w-4 text-green-600" />
+                        What You'll Pay on Move-In
+                        <span className="ml-auto text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Zero Agency Fee</span>
+                      </h3>
+
+                      <div className="space-y-2">
+                        {/* Monthly rent — context line, not part of upfront total */}
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500">Monthly Rent</span>
+                          <span className="font-medium text-slate-600">{formatPrice(monthlyRent)}</span>
+                        </div>
+
+                        {/* Annual rent — the actual charge */}
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-700 font-medium">Annual Rent <span className="text-slate-400 font-normal">(×12)</span></span>
+                          <span className="font-semibold text-slate-900">{formatPrice(annualRent)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-700">Caution Fee <span className="text-slate-400 text-xs">(Security Deposit)</span></span>
+                          <span className="font-semibold text-slate-900">{formatPrice(cautionFee)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-700">Platform Fee</span>
+                          <span className={`font-semibold ${platformFee === 0 ? "text-green-600" : "text-slate-900"}`}>
+                            {platformFee === 0 ? "₦0 — Waived" : formatPrice(platformFee)}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-700">Service Charge</span>
+                          <span className={`font-semibold ${serviceCharge === 0 ? "text-green-600" : "text-slate-900"}`}>
+                            {serviceCharge === 0 ? "₦0 — Waived" : formatPrice(serviceCharge)}
+                          </span>
+                        </div>
+
+                        {/* Total */}
+                        <div className="border-t border-slate-200 pt-2.5 mt-1 flex justify-between items-center">
+                          <span className="font-bold text-slate-900 text-sm">Total Due on Move-In</span>
+                          <span className="text-lg font-bold text-orange-600">{formatPrice(totalDue)}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 text-right">
+                          Annual rent + caution fee{platformFee > 0 ? " + platform fee" : ""}{serviceCharge > 0 ? " + service charge" : ""}
+                        </p>
                       </div>
-                    ))}
-                    <div className="border-t border-slate-200 pt-2.5 mt-1 flex justify-between items-center">
-                      <span className="font-bold text-slate-900 text-sm">Total Move-in Cost</span>
-                      <span className="text-lg font-bold text-orange-600">
-                        {formatPrice(propertyData.price * 2.1)}
-                      </span>
                     </div>
-                    <p className="text-[11px] text-slate-400 text-right">First month + caution deposit + platform fee</p>
-                  </div>
-                </div>
+                  )
+                })()}
               </CardContent>
             </Card>
 
