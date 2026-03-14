@@ -68,6 +68,7 @@ export interface LandlordStats {
   active_listings: number
   pending_viewings: number
   unread_messages: number
+  total_conversations: number
   total_views: number
   occupancy_rate: number
   monthly_revenue: number
@@ -154,12 +155,14 @@ export interface LandlordAgreement {
   tenant_id?: string
   property_id?: string
   status: 'ACTIVE' | 'SIGNED' | 'PENDING_LANDLORD' | 'PENDING_TENANT' | 'EXPIRED' | 'TERMINATED'
-  start_date?: string
-  end_date?: string
-  monthly_rent?: number
+  lease_start_date?: string
+  lease_end_date?: string
+  rent_amount?: number
+  deposit_amount?: number
   tenant?: { full_name?: string }
   property?: { title?: string }
   created_at: string
+  updated_at?: string
 }
 
 export interface EngagementMetrics {
@@ -187,39 +190,81 @@ export interface OnboardingStep {
 // ============================================================================
 
 /**
+ * Normalise backend snake_case keys to camelCase
+ * The backend returns snake_case JSON keys, but TypeScript interface uses camelCase
+ */
+const normaliseDashboardKeys = (raw: any): LandlordDashboardData => {
+  return {
+    ...raw,
+    // Normalise snake_case keys the backend added to camelCase
+    viewingRequests:       raw.viewingRequests       ?? raw.viewing_requests       ?? [],
+    receivedApplications:  raw.receivedApplications  ?? raw.received_applications  ?? [],
+    agreements:            raw.agreements             ?? [],
+  } as LandlordDashboardData
+}
+
+/**
  * Get comprehensive landlord dashboard data
- * 🚀 OPTIMIZED: 15-second timeout (not 90!) - show error quickly, let user retry
+ * 🚀 OPTIMIZED: Adaptive timeout for Nigeria connectivity
  */
 export const getLandlordDashboard = async (): Promise<LandlordDashboardData> => {
   try {
     console.log('📤 [LANDLORD DASHBOARD API] Fetching dashboard data...')
     
-    // 30s timeout — backend makes ~10 sequential Supabase calls, needs time
-    const response = await apiClient.get('/api/v1/landlord/dashboard', {
-      timeout: 30000
-    })
-    
-    console.log('✅ [LANDLORD DASHBOARD API] Dashboard data retrieved')
-    return response.data
+    // Adaptive timeout strategy for Nigeria connectivity
+    try {
+      // First try with short timeout (10s) for responsive UX
+      const response = await apiClient.get('/api/v1/landlord/dashboard', {
+        timeout: 10000
+      })
+      console.log('✅ [LANDLORD DASHBOARD API] Dashboard data retrieved (fast)')
+      return normaliseDashboardKeys(response.data)
+    } catch (error: any) {
+      // If it's a timeout, try once more with longer timeout for poor connectivity
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        console.log('📡 [LANDLORD DASHBOARD] First attempt timed out, retrying with longer timeout...')
+        try {
+          const response = await apiClient.get('/api/v1/landlord/dashboard', {
+            timeout: 25000
+          })
+          console.log('✅ [LANDLORD DASHBOARD API] Dashboard data retrieved (retry)')
+          return normaliseDashboardKeys(response.data)
+        } catch (retryError: any) {
+          try {
+            // Final fallback to standard method for reliability
+            const response = await apiClient.get('/api/v1/landlord/dashboard', {
+              timeout: 30000
+            })
+            console.log('✅ [LANDLORD DASHBOARD API] Dashboard data retrieved (fallback)')
+            return normaliseDashboardKeys(response.data)
+          } catch (finalError: any) {
+            console.log('❌ [LANDLORD DASHBOARD] All attempts failed')
+            throw new Error('Dashboard is taking too long to load. Please try again.')
+          }
+        }
+      }
+      // For other errors, throw immediately
+      throw error
+    }
   } catch (error: any) {
     console.error('❌ [LANDLORD DASHBOARD API] Error fetching dashboard:', error)
     
     // 🚀 PERFORMANCE: Return fallback data on timeout instead of throwing
     if (error.response?.status === 401) {
       console.log('🔒 [LANDLORD DASHBOARD] Unauthorized - user may not be landlord')
-      throw new Error('You must be logged in as a landlord to access the dashboard')
-    }
-    
-    // Handle timeout - throw so DashboardContext keeps landlordData=null
-    // and page.tsx shows the "Could not load" retry screen (better than broken banner)
-    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      console.log('⏱️ [LANDLORD DASHBOARD] Request timeout - backend is slow, user should retry')
-      throw new Error('Dashboard is taking too long to load. Please try again.')
+      throw new Error('You must be logged in as a landlord to access dashboard')
     }
     
     if (error.response?.status === 500) {
       console.log('🔥 [LANDLORD DASHBOARD] Server error')
       throw new Error('Server error loading dashboard. Please try again.')
+    }
+    
+    // Handle timeout - throw so DashboardContext keeps landlordData=null
+    // and page.tsx shows "Could not load" retry screen (better than broken banner)
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      console.log('⏱️ [LANDLORD DASHBOARD] Request timeout - backend is slow, user should retry')
+      throw new Error('Dashboard is taking too long to load. Please try again.')
     }
     
     throw new Error(

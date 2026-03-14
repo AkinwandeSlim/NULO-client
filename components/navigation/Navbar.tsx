@@ -98,7 +98,7 @@ export function Navbar() {
 
   // Read search query from URL params
   useEffect(() => {
-    const locationParam = searchParams.get('location')
+    const locationParam = searchParams?.get('location')
     if (locationParam) {
       setSearchQuery(locationParam)
     }
@@ -142,6 +142,11 @@ export function Navbar() {
 
   // ✅ OPTIMIZED: Memoize isActive and search handler
   const isActive = useCallback((path: string, isPrefix?: boolean) => {
+    // Special handling for profile pages
+    if (path === 'profile') {
+      return pathname?.includes('/profile')
+    }
+    
     if (isPrefix) {
       return pathname === path || pathname?.startsWith(path + '/')
     }
@@ -213,6 +218,12 @@ export function Navbar() {
                         }`}>
                         <MessageSquare className="h-4 w-4" />Messages
                       </Link>
+                      <Link href="/landlord/profile"
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+                          isActive('profile') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                        }`}>
+                        <User className="h-4 w-4" />Profile
+                      </Link>
                     </>
                   )}
 
@@ -242,6 +253,12 @@ export function Navbar() {
                         }`}>
                         <MessageSquare className="h-4 w-4" />Messages
                       </Link>
+                      <Link href="/tenant/profile"
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+                          isActive('profile') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                        }`}>
+                        <User className="h-4 w-4" />Profile
+                      </Link>
                     </>
                   )}
 
@@ -258,6 +275,12 @@ export function Navbar() {
                           isActive('/admin/properties', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
                         <Building2 className="h-4 w-4" />Properties
+                      </Link>
+                      <Link href="/admin/profile"
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+                          isActive('profile') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                        }`}>
+                        <User className="h-4 w-4" />Profile
                       </Link>
                     </>
                   )}

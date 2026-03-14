@@ -13,10 +13,19 @@ import {
   Send,
   Clock,
   AlertCircle,
+  Mail,
+  Phone,
+  Shield,
   CheckCircle2,
+  Building2,
   X,
-  ArrowLeft
+  ArrowLeft,
+  Users,
+  Star,
+  ChevronUp
 } from "lucide-react"
+import { UserInfoCard } from "./UserInfoCard"
+import { ChatHeader } from "./ChatHeader"
 import Link from "next/link"
 import { 
   Conversation, 
@@ -74,6 +83,10 @@ export interface EmptyConversationListProps {
 }
 
 export interface EmptyThreadProps {}
+
+export interface UserInfoCardProps {
+  // Add props for UserInfoCard here
+}
 
 // ---------------------------------------------------------------------------
 // Helper Functions
@@ -137,7 +150,16 @@ export function ConversationCard({
   currentUserId, 
   onClick 
 }: ConversationCardProps) {
-  const { partner, property, last_message, last_message_at, unread_count, status } = conversation
+  const { partner, property, last_message, last_message_at, unread_count } = conversation
+  // FIX-A: use per-user archive flags (migration 0001) instead of shared status column.
+  // Component is used by both landlord and tenant pages — check both flags.
+  const isArchived = conversation.archived_by_landlord || conversation.archived_by_tenant
+  // "You: ..." preview — uses last_message_sender_id from FIX-9 (messages.py + messages.ts)
+  const lastMessagePreview = last_message
+    ? conversation.last_message_sender_id === currentUserId
+      ? `You: ${last_message}`
+      : last_message
+    : null
   
   return (
     <div
@@ -146,7 +168,7 @@ export function ConversationCard({
         isSelected 
           ? 'bg-orange-50 border-l-4 border-l-orange-500' 
           : 'hover:bg-slate-50'
-      } ${status === 'archived' ? 'opacity-60' : ''}`}
+      } ${isArchived ? 'opacity-60' : ''}`}
     >
       <div className="flex items-start gap-3">
         <Avatar className="h-10 w-10 flex-shrink-0">
@@ -158,44 +180,51 @@ export function ConversationCard({
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-slate-900 truncate">
-                {partner.name || 'User'}
-              </span>
-              {partner.verified && (
-                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                  <Check className="h-2.5 w-2.5 text-white" />
-                </div>
-              )}
-              <Badge variant="secondary" className="text-xs px-1.5 py-0">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="font-medium text-slate-900 truncate">
+                  {partner.name || 'User'}
+                </span>
+                {partner.verified && (
+                  <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Check className="h-2.5 w-2.5 text-white" />
+                  </div>
+                )}
+              </div>
+              <Badge variant="secondary" className="text-xs px-2 py-0.5 flex-shrink-0">
                 {partner.user_type === 'landlord' ? 'Landlord' : 'Tenant'}
               </Badge>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">
+            <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+              <span className="text-xs text-slate-500 whitespace-nowrap">
                 {formatRelativeTime(last_message_at)}
               </span>
               {unread_count > 0 && (
-                <span className="bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
-                  {unread_count}
+                <span className="bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[20px] text-center font-medium">
+                  {unread_count > 9 ? '9+' : unread_count}
                 </span>
               )}
             </div>
           </div>
           
           {property && (
-            <p className="text-sm text-slate-600 truncate mb-1">
-              {property.title}
-            </p>
+            <div className="bg-slate-50 rounded-lg p-2 border border-slate-200">
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <Building2 className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                <span className="truncate">
+                  {property.title}
+                </span>
+              </div>
+            </div>
           )}
           
-          {last_message && (
+          {lastMessagePreview && (
             <p className="text-sm text-slate-500 truncate">
-              {last_message.length > 60 ? `${last_message.substring(0, 60)}...` : last_message}
+              {lastMessagePreview.length > 60 ? `${lastMessagePreview.substring(0, 60)}...` : lastMessagePreview}
             </p>
           )}
           
-          {status === 'archived' && (
+          {isArchived && (
             <Badge variant="secondary" className="text-xs mt-1">
               Archived
             </Badge>
@@ -415,14 +444,14 @@ export function PropertyContextCard({ property, partner }: PropertyContextCardPr
     return (
       <div className="p-4 border-b border-slate-200 bg-slate-50">
         <div className="flex items-center gap-3">
-          <Avatar className="h-12 w-12">
+          <Avatar className="h-12 w-12 flex-shrink-0">
             <AvatarImage src={partner.avatar_url || undefined} />
             <AvatarFallback className="bg-slate-200 text-slate-600">
               {partner.name?.charAt(0)?.toUpperCase() || 'U'}
             </AvatarFallback>
           </Avatar>
-          <div>
-            <h3 className="font-semibold text-slate-900">{partner.name}</h3>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-slate-900 truncate">{partner.name}</h3>
             <p className="text-sm text-slate-600">Direct conversation</p>
           </div>
         </div>
@@ -432,12 +461,13 @@ export function PropertyContextCard({ property, partner }: PropertyContextCardPr
   
   return (
     <div className="p-4 border-b border-slate-200 bg-slate-50">
+      {/* Property Information */}
       <Link 
         href={`/properties/${property.id}`}
-        className="flex items-center gap-3 hover:bg-white p-2 -m-2 rounded-lg transition-colors"
+        className="flex items-center gap-3 hover:bg-white p-2 -m-2 rounded-lg transition-colors group"
         target="_blank"
       >
-        <div className="w-[60px] h-[60px] rounded-lg overflow-hidden flex-shrink-0">
+        <div className="w-[60px] h-[60px] rounded-lg overflow-hidden flex-shrink-0 border border-slate-200">
           <img 
             src={property.images?.[0] || '/placeholder-property.jpg'} 
             alt={property.title}
@@ -445,18 +475,217 @@ export function PropertyContextCard({ property, partner }: PropertyContextCardPr
           />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-slate-900 truncate">
+          <h3 className="font-semibold text-slate-900 truncate group-hover:text-orange-600 transition-colors">
             {property.title}
           </h3>
-          <p className="text-sm text-slate-600 truncate">
-            {property.location}
+          <p className="text-sm text-slate-600 truncate flex items-center gap-1">
+            📍 {property.location}
           </p>
           <p className="text-sm font-bold text-orange-600">
             ₦{property.price?.toLocaleString()}/month
           </p>
         </div>
-        <Home className="h-5 w-5 text-slate-400 flex-shrink-0" />
+        <div className="flex flex-col items-center gap-1 flex-shrink-0">
+          <Home className="h-5 w-5 text-slate-400 group-hover:text-orange-500 transition-colors" />
+          <span className="text-xs text-slate-500">View</span>
+        </div>
       </Link>
+    </div>
+  )
+}
+
+// Enhanced component for tenant information display
+interface TenantInfoCardProps {
+  tenant: ConversationPartner
+  property?: ConversationProperty
+  userType?: 'landlord' | 'tenant'
+}
+
+export function TenantInfoCard({ tenant, property, userType = 'landlord' }: TenantInfoCardProps) {
+  return (
+    <div className="p-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+      <div className="flex items-start gap-4">
+        {/* Tenant Avatar */}
+        <Avatar className="h-14 w-14 flex-shrink-0 border-2 border-white shadow-sm">
+          <AvatarImage src={tenant.avatar_url || undefined} />
+          <AvatarFallback className="bg-blue-100 text-blue-600 text-lg font-medium">
+            {tenant.name?.charAt(0)?.toUpperCase() || 'T'}
+          </AvatarFallback>
+        </Avatar>
+        
+        {/* Tenant Details */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="font-bold text-slate-900 text-lg">{tenant.name || 'Tenant'}</h3>
+            {tenant.verified && (
+              <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                <Check className="h-3 w-3 text-white" />
+              </div>
+            )}
+            <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700">
+              {tenant.user_type === 'landlord' ? 'Landlord' : 'Tenant'}
+            </Badge>
+          </div>
+          
+          {/* Contact Information */}
+          <div className="space-y-1 text-sm text-slate-600">
+            {tenant.phone_number && (
+              <div className="flex items-center gap-2">
+                <Phone className="h-3 w-3 text-slate-400" />
+                <span>{tenant.phone_number}</span>
+              </div>
+            )}
+          </div>
+          
+          {/* Trust Score */}
+          {tenant.trust_score !== undefined && (
+            <div className="mt-3 flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Shield className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-medium text-slate-700">Trust Score:</span>
+                <span className={`text-sm font-bold ${
+                  (tenant.trust_score || 0) >= 70 ? 'text-green-600' : 
+                  (tenant.trust_score || 0) >= 40 ? 'text-orange-600' : 'text-red-600'
+                }`}>
+                  {tenant.trust_score || 0}/100
+                </span>
+              </div>
+              <div className="flex-1 bg-slate-200 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full ${
+                    (tenant.trust_score || 0) >= 70 ? 'bg-green-500' : 
+                    (tenant.trust_score || 0) >= 40 ? 'bg-orange-500' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${tenant.trust_score || 0}%` }}
+                />
+              </div>
+            </div>
+          )}
+          
+          {/* Property Context */}
+          {property && (
+            <div className="mt-3 p-2 bg-white/50 rounded-lg border border-blue-100">
+              <p className="text-xs text-slate-600 mb-1">Regarding:</p>
+              <p className="text-sm font-medium text-slate-800 truncate">{property.title}</p>
+              <p className="text-xs text-slate-500">📍 {property.location}</p>
+            </div>
+          )}
+        </div>
+        
+        {/* Quick Actions */}
+        <div className="flex flex-col gap-2 flex-shrink-0">
+          {userType === 'landlord' && (
+            <>
+              <Button variant="outline" size="sm" className="text-xs">
+                <FileText className="h-3 w-3 mr-1" />
+                Application
+              </Button>
+              <Button variant="outline" size="sm" className="text-xs">
+                <Calendar className="h-3 w-3 mr-1" />
+                Viewing
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Enhanced component for landlord information display
+interface LandlordInfoCardProps {
+  landlord: ConversationPartner
+  property?: ConversationProperty
+  userType?: 'tenant' | 'landlord'
+}
+
+export function LandlordInfoCard({ landlord, property, userType = 'tenant' }: LandlordInfoCardProps) {
+  return (
+    <div className="p-4 border-b border-slate-200 bg-gradient-to-r from-purple-50 to-indigo-50">
+      <div className="flex items-start gap-4">
+        {/* Landlord Avatar */}
+        <Avatar className="h-14 w-14 flex-shrink-0 border-2 border-white shadow-sm">
+          <AvatarImage src={landlord.avatar_url || undefined} />
+          <AvatarFallback className="bg-purple-100 text-purple-600 text-lg font-medium">
+            {landlord.name?.charAt(0)?.toUpperCase() || 'L'}
+          </AvatarFallback>
+        </Avatar>
+        
+        {/* Landlord Details */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="font-bold text-slate-900 text-lg">{landlord.name || 'Landlord'}</h3>
+            {landlord.verified && (
+              <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                <Check className="h-3 w-3 text-white" />
+              </div>
+            )}
+            <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700">
+              {landlord.user_type === 'landlord' ? 'Landlord' : 'Property Manager'}
+            </Badge>
+          </div>
+          
+          {/* Contact Information */}
+          <div className="space-y-1 text-sm text-slate-600">
+            {landlord.phone_number && (
+              <div className="flex items-center gap-2">
+                <Phone className="h-3 w-3 text-slate-400" />
+                <span>{landlord.phone_number}</span>
+              </div>
+            )}
+          </div>
+          
+          {/* Trust Score */}
+          {landlord.trust_score !== undefined && (
+            <div className="mt-3 flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Shield className="h-4 w-4 text-purple-600" />
+                <span className="text-sm font-medium text-slate-700">Trust Score:</span>
+                <span className={`text-sm font-bold ${
+                  (landlord.trust_score || 0) >= 70 ? 'text-green-600' : 
+                  (landlord.trust_score || 0) >= 40 ? 'text-orange-600' : 'text-red-600'
+                }`}>
+                  {landlord.trust_score || 0}/100
+                </span>
+              </div>
+              <div className="flex-1 bg-slate-200 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full ${
+                    (landlord.trust_score || 0) >= 70 ? 'bg-green-500' : 
+                    (landlord.trust_score || 0) >= 40 ? 'bg-orange-500' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${landlord.trust_score || 0}%` }}
+                />
+              </div>
+            </div>
+          )}
+          
+          {/* Property Context */}
+          {property && (
+            <div className="mt-3 p-2 bg-white/50 rounded-lg border border-purple-100">
+              <p className="text-xs text-slate-600 mb-1">Regarding:</p>
+              <p className="text-sm font-medium text-slate-800 truncate">{property.title}</p>
+              <p className="text-xs text-slate-500">📍 {property.location}</p>
+            </div>
+          )}
+        </div>
+        
+        {/* Quick Actions */}
+        <div className="flex flex-col gap-2 flex-shrink-0">
+          {userType === 'tenant' && (
+            <>
+              <Button variant="outline" size="sm" className="text-xs">
+                <Building2 className="h-3 w-3 mr-1" />
+                Property
+              </Button>
+              <Button variant="outline" size="sm" className="text-xs">
+                <Calendar className="h-3 w-3 mr-1" />
+                Schedule
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -520,3 +749,7 @@ export function MobileBackButton({ onBack }: { onBack: () => void }) {
     </div>
   )
 }
+
+// Re-export UserInfoCard for convenience
+export { UserInfoCard }
+export { ChatHeader }

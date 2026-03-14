@@ -70,6 +70,7 @@ export default function HomePage() {
           throw new Error('Failed to fetch stats')
         }
         
+        
         const data = await response.json()
         console.log('✅ Real stats received:', data)
         

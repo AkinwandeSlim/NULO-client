@@ -200,7 +200,7 @@ export default function DashboardLayout({
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
-  const pathname = usePathname()
+  const pathname = usePathname() || ''
   const router = useRouter()
   
   // ✅ FIXED: Use userProfile instead of profile
@@ -339,6 +339,8 @@ export default function DashboardLayout({
           }`}
         >
           <div className="flex flex-col h-full p-4">
+
+
 
             {/* Dashboard Section Header */}
             <div className="mb-4">

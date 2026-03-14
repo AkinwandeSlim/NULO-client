@@ -94,7 +94,7 @@ export default function PropertyDetailPage() {
   const router     = useRouter()
   const params     = useParams()
   const { user, loading: authLoading } = useAuth()
-  const propertyId = params.id as string
+  const propertyId = (params?.id as string) || ""
 
   useSignupCallbackUrl()
 

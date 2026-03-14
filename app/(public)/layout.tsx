@@ -13,8 +13,6 @@ export default function PublicLayout({
       <Navbar />
       
       {/* Main Content - Adjusted Padding */}
-      {/* <main className="pt-[7.5rem] sm:pt-20">{children}</main> */}
-    
 
         <main className="pt-[7.5rem] sm:pt-20">{children}</main>
 

@@ -6,34 +6,38 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { 
-  User, Mail, Phone, MapPin, Calendar,
+  User, Mail, Phone, MapPin, Calendar, Building2,
   ArrowLeft, Edit, Save, X,
-  Shield, CheckCircle, AlertCircle
+  Shield, CheckCircle, AlertCircle, Home, Eye, Heart, MessageSquare, Star
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 
 const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed='
 
-export default function ProfilePage() {
+export default function LandlordProfilePage() {
   const { user, userProfile, updateUserProfile } = useAuth()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState({
     full_name: '',
     phone_number: '',
-    location: ''
+    location: '',
+    company_name: ''
   })
 
   useEffect(() => {
     if (user) {
+      // user has basic info, userProfile has landlord-specific info
+      const landlordProfile = userProfile as any
       setFormData({
-        full_name:    user.full_name    || '',
-        phone_number: user.phone_number || '',
-        location:     user.location     || ''
+        full_name:     user.full_name     || '',
+        phone_number:  user.phone_number  || '',
+        location:      user.location      || '',
+        company_name:  landlordProfile?.company_name || ''
       })
     }
-  }, [user])
+  }, [user, userProfile])
 
   const handleSave = async () => {
     try {
@@ -50,10 +54,12 @@ export default function ProfilePage() {
   }
 
   const handleCancel = () => {
+    const landlordProfile = userProfile as any
     setFormData({
-      full_name:    user?.full_name    || '',
-      phone_number: user?.phone_number || '',
-      location:     user?.location     || ''
+      full_name:     user?.full_name     || '',
+      phone_number:  user?.phone_number  || '',
+      location:      user?.location      || '',
+      company_name:  landlordProfile?.company_name || ''
     })
     setEditing(false)
   }
@@ -69,7 +75,7 @@ export default function ProfilePage() {
       <div className="container mx-auto px-4 py-8 max-w-7xl">
         {/* Header */}
         <div className="mb-8">
-          <Link href="/tenant">
+          <Link href="/landlord/overview">
             <Button variant="ghost" size="sm" className="mb-4 text-slate-600 hover:text-slate-900">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Dashboard
@@ -81,7 +87,7 @@ export default function ProfilePage() {
                 My Profile
               </h1>
               <p className="text-slate-600">
-                Manage your personal information and account settings
+                Manage your landlord account and property portfolio
               </p>
             </div>
             {!editing && (
@@ -112,7 +118,7 @@ export default function ProfilePage() {
 
               {/* Name & Email */}
               <h2 className="text-2xl font-bold text-slate-900 mb-1">
-                {user?.full_name || 'User'}
+                {user?.full_name || 'Landlord'}
               </h2>
               <p className="text-slate-600 mb-4">{user?.email}</p>
 
@@ -137,10 +143,10 @@ export default function ProfilePage() {
                 Member since {getMemberSince()}
               </div>
 
-              {/* Stats */}
+              {/* Stats - TODO: Integrate with dashboard data service */}
               <div className="grid grid-cols-3 gap-4 pt-6 border-t border-slate-200">
                 {[
-                  { value: 0, label: 'Favorites' },
+                  { value: 0, label: 'Properties' },
                   { value: 0, label: 'Viewings'  },
                   { value: 0, label: 'Messages'  },
                 ].map(({ value, label }) => (
@@ -154,19 +160,19 @@ export default function ProfilePage() {
           </Card>
 
           {/* Verification Card */}
-          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 mt-6">
+          <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 border-purple-200 mt-6">
             <CardHeader>
               <CardTitle className="text-slate-900 flex items-center gap-2">
-                <Shield className="h-5 w-5 text-blue-600" />
+                <Shield className="h-5 w-5 text-purple-600" />
                 Verification
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-slate-600 mb-4">
-                Verify your identity to build trust with landlords
+                Complete verification to build trust with tenants
               </p>
-              <Link href="/tenant/verification">
-                <Button variant="outline" className="w-full border-blue-500 text-blue-600 hover:bg-blue-50">
+              <Link href="/landlord/verification">
+                <Button variant="outline" className="w-full border-purple-500 text-purple-600 hover:bg-purple-50">
                   Start Verification
                 </Button>
               </Link>
@@ -222,6 +228,20 @@ export default function ProfilePage() {
                       onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                       className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                       placeholder="e.g., Lagos, Nigeria"
+                    />
+                  </div>
+
+                  {/* Company Name */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Company Name (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.company_name}
+                      onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      placeholder="e.g., NuloAfrica Properties"
                     />
                   </div>
 
@@ -300,6 +320,17 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
+                  {/* Company Name */}
+                  <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg">
+                    <Building2 className="h-5 w-5 text-slate-400" />
+                    <div className="flex-1">
+                      <p className="text-sm text-slate-600">Company Name</p>
+                      <p className="font-semibold text-slate-900">
+                        {((userProfile as any)?.company_name) || 'Not set'}
+                      </p>
+                    </div>
+                  </div>
+
 
                 </div>
               )}
@@ -313,28 +344,28 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {/* Change Password — link to settings or show coming soon */}
-                <Link href="/tenant/settings/password">
+                {/* Change Password */}
+                <Link href="/landlord/settings/password">
                   <Button variant="outline" className="w-full justify-start border-slate-200 hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50">
                     Change Password
                   </Button>
                 </Link>
 
                 {/* Notification Preferences */}
-                <Link href="/tenant/settings/notifications">
+                <Link href="/landlord/settings/notifications">
                   <Button variant="outline" className="w-full justify-start border-slate-200 hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50">
                     Notification Preferences
                   </Button>
                 </Link>
 
-                {/* Privacy Settings */}
-                <Link href="/tenant/settings/privacy">
+                {/* Property Settings */}
+                <Link href="/landlord/settings/properties">
                   <Button variant="outline" className="w-full justify-start border-slate-200 hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50">
-                    Privacy Settings
+                    Property Settings
                   </Button>
                 </Link>
 
-                {/* Delete Account — keep red styling, add confirmation */}
+                {/* Delete Account */}
                 <Button
                   variant="outline"
                   className="w-full justify-start text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"

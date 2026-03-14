@@ -5,8 +5,10 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { toast } from "sonner"
-import { Send, Search, X, ArrowLeft } from "lucide-react"
+import Link from "next/link"
+import { Send, Search, X, ArrowLeft, RefreshCw, MessageSquare, Home, FileText, Calendar, CreditCard, Users, Bell, ChevronUp, Building2, Shield, Star, Archive, Filter } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { messagesAPI } from "@/lib/api/messages"
 import { applicationsAPI } from "@/lib/api/applications"
@@ -26,10 +28,15 @@ import {
   EmptyConversationList,
   EmptyThread,
   MobileBackButton,
+  UserInfoCard,
+  ChatHeader,
   RentalContextData,
   formatRelativeTime,
   getMessageDate
 } from "@/components/messages/MessageComponents"
+import { PropertyPreview } from "@/components/messages/PropertyPreview"
+
+type ConversationFilter = "all" | "unread" | "archived" | "active"
 
 export default function TenantMessagesPage() {
   const searchParams = useSearchParams()
@@ -39,9 +46,9 @@ export default function TenantMessagesPage() {
   // Page state
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [filteredConversations, setFilteredConversations] = useState<Conversation[]>([])
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(
-    searchParams.get('conversation')
-  )
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(() => {
+    return searchParams?.get('conversation') ?? null
+  })
   const [messages, setMessages] = useState<Message[]>([])
   const [conversationDetail, setConversationDetail] = useState<ConversationDetail | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -51,8 +58,13 @@ export default function TenantMessagesPage() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
   const [pagination, setPagination] = useState<MessagesPagination | null>(null)
-  const [showArchived, setShowArchived] = useState(false)
+  const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all")
+  const [showFilters, setShowFilters] = useState(false)
+  const [showLandlordInfo, setShowLandlordInfo] = useState(false)
   const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(new Set())
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date())
+  const [isCreatingConversation, setIsCreatingConversation] = useState(false)
   
   // Rental context for banner
   const contextCache = useRef<Map<string, RentalContextData>>(new Map())
@@ -184,9 +196,15 @@ export default function TenantMessagesPage() {
       setMessages(prev => [...prev, newMessage])
       
       // Update conversation's last message in list
+      // FIX-4: also set last_message_sender_id so ConversationCard shows "You: ..." immediately
       setConversations(prev => prev.map(conv => 
         conv.id === selectedConversationId 
-          ? { ...conv, last_message: content, last_message_at: new Date().toISOString() }
+          ? {
+              ...conv,
+              last_message: content,
+              last_message_sender_id: currentUserId,
+              last_message_at: new Date().toISOString(),
+            }
           : conv
       ))
       
@@ -213,26 +231,69 @@ export default function TenantMessagesPage() {
     }
   }, [selectedConversationId])
   
-  // Filter conversations based on search
+  // Handle manual refresh
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      await Promise.all([
+        fetchConversations(),
+        selectedConversationId ? fetchMessages(selectedConversationId) : Promise.resolve()
+      ])
+      setLastRefreshTime(new Date())
+      // FIX-6: removed toast.success("Messages refreshed") — fires on every refresh, too noisy
+    } catch (error) {
+      toast.error("Failed to refresh messages")
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [fetchConversations, selectedConversationId, fetchMessages])
+  
+  // Archive conversation (per-user flag — does not affect landlord's view)
+  const archiveConversation = useCallback(async (conversationId: string) => {
+    try {
+      await messagesAPI.archiveConversation(conversationId)
+      setConversations(prev =>
+        prev.map(conv =>
+          conv.id === conversationId ? { ...conv, archived_by_tenant: true } : conv
+        )
+      )
+      setConversationDetail(prev => prev ? { ...prev, archived_by_tenant: true } : prev)
+    } catch {
+      toast.error("Failed to archive conversation")
+    }
+  }, [])
+
+  // Filter conversations based on search + active filter tab
   useEffect(() => {
     let filtered = conversations
-    
-    // Filter by archived status
-    if (!showArchived) {
-      filtered = filtered.filter(conv => conv.status !== 'archived')
+
+    // Apply tab filter — archived_by_tenant is the per-user flag (never shared with landlord)
+    switch (conversationFilter) {
+      case "unread":
+        filtered = filtered.filter(c => c.unread_count > 0)
+        break
+      case "archived":
+        filtered = filtered.filter(c => c.archived_by_tenant)
+        break
+      case "active":
+        filtered = filtered.filter(c => !c.archived_by_tenant && c.unread_count === 0)
+        break
+      default:
+        // "all" — hide archived unless the archived tab is explicitly selected
+        filtered = filtered.filter(c => !c.archived_by_tenant)
     }
-    
+
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(conv => 
+      filtered = filtered.filter(conv =>
         conv.partner.name?.toLowerCase().includes(query) ||
         conv.property?.title?.toLowerCase().includes(query)
       )
     }
-    
+
     setFilteredConversations(filtered)
-  }, [conversations, searchQuery, showArchived])
+  }, [conversations, searchQuery, conversationFilter])
   
   // Initial data fetch
   useEffect(() => {
@@ -259,6 +320,54 @@ export default function TenantMessagesPage() {
     }
   }, [conversationDetail?.property_id, fetchRentalContext])
   
+  // Create conversation from landlord and property parameters
+  const handleCreateConversationFromParams = useCallback(async (landlordId: string, propertyId: string) => {
+    if (!user?.id || isCreatingConversation) return
+    
+    setIsCreatingConversation(true)
+    
+    try {
+      // First, check if there's an existing conversation for this property
+      const existingConversation = await messagesAPI.findConversation(propertyId, landlordId)
+      
+      if (existingConversation) {
+        // Navigate to existing conversation
+        router.replace(`/tenant/messages?conversation=${existingConversation.id}`)
+        setSelectedConversationId(existingConversation.id)
+      } else {
+        // Create a new conversation with automated message
+        const result = await messagesAPI.createConversation({
+          property_id: propertyId,
+          landlord_id: landlordId,
+          initial_message: "Hi! I'm interested in your property. Could you tell me more about it?"
+        })
+        
+        // Navigate to the new conversation
+        router.replace(`/tenant/messages?conversation=${result.conversation_id}`)
+        setSelectedConversationId(result.conversation_id)
+      }
+    } catch (error) {
+      console.error('Failed to create conversation from parameters:', error)
+      toast.error('Failed to start conversation')
+    } finally {
+      setIsCreatingConversation(false)
+    }
+  }, [user?.id, router])
+  
+  // Handle tenant and property URL parameters for auto-creating conversations
+  useEffect(() => {
+    if (!searchParams) return
+    
+    const landlordId = searchParams.get('landlord')
+    const propertyId = searchParams.get('property')
+    const conversationId = searchParams.get('conversation')
+    
+    // Only proceed if we have landlord and property but no conversation
+    if (landlordId && propertyId && !conversationId && !isCreatingConversation) {
+      handleCreateConversationFromParams(landlordId, propertyId)
+    }
+  }, [searchParams, isCreatingConversation, handleCreateConversationFromParams])
+  
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -271,8 +380,12 @@ export default function TenantMessagesPage() {
   const isBannerDismissed = selectedConversationId ? 
     dismissedBanners.has(`${selectedConversationId}:rental-context`) : false
   
+  // FIX-5: filter soft-deleted messages before grouping (migration 0001 adds deleted_at).
+  // Matches FIX-10b on the landlord page.
+  const visibleMessages = messages.filter(m => !m.deleted_at)
+
   // Group messages by date
-  const groupedMessages = messages.reduce((groups, message) => {
+  const groupedMessages = visibleMessages.reduce((groups, message) => {
     const date = getMessageDate(message.timestamp)
     if (!groups[date]) {
       groups[date] = []
@@ -282,40 +395,152 @@ export default function TenantMessagesPage() {
   }, {} as Record<string, Message[]>)
   
   return (
-    <div className="h-[calc(100vh-3.5rem)] flex overflow-hidden bg-slate-50">
+    <div className="container mx-auto px-4 py-8 max-w-7xl">
+
+      {/* Header */}
+      <div className="mb-8">
+        <Link href="/tenant">
+          <Button variant="ghost" size="sm" className="mb-4 text-slate-600 hover:text-slate-900">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Dashboard
+          </Button>
+        </Link>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-3">
+              Message Management
+            </h1>
+            <p className="text-slate-600">
+              Communicate directly with property landlords
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-slate-500">
+              Last refresh: {lastRefreshTime.toLocaleTimeString()}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="border-orange-200 text-orange-600 hover:bg-orange-50"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Link href="/tenant/notifications">
+              <Button variant="outline" size="sm" className="border-slate-200 text-slate-600 hover:bg-slate-50">
+                <Bell className="h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Chat Layout */}
+      <div className="flex flex-1 overflow-hidden" style={{ height: "calc(100dvh - 12rem)" }}>
+        {/* Mobile Floating Action Button */}
+        {selectedConversationId && mobileView === 'conversation' && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => setMobileView('list')}
+            className="lg:hidden absolute top-4 left-4 z-10 bg-blue-500 hover:bg-blue-600 shadow-lg"
+          >
+            <MessageSquare className="h-4 w-4 mr-2" />
+            All Chats
+          </Button>
+        )}
+        
       {/* Left Panel - Conversation List */}
-      <div className={`w-80 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col ${
+      <div className={`w-80 flex-shrink-0 bg-white border-r border-slate-100 flex flex-col ${
         mobileView === 'conversation' ? 'hidden lg:flex' : 'flex'
       }`}>
-        {/* Search */}
-        <div className="p-4 border-b border-slate-200">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input
-              placeholder="Search conversations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-            {searchQuery && (
+
+        {/* Left panel header — inbox label + unread badge + refresh + filter */}
+        <div className="px-4 py-3 border-b border-slate-100 flex-shrink-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-orange-500" />
+              <span className="font-semibold text-slate-900 text-sm">Inbox</span>
+              {conversations.filter(c => c.unread_count > 0).length > 0 && (
+                <span className="text-[10px] bg-orange-500 text-white font-bold px-1.5 py-0.5 rounded-full leading-none">
+                  {conversations.filter(c => c.unread_count > 0).length}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
-                size="sm"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                size="icon"
+                onClick={() => setShowFilters(v => !v)}
+                className={`h-7 w-7 transition-colors ${
+                  showFilters
+                    ? "text-orange-600 bg-orange-50"
+                    : "text-slate-400 hover:text-orange-600 hover:bg-orange-50"
+                }`}
+                title="Filter conversations"
               >
-                <X className="h-3 w-3" />
+                <Filter className="h-3.5 w-3.5" />
               </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="h-7 w-7 text-slate-400 hover:text-orange-600 hover:bg-orange-50"
+                title="Refresh conversations"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
+          </div>
+
+          {/* Filter tabs — shown when filter button is toggled */}
+          {showFilters && (
+            <div className="flex gap-1 mb-3">
+              {(["all", "unread", "active", "archived"] as ConversationFilter[]).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setConversationFilter(f)}
+                  className={`flex-1 text-[10px] font-medium py-1 rounded-md capitalize transition-colors ${
+                    conversationFilter === f
+                      ? "bg-orange-500 text-white"
+                      : "text-slate-500 hover:bg-slate-100"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <Input
+              placeholder="Search conversations…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 h-8 text-sm border-slate-200 focus:border-orange-400 focus:ring-orange-400 rounded-lg"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             )}
           </div>
         </div>
-        
+
         {/* Conversation List */}
         <div className="flex-1 overflow-y-auto">
           {isLoadingConversations ? (
             // Skeleton cards
             Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="p-4 border-b border-slate-200 animate-pulse">
+              <div key={i} className="p-4 border-b border-slate-100 animate-pulse">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 bg-slate-200 rounded-full" />
                   <div className="flex-1">
@@ -335,21 +560,29 @@ export default function TenantMessagesPage() {
                 onClick={selectConversation}
               />
             ))
+          ) : selectedConversationId ? (
+            <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
+                <MessageSquare className="h-8 w-8 text-orange-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                Loading conversation...
+              </h3>
+              <p className="text-sm text-slate-600 mb-6">
+                Please wait while we connect to the server
+              </p>
+              <Button
+                onClick={() => fetchConversations()}
+                className="mt-4"
+                variant="outline"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
           ) : (
             <EmptyConversationList userType="tenant" />
           )}
-        </div>
-        
-        {/* Archived Toggle */}
-        <div className="p-4 border-t border-slate-200">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowArchived(!showArchived)}
-            className="text-sm text-slate-600"
-          >
-            {showArchived ? 'Hide' : 'Show'} archived
-          </Button>
         </div>
       </div>
       
@@ -357,16 +590,46 @@ export default function TenantMessagesPage() {
       <div className={`flex-1 flex flex-col overflow-hidden bg-white ${
         mobileView === 'list' ? 'hidden lg:flex' : 'flex'
       }`}>
-        {selectedConversationId ? (
+        {isCreatingConversation ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Starting Conversation</h3>
+              <p className="text-slate-600">Setting up your chat...</p>
+            </div>
+          </div>
+        ) : selectedConversationId && selectedConversation ? (
           <>
-            {/* Mobile Back Button */}
-            <MobileBackButton onBack={() => setMobileView('list')} />
+            <ChatHeader
+              partner={selectedConversation.partner}
+              property={selectedConversation.property}
+              showUserInfo={showLandlordInfo}
+              onToggleUserInfo={() => setShowLandlordInfo(v => !v)}
+              currentUserType="tenant"
+              conversationDetail={conversationDetail}
+              onArchiveConversation={archiveConversation}
+              selectedConversationId={selectedConversationId}
+              onMobileBack={() => setMobileView('list')}
+            />
             
-            {/* Property Context Card */}
-            {selectedConversation && (
-              <PropertyContextCard
+            {/* Collapsible landlord info strip */}
+            {showLandlordInfo && selectedConversation?.partner && (
+              <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 flex-shrink-0">
+                <UserInfoCard
+                  user={selectedConversation.partner}
+                  property={selectedConversation.property ?? undefined}
+                  currentUserType="tenant"
+                  variant="compact"
+                />
+              </div>
+            )}
+            
+            {/* Property Preview */}
+            {selectedConversation?.property && (
+              <PropertyPreview
                 property={selectedConversation.property}
-                partner={selectedConversation.partner}
+                variant="strip"
+                dismissible={false}
               />
             )}
             
@@ -399,7 +662,9 @@ export default function TenantMessagesPage() {
               ) : (
                 <>
                   {/* Load Earlier Messages Button */}
-                  {pagination && pagination.returned === pagination.limit && (
+                  {/* FIX-3: previous check (returned === limit) breaks when total is an exact
+                      multiple of page size. Correct check: are there messages beyond what we loaded? */}
+                  {pagination && (pagination.offset + pagination.returned) < pagination.total && (
                     <div className="text-center mb-4">
                       <Button
                         variant="outline"
@@ -443,7 +708,8 @@ export default function TenantMessagesPage() {
             </div>
             
             {/* Input Bar */}
-            {conversationDetail?.status === 'archived' ? (
+            {/* FIX-2: use archived_by_tenant (per-user flag) not shared status column */}
+            {conversationDetail?.archived_by_tenant ? (
               <div className="p-4 border-t border-slate-200 bg-slate-50">
                 <p className="text-sm text-slate-600 text-center">
                   This conversation is archived.
@@ -482,6 +748,7 @@ export default function TenantMessagesPage() {
         ) : (
           <EmptyThread />
         )}
+      </div>
       </div>
     </div>
   )

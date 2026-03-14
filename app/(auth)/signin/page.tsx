@@ -15,11 +15,11 @@ export default function SignInPage() {
   const searchParams = useSearchParams()
   // ✅ NEW: Support both 'redirect_to' (from property detail) and 'callbackUrl' (legacy)
   // Also check localStorage in case redirect_to was stored during signup flow
-  const redirectFromUrl = searchParams.get('redirect_to') || searchParams.get('callbackUrl')
+  const redirectFromUrl = searchParams?.get('redirect_to') || searchParams?.get('callbackUrl')
   const redirectFromStorage = typeof window !== 'undefined' ? localStorage.getItem('signup_callback_url') : null
   const callbackUrl = redirectFromUrl || redirectFromStorage || '/properties'
-  const error = searchParams.get('error')
-  const errorMessage = searchParams.get('message')
+  const error = searchParams?.get('error')
+  const errorMessage = searchParams?.get('message')
   const { signIn, signInWithGoogle, loading, user } = useAuth()
   const supabase = createClient()
   

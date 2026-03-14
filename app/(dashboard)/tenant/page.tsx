@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTenantDashboard } from "@/contexts/DashboardContext"
@@ -54,15 +54,35 @@ export default function TenantDashboard() {
   const { notifications, unreadCount } = state
   const router = useRouter()
 
+  const [mounted, setMounted] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [allDataLoading, setAllDataLoading] = useState(true)
 
-  const fetchRef = useRef(fetchTenantDashboard)
-  useEffect(() => { fetchRef.current = fetchTenantDashboard })
+  useEffect(() => { setMounted(true) }, [])
 
+  // ✅ Fetch dashboard data on mount or when user changes
   useEffect(() => {
-    if (!user?.id) return
-    fetchRef.current()
-  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!mounted || !user || user.user_type !== 'tenant') {
+      setAllDataLoading(false)
+      return
+    }
+
+    // Always attempt fetch on mount (API layer will use cache if available)
+    setAllDataLoading(true)
+    
+    fetchTenantDashboard()
+      .then(() => {
+        setAllDataLoading(false)
+      })
+      .catch((error) => {
+        console.error('❌ Dashboard fetch failed:', error)
+        // Still hide spinner on error - user will see error state with retry button
+        setAllDataLoading(false)
+      })
+  }, [mounted, user?.id, user?.user_type, fetchTenantDashboard])
+
+  // Show loading spinner if context is loading or local loading state
+  const isLoading = loading || allDataLoading
 
   const trackActivity = useCallback(
     async (activityType: any, metadata?: any) => {
@@ -76,14 +96,16 @@ export default function TenantDashboard() {
     setIsRefreshing(true)
     try {
       invalidateTenantCache?.()
-      await fetchRef.current()
+      // Force refresh the dashboard data (bypass cache)
+      await fetchTenantDashboard(true)
       toast.success("Dashboard refreshed")
-    } catch {
+    } catch (error) {
+      console.error('❌ Refresh failed:', error)
       toast.error("Failed to refresh dashboard")
     } finally {
       setIsRefreshing(false)
     }
-  }, [user?.id, isRefreshing, invalidateTenantCache])
+  }, [user?.id, isRefreshing, invalidateTenantCache, fetchTenantDashboard])
 
   const handleNotificationClick = useCallback(
     async (notification: Notification) => {
@@ -140,8 +162,8 @@ export default function TenantDashboard() {
     const rentAmount = (activeAgreement as any).rent_amount ?? 0
     let daysUntilDue: number | null = null
 
-    if ((activeAgreement as any).start_date) {
-      const startDate = new Date((activeAgreement as any).start_date)
+    if ((activeAgreement as any).lease_start_date) {
+      const startDate = new Date((activeAgreement as any).lease_start_date)
       const today = new Date()
       const nextDue = new Date(startDate)
       nextDue.setMonth(today.getMonth())
@@ -182,7 +204,7 @@ export default function TenantDashboard() {
 
   const showSkeletons = isRefreshing
 
-  if (loading && !tenantData) {
+  if (!mounted || isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
         <div className="max-w-7xl mx-auto">
@@ -191,6 +213,31 @@ export default function TenantDashboard() {
               <div className="w-20 h-20 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
               <h3 className="text-xl font-semibold text-slate-900 mb-2">Loading Your Dashboard</h3>
               <p className="text-slate-600">Fetching your property search activity...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state: loading finished but no data available
+  if (!tenantData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-slate-900 mb-2">Failed to Load Dashboard</h3>
+              <p className="text-slate-600 mb-6">We couldn't load your dashboard data. Please try again.</p>
+              <Button 
+                onClick={handleRefresh} 
+                disabled={isRefreshing}
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                {isRefreshing ? 'Retrying...' : 'Try Again'}
+              </Button>
             </div>
           </div>
         </div>
@@ -333,18 +380,18 @@ export default function TenantDashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
 
             <Link href="/tenant/favorites">
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-red-100 rounded-lg flex items-center justify-center">
-                      <Heart className="h-6 w-6 text-red-600" />
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Heart className="h-5 w-5 sm:h-6 sm:w-6 text-red-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-600 mb-1">Saved Properties</p>
-                      <p className="text-3xl font-bold text-slate-900">{tenantData?.stats.totalFavorites ?? 0}</p>
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Saved Properties</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{tenantData?.stats.totalFavorites ?? 0}</p>
                       <span className="text-xs text-slate-400 mt-1 block">
                         {(tenantData?.stats.totalFavorites ?? 0) === 0 ? "none saved yet" : "tap to view all"}
                       </span>
@@ -356,24 +403,24 @@ export default function TenantDashboard() {
 
             <Link href="/tenant/viewings">
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                      <Calendar className="h-6 w-6 text-orange-600" />
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-600 mb-1">Viewings</p>
-                      <p className="text-3xl font-bold text-slate-900">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Viewings</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">
                         {(tenantData?.stats?.pendingViewings ?? 0) + (tenantData?.stats?.confirmedViewings ?? 0)}
                       </p>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <div className="flex flex-wrap gap-1 mt-1">
                         {(tenantData?.stats?.pendingViewings ?? 0) > 0 && (
-                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full inline-block">
                             {tenantData?.stats.pendingViewings} pending
                           </span>
                         )}
                         {(tenantData?.stats?.confirmedViewings ?? 0) > 0 && (
-                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-medium text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full inline-block">
                             {tenantData?.stats.confirmedViewings} confirmed
                           </span>
                         )}
@@ -387,19 +434,44 @@ export default function TenantDashboard() {
               </Card>
             </Link>
 
-            <Link href="/messages">
-              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <MessageSquare className="h-6 w-6 text-blue-600" />
+            <Link href="/tenant/messages">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer relative">
+                {(tenantData?.stats.unreadMessages ?? 0) > 0 && (
+                  <div className="absolute top-2 right-2 z-10">
+                    <span className="h-5 w-5 bg-orange-500 text-white text-xs rounded-full flex items-center justify-center animate-pulse font-semibold">
+                      {tenantData?.stats.unreadMessages}
+                    </span>
+                  </div>
+                )}
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0 relative">
+                      <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+                      {(tenantData?.stats.unreadMessages ?? 0) > 0 && (
+                        <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full animate-pulse" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-600 mb-1">Unread Messages</p>
-                      <p className="text-3xl font-bold text-slate-900">{tenantData?.stats.unreadMessages ?? 0}</p>
-                      <span className="text-xs text-slate-400 mt-1 block">
-                        {(tenantData?.stats.unreadMessages ?? 0) === 0 ? "inbox is clear" : "tap to read"}
-                      </span>
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Messages</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">
+                        {tenantData?.stats.totalConversations ?? 0}
+                      </p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <span className="text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-block">
+                          {tenantData?.stats.totalConversations ?? 0} conversation{(tenantData?.stats.totalConversations ?? 0) !== 1 ? 's' : ''}
+                        </span>
+                        {(tenantData?.stats.unreadMessages ?? 0) > 0 && (
+                          <span className="text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full inline-block">
+                            {tenantData?.stats.unreadMessages} unread
+                          </span>
+                        )}
+                        {(tenantData?.stats.unreadMessages ?? 0) === 0 && (tenantData?.stats.totalConversations ?? 0) > 0 && (
+                          <span className="text-xs text-slate-500">all read</span>
+                        )}
+                        {(tenantData?.stats.totalConversations ?? 0) === 0 && (
+                          <span className="text-xs text-slate-400">no messages yet</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -408,23 +480,23 @@ export default function TenantDashboard() {
 
             <Link href="/tenant/applications">
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-                      <FileText className="h-6 w-6 text-green-600" />
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-600 mb-1">Applications</p>
-                      <p className="text-3xl font-bold text-slate-900">{tenantData?.stats.applicationsSubmitted ?? 0}</p>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Applications</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{tenantData?.stats.applicationsSubmitted ?? 0}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
                         {(tenantData?.stats?.pendingApplications ?? 0) > 0 && (
-                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
-                            {tenantData?.stats?.pendingApplications} pending
+                          <span className="text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full inline-block">
+                            {tenantData?.stats.pendingApplications} pending
                           </span>
                         )}
                         {(tenantData?.stats?.approvedApplications ?? 0) > 0 && (
-                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                            {tenantData?.stats?.approvedApplications} approved
+                          <span className="text-xs font-medium text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full inline-block">
+                            {tenantData?.stats.approvedApplications} approved
                           </span>
                         )}
                         {(tenantData?.stats?.applicationsSubmitted ?? 0) === 0 && (
@@ -439,22 +511,22 @@ export default function TenantDashboard() {
 
             <Link href="/tenant/agreements">
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <FileCheck className="h-6 w-6 text-blue-600" />
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileCheck className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-600 mb-1">Agreements</p>
-                      <p className="text-3xl font-bold text-slate-900">{tenantData?.stats?.activeAgreements ?? 0}</p>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Agreements</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{tenantData?.stats?.activeAgreements ?? 0}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
                         {(tenantData?.stats?.pendingSignatures ?? 0) > 0 && (
-                          <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full inline-block">
                             {tenantData?.stats?.pendingSignatures} to sign
                           </span>
                         )}
                         {(tenantData?.stats?.activeAgreements ?? 0) > 0 && (
-                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-medium text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full inline-block">
                             {tenantData?.stats?.activeAgreements} active
                           </span>
                         )}
@@ -468,83 +540,55 @@ export default function TenantDashboard() {
               </Card>
             </Link>
 
-            {/* Rent / Payment — three-state card */}
+            {/* Rent / Payment — simplified for consistent height */}
             <button
               onClick={() => router.push("/tenant/payments")}
               className="w-full text-left group">
-              <Card className={`bg-white/80 backdrop-blur-sm hover:shadow-lg transition-all duration-300 cursor-pointer ${
+              <Card className={`border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer ${
                 paymentSummary.state === "due" ? "border-orange-300 ring-2 ring-orange-200"
                 : paymentSummary.state === "paid" ? "border-green-200"
                 : "border-orange-200"
               } group-hover:border-orange-300`}>
-                <CardContent className="p-6">
-                  {paymentSummary.state === "no-lease" && (
-                    <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Wallet className="h-6 w-6 text-slate-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-600 mb-1">Rent Payments</p>
-                        <p className="text-3xl font-bold text-slate-400 leading-tight">—</p>
-                        <span className="text-xs text-slate-400 mt-1 block">No active lease</span>
-                        <span className="text-xs text-orange-600 mt-1 block group-hover:text-orange-700">View history →</span>
-                      </div>
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className={`h-10 w-10 sm:h-12 sm:w-12 ${
+                      paymentSummary.state === "no-lease" ? "bg-slate-100" :
+                      paymentSummary.state === "due" ? "bg-orange-100" : "bg-green-100"
+                    } rounded-lg flex items-center justify-center flex-shrink-0`}>
+                      {paymentSummary.state === "no-lease" ? (
+                        <Wallet className="h-5 w-5 sm:h-6 sm:w-6 text-slate-400" />
+                      ) : paymentSummary.state === "due" ? (
+                        <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
+                      ) : (
+                        <Wallet className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+                      )}
                     </div>
-                  )}
-                  {paymentSummary.state === "due" && (
-                    <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Clock className="h-6 w-6 text-orange-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-600 mb-1">Annual Rent Due</p>
-                        <p className="text-3xl font-bold text-slate-900 leading-tight">
-                          {paymentSummary.rentAmount > 0 ? formatPrice(paymentSummary.rentAmount * 12) : "???"}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className="text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">Payment Required</span>
-                          <span className="text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">
+                        {paymentSummary.state === "no-lease" ? "Rent Payments" :
+                         paymentSummary.state === "due" ? "Annual Rent Due" : "Annual Rent"}
+                      </p>
+                      <p className={`text-xl sm:text-3xl font-bold leading-tight truncate ${
+                        paymentSummary.state === "no-lease" ? "text-slate-400" : "text-slate-900"
+                      }`}>
+                        {paymentSummary.state === "no-lease" ? "—" :
+                         paymentSummary.rentAmount > 0 ? formatPrice(paymentSummary.rentAmount * 12) : "???"}
+                      </p>
+                      {paymentSummary.state !== "no-lease" && (
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-1.5 mt-1">
+                          <span className={`text-xs font-semibold ${
+                            paymentSummary.state === "due" ? "text-orange-600 bg-orange-50 border border-orange-200" : "text-green-700 bg-green-50 border border-green-200"
+                          } px-2 py-0.5 rounded-full inline-block w-fit`}>
                             {formatPrice(paymentSummary.rentAmount)}/month
                           </span>
-                          {paymentSummary.daysUntilDue !== null && paymentSummary.daysUntilDue <= 7 && (
-                            <span className="text-xs text-slate-500 flex items-center gap-0.5">
-                              <CalendarClock className="h-3 w-3" />
-                              {paymentSummary.daysUntilDue === 0 ? "Due today" : `Due in ${paymentSummary.daysUntilDue}d`}
-                            </span>
-                          )}
-                          <span className="text-xs text-orange-600 group-hover:text-orange-700">View history →</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {paymentSummary.state === "paid" && (
-                    <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Wallet className="h-6 w-6 text-green-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-600 mb-1">Annual Rent</p>
-                        <p className="text-3xl font-bold text-slate-900 leading-tight">
-                          {paymentSummary.rentAmount > 0 ? formatPrice(paymentSummary.rentAmount * 12) : "???"}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                            {formatPrice(paymentSummary.rentAmount)}/month
+                          <span className="text-xs text-slate-500 truncate">
+                            {paymentSummary.state === "due" ? "Payment Required" : 
+                             `${paymentSummary.completedPayments} payment${paymentSummary.completedPayments !== 1 ? "s" : ""} made`}
                           </span>
-                          <span className="text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                            {paymentSummary.completedPayments} payment{paymentSummary.completedPayments !== 1 ? "s" : ""} made
-                          </span>
-                          {paymentSummary.daysUntilDue !== null && paymentSummary.daysUntilDue <= 7 && (
-                            <span className="text-xs text-slate-500 flex items-center gap-0.5">
-                              <CalendarClock className="h-3 w-3" />
-                              {paymentSummary.daysUntilDue === 0 ? "Due today" : `Due in ${paymentSummary.daysUntilDue}d`}
-                            </span>
-                          )}
-                          <span className="text-xs text-green-600 group-hover:text-green-700">View history →</span>
                         </div>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </CardContent>
               </Card>
             </button>
@@ -904,7 +948,7 @@ export default function TenantDashboard() {
                               <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 flex-wrap">
                                 <span>Applied: {formatDate(application.created_at)}</span>
                                 {application.move_in_date && <span>Move-in: {formatDate(application.move_in_date)}</span>}
-                                {application.viewed_by_landlord && (
+                                {(application as any).viewed_by_landlord && (
                                   <span className="text-green-600 flex items-center gap-0.5">
                                     <Eye className="h-3 w-3" />Viewed by landlord
                                   </span>
@@ -931,8 +975,7 @@ export default function TenantDashboard() {
                                     try {
                                       await applicationsAPI.withdraw(application.id)
                                       toast.success("Application withdrawn successfully")
-                                      invalidateTenantCache?.()
-                                      fetchRef.current()
+                                      await fetchTenantDashboard(true)
                                     } catch {
                                       toast.error("Failed to withdraw application")
                                     }
@@ -1026,8 +1069,8 @@ export default function TenantDashboard() {
                                 {agreement.property?.location || agreement.property?.address || "Location not specified"}
                               </p>
                               <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
-                                {agreement.start_date && <span>From: {formatDate(agreement.start_date)}</span>}
-                                {agreement.end_date && <span>Until: {formatDate(agreement.end_date)}</span>}
+                                {agreement.lease_start_date && <span>From: {formatDate(agreement.lease_start_date)}</span>}
+                                {agreement.lease_end_date && <span>Until: {formatDate(agreement.lease_end_date)}</span>}
                                 {agreement.rent_amount > 0 && (
                                   <span className="text-orange-600 font-semibold">{formatPrice(agreement.rent_amount)}/mo</span>
                                 )}

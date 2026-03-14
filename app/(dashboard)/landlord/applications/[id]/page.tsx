@@ -127,7 +127,7 @@ export default function LandlordApplicationDetailPage() {
   const router = useRouter()
   const params = useParams()
   const { user } = useAuth()
-  const applicationId = params.id as string
+  const applicationId = (params?.id as string) || ""
 
   const [application, setApplication] = useState<Application | null>(null)
   const [isLoading, setIsLoading] = useState(true)

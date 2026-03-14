@@ -63,7 +63,7 @@ export default function EditPropertyPage() {
   const params = useParams()
   const pathname = usePathname()
   const { user } = useAuth()
-  const propertyId = params.id as string
+  const propertyId =  (params?.id as string) || ""
 
   const fetchProperty = useCallback(async () => {
     try {
@@ -157,34 +157,63 @@ export default function EditPropertyPage() {
 
   if (loading && !hasInitialLoadRef.current && !mounted) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-600">Loading property...</p>
+          <p className="text-slate-600 font-medium">Loading property...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href={`/landlord/properties/${propertyId}`}>
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Edit Property</h1>
-          <p className="text-slate-600">Update your property details</p>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Header — matches viewings and application detail page pattern */}
+        <div className="mb-8">
+          <Link href={`/landlord/properties/${propertyId}`}>
+            <Button variant="ghost" size="sm" className="mb-4 text-slate-600 hover:text-slate-900">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Property
+            </Button>
+          </Link>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-3">
+                Edit Property
+              </h1>
+              <p className="text-slate-600">
+                Update your property details and settings
+              </p>
+            </div>
+            {/* Save button also lives here as the primary action */}
+            <Button
+              type="submit"
+              form="edit-property-form"
+              className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-sm"
+              disabled={saving}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Form — add id so the header Save button can submit it */}
+        <form id="edit-property-form" onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Information */}
-        <Card>
-          <CardHeader>
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-white to-orange-50/20">
             <CardTitle>Basic Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -240,9 +269,9 @@ export default function EditPropertyPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vacant">Vacant</SelectItem>
-                    <SelectItem value="rented">Rented</SelectItem>
-                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="vacant">Vacant — Available for rent</SelectItem>
+                    <SelectItem value="occupied">Occupied — Currently rented</SelectItem>
+                    <SelectItem value="maintenance">Maintenance — Temporarily unavailable</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -251,8 +280,8 @@ export default function EditPropertyPage() {
         </Card>
 
         {/* Location */}
-        <Card>
-          <CardHeader>
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-white to-orange-50/20">
             <CardTitle>Location</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -280,8 +309,8 @@ export default function EditPropertyPage() {
         </Card>
 
         {/* Property Details */}
-        <Card>
-          <CardHeader>
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-white to-orange-50/20">
             <CardTitle>Property Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -349,8 +378,8 @@ export default function EditPropertyPage() {
         </Card>
 
         {/* Amenities */}
-        <Card>
-          <CardHeader>
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-white to-orange-50/20">
             <CardTitle>Amenities</CardTitle>
           </CardHeader>
           <CardContent>
@@ -374,7 +403,7 @@ export default function EditPropertyPage() {
           </CardContent>
         </Card>
 
-        {/* Actions */}
+        {/* Bottom actions row — keep Cancel and Save for convenience */}
         <div className="flex items-center justify-between">
           <Link href={`/landlord/properties/${propertyId}`}>
             <Button type="button" variant="outline">
@@ -383,7 +412,7 @@ export default function EditPropertyPage() {
           </Link>
           <Button 
             type="submit" 
-            className="bg-orange-500 hover:bg-orange-600"
+            className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-sm"
             disabled={saving}
           >
             {saving ? (
@@ -399,7 +428,9 @@ export default function EditPropertyPage() {
             )}
           </Button>
         </div>
-      </form>
+        </form>
+
+      </div>
     </div>
   )
 }

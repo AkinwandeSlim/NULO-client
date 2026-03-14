@@ -6,12 +6,12 @@ import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   MapPin, Bed, Bath, Square, Eye, Heart, Calendar,
   Edit, Trash2, ArrowLeft, MessageSquare,
   Home, Wifi, Car, Dumbbell, Shield, Wind,
-  ChevronRight, TrendingUp, AlertCircle, Building2, ZoomIn, X
+  ChevronRight, TrendingUp, AlertCircle, Building2, ZoomIn, X,
+  Grid
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -122,7 +122,7 @@ export default function LandlordPropertyViewPage() {
   const params     = useParams()
   const pathname   = usePathname()
   const { user }   = useAuth()
-  const propertyId = params.id as string
+  const propertyId = (params?.id as string) || ""
 
   const fetchProperty = useCallback(async () => {
     try {
@@ -191,11 +191,11 @@ export default function LandlordPropertyViewPage() {
 
   // ─── Derived values ─────────────────────────────────────────────────────────
   const images = property.photos || property.images || [DEFAULT_PROPERTY_IMAGE]
-  // FIX #8: Always pad to exactly 4 slots for grid layout
+  // FIX #8: Always pad to exactly 5 slots for grid layout
   const displayImages =
-    images.length >= 4
-      ? images.slice(0, 4)
-      : [...images, ...Array(4 - images.length).fill(DEFAULT_PROPERTY_IMAGE)]
+    images.length >= 5
+      ? images.slice(0, 5)
+      : [...images, ...Array(5 - images.length).fill(DEFAULT_PROPERTY_IMAGE)]
 
   const vConfig = VERIFICATION_CONFIG[property.verification_status] ?? VERIFICATION_CONFIG.pending
   const sConfig = STATUS_CONFIG[property.status] ?? STATUS_CONFIG.vacant
@@ -207,102 +207,96 @@ export default function LandlordPropertyViewPage() {
   return (
     // FIX #9: Match gradient background from properties list page
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
 
-      {/* ── Sticky breadcrumb + actions bar ────────────────────────────────────
-          FIX #2: Move action buttons here — remove broken -mt-16 hack
-          FIX #10: sticky top-0 so it stays visible while scrolling          */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-4">
-          <nav className="flex items-center gap-2 text-sm min-w-0">
-            <Link href="/landlord/overview"
-              className="text-slate-500 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">
-              Dashboard
-            </Link>
-            <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0" />
-            <Link href="/landlord/properties"
-              className="text-slate-500 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">
-              My Properties
-            </Link>
-            <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0" />
-            <span className="text-slate-900 font-semibold truncate">{property.title}</span>
-          </nav>
-
-          {/* Action buttons — always visible in sticky bar */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Link href={`/landlord/properties/${propertyId}/edit`}>
-              <Button
-                size="sm"
-                className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-sm"
-              >
-                <Edit className="h-3.5 w-3.5 mr-1.5" />
-                Edit
-              </Button>
-            </Link>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
-            >
-              {deleting
-                ? <div className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
-                : <><Trash2 className="h-3.5 w-3.5 mr-1.5" />Delete</>
-              }
+        {/* Header — matches viewings and application detail page pattern exactly */}
+        <div className="mb-8">
+          <Link href="/landlord/properties">
+            <Button variant="ghost" size="sm" className="mb-4 text-slate-600 hover:text-slate-900">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Properties
             </Button>
+          </Link>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-3 leading-tight">
+                {property.title}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className={sConfig.className}>{sConfig.label}</Badge>
+                <Badge className={vConfig.className}>{vConfig.label}</Badge>
+                <span className="text-slate-500 text-sm flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5 text-orange-500" />
+                  {location}
+                </span>
+              </div>
+            </div>
+            {/* Action buttons — same slot as primary action in viewings page */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Link href={`/landlord/properties/${propertyId}/edit`}>
+                <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-sm">
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Property
+                </Button>
+              </Link>
+              <Button
+                variant="outline"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+              >
+                {deleting
+                  ? <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                  : <><Trash2 className="h-4 w-4 mr-2" />Delete</>
+                }
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-8">
 
         {/* ── Image Gallery ────────────────────────────────────────────────────
-            FIX #1 + #8: Added grid-rows-2 so col-span-2 row-span-2 works      */}
-        <div className="grid grid-cols-4 grid-rows-2 gap-2 h-[480px] rounded-2xl overflow-hidden mb-8 shadow-lg">
+            Updated to 5-image layout: 1 large left + 2×2 grid right      */}
+        <div className="grid grid-cols-4 gap-1.5 h-[260px] md:h-[480px] rounded-2xl overflow-hidden mb-8 shadow-lg">
 
-          {/* Main large image */}
+          {/* Main large image — left 50% */}
           <div
-            className="col-span-2 row-span-2 relative group cursor-pointer overflow-hidden bg-slate-100"
+            className="col-span-2 row-span-2 relative group cursor-pointer overflow-hidden bg-slate-200"
             onClick={() => { setSelectedImage(0); setLightboxOpen(true) }}
           >
             <img
               src={displayImages[0]}
               alt={property.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
             />
-            {/* FIX #6: Show BOTH status badges (was only showing property.status) */}
             <div className="absolute top-4 left-4 flex flex-col gap-2">
               <Badge className={sConfig.className}>{sConfig.label}</Badge>
               <Badge className={vConfig.className}>{vConfig.label}</Badge>
             </div>
-            {/* Zoom hint */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-              <div className="bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-lg">
-                <ZoomIn className="h-5 w-5 text-slate-700" />
-              </div>
-            </div>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
 
-          {/* Three smaller images */}
-          {displayImages.slice(1, 4).map((img: string, idx: number) => (
+          {/* 4 smaller images — right 50% in a 2×2 grid */}
+          {displayImages.slice(1, 5).map((img: string, idx: number) => (
             <div
               key={idx}
-              className="relative group cursor-pointer overflow-hidden bg-slate-100"
+              className="relative group cursor-pointer overflow-hidden bg-slate-200"
               onClick={() => { setSelectedImage(idx + 1); setLightboxOpen(true) }}
             >
               <img
                 src={img}
                 alt={`Photo ${idx + 2}`}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                className="w-full h-full object-cover group-hover:scale-[1.05] transition-transform duration-500"
               />
-              {/* "+N more" on last thumbnail */}
-              {idx === 2 && images.length > 4 && (
-                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-1">
-                  <span className="text-white text-3xl font-bold">+{images.length - 4}</span>
-                  <span className="text-white/80 text-xs font-medium">more photos</span>
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
+              {/* "All X photos" overlay on the last thumbnail */}
+              {idx === 3 && images.length > 5 && (
+                <div className="absolute inset-0 bg-black/55 flex items-center justify-center">
+                  <button className="bg-white hover:bg-slate-50 text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md transition-all hover:scale-105">
+                    <Grid className="h-3.5 w-3.5" />
+                    All {images.length} photos
+                  </button>
                 </div>
               )}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
           ))}
         </div>
@@ -360,36 +354,28 @@ export default function LandlordPropertyViewPage() {
               </CardContent>
             </Card>
 
-            {/* Tabbed content — FIX #11: orange active state on tabs */}
+            {/* Tabbed content — plain buttons matching public property page style */}
             <Card className="border-2 border-slate-200 shadow-sm overflow-hidden">
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <div className="border-b border-slate-100 px-6 pt-5">
-                  <TabsList className="bg-orange-50 border border-orange-100">
-                    <TabsTrigger
-                      value="overview"
-                      className="data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-sm font-medium"
-                    >
-                      Overview
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="amenities"
-                      className="data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-sm font-medium"
-                    >
-                      Amenities
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="performance"
-                      className="data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-sm font-medium"
-                    >
-                      Performance
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
+              {/* Tab bar — plain buttons matching public property page style */}
+              <div className="flex border-b border-slate-100 overflow-x-auto scrollbar-hide">
+                {(["overview", "amenities", "performance"] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-5 py-3.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-all capitalize ${
+                      activeTab === tab
+                        ? "text-orange-600 border-orange-600 bg-orange-50/50"
+                        : "text-slate-500 border-transparent hover:text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
+              </div>
 
-                <CardContent className="p-6">
-
-                  {/* Overview */}
-                  <TabsContent value="overview" className="space-y-6 mt-0">
+              <div className="p-6">
+                {activeTab === "overview" && (
+                  <div className="space-y-6">
                     <div>
                       <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
                         <span className="w-1 h-5 bg-orange-500 rounded-full" />
@@ -412,10 +398,11 @@ export default function LandlordPropertyViewPage() {
                         </div>
                       </div>
                     )}
-                  </TabsContent>
+                  </div>
+                )}
 
-                  {/* Amenities — FIX #17: hover states + icon box treatment */}
-                  <TabsContent value="amenities" className="mt-0">
+                {activeTab === "amenities" && (
+                  <div>
                     {property.amenities && property.amenities.length > 0 ? (
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {property.amenities.map((amenity: string, idx: number) => {
@@ -439,10 +426,11 @@ export default function LandlordPropertyViewPage() {
                         <p className="text-slate-500 text-sm">No amenities listed for this property</p>
                       </div>
                     )}
-                  </TabsContent>
+                  </div>
+                )}
 
-                  {/* Performance — FIX #14: consistent card style */}
-                  <TabsContent value="performance" className="mt-0">
+                {activeTab === "performance" && (
+                  <div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                       <PerfCard icon={Eye}           value={property.view_count || 0}      label="Total Views"      bg="bg-blue-50 border-blue-100"    iconColor="text-blue-500" />
                       <PerfCard icon={Heart}         value={property.favorites_count || 0} label="Saved by Tenants" bg="bg-red-50 border-red-100"      iconColor="text-red-500" />
@@ -462,15 +450,14 @@ export default function LandlordPropertyViewPage() {
                         </p>
                       </div>
                     )}
-                  </TabsContent>
-
-                </CardContent>
-              </Tabs>
+                  </div>
+                )}
+              </div>
             </Card>
           </div>
 
           {/* ── Sidebar ────────────────────────────────────────────────────── */}
-          <div className="space-y-5">
+          <div className="space-y-5 lg:sticky lg:top-8">
 
             {/* Quick Actions — FIX #13: orange header treatment */}
             <Card className="border-2 border-orange-100 shadow-sm overflow-hidden">
@@ -514,19 +501,6 @@ export default function LandlordPropertyViewPage() {
                       Edit Property
                     </Button>
                   </Link>
-                  {/* FIX #16: Delete also available in sidebar */}
-                  <Button
-                    variant="outline"
-                    onClick={handleDelete}
-                    disabled={deleting}
-                    className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
-                  >
-                    {deleting
-                      ? <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin mr-2" />
-                      : <Trash2 className="mr-2 h-4 w-4" />
-                    }
-                    Delete Property
-                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -642,432 +616,3 @@ export default function LandlordPropertyViewPage() {
 
 
 
-
-
-
-
-// "use client"
-
-// import { useState, useEffect, useCallback } from "react"
-// import { useRouter, useParams, usePathname } from "next/navigation"
-// import { useAuth } from "@/contexts/AuthContext"
-// import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-// import { Button } from "@/components/ui/button"
-// import { Badge } from "@/components/ui/badge"
-// import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-// import { 
-//   MapPin, Bed, Bath, Square, Eye, Heart, Calendar, 
-//   Edit, Trash2, ArrowLeft, MessageSquare,
-//   Home, Wifi, Car, Dumbbell, Shield, Wind, CheckCircle2,
-//   ChevronRight, TrendingUp, Users, Clock
-// } from "lucide-react"
-// import Link from "next/link"
-// import { toast } from "sonner"
-// import { propertiesAPI } from "@/lib/api/properties"
-
-// const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
-
-// export default function LandlordPropertyViewPage() {
-//   const [property, setProperty] = useState<any>(null)
-//   const [loading, setLoading] = useState(true)
-//   const [mounted, setMounted] = useState(false)
-//   const [deleting, setDeleting] = useState(false)
-//   const [selectedImage, setSelectedImage] = useState(0)
-//   const [activeTab, setActiveTab] = useState('overview')
-//   const [hasInitialLoadRef] = useState({ current: false })
-
-//   const router = useRouter()
-//   const params = useParams()
-//   const pathname = usePathname()
-//   const { user } = useAuth()
-//   const propertyId = params.id as string
-
-//   const fetchProperty = useCallback(async () => {
-//     try {
-//       console.log('🔄 [PROPERTY DETAIL] Starting fetch for:', propertyId)
-//       setLoading(true)
-//       const data = await propertiesAPI.getById(propertyId)
-//       console.log('📦 [PROPERTY DETAIL] Property data received:', data)
-//       setProperty(data)
-//     } catch (error: any) {
-//       console.error('❌ [PROPERTY DETAIL] Failed to fetch property:', error)
-//       console.error('❌ [PROPERTY DETAIL] Error details:', {
-//         message: error.message,
-//         status: error.response?.status,
-//         data: error.response?.data
-//       })
-//       toast.error(error.message || 'Failed to load property')
-//     } finally {
-//       console.log('✅ [PROPERTY DETAIL] Fetch completed, setting loading to false')
-//       setLoading(false)
-//     }
-//   }, [propertyId])
-
-//   useEffect(() => {
-//     setMounted(true)
-//   }, [])
-
-//   useEffect(() => {
-//     if (mounted) {
-//       setLoading(true)
-//       fetchProperty()
-//       hasInitialLoadRef.current = true
-//     }
-//   }, [pathname, fetchProperty]) // Add pathname to trigger refresh on navigation
-
-//   const handleDelete = async () => {
-//     if (!confirm(`Are you sure you want to delete "${property?.title}"? This action cannot be undone.`)) {
-//       return
-//     }
-
-//     try {
-//       setDeleting(true)
-//       await propertiesAPI.delete(propertyId)
-//       toast.success('Property deleted successfully')
-//       router.push('/landlord/properties')
-//     } catch (error: any) {
-//       console.error('Failed to delete property:', error)
-//       toast.error(error.message || 'Failed to delete property')
-//     } finally {
-//       setDeleting(false)
-//     }
-//   }
-
-//   const formatPrice = (price: number) => {
-//     return new Intl.NumberFormat('en-NG', {
-//       style: 'currency',
-//       currency: 'NGN',
-//       minimumFractionDigits: 0,
-//       maximumFractionDigits: 0
-//     }).format(price)
-//   }
-
-//   const getAmenityIcon = (amenity: string) => {
-//     const key = amenity.toLowerCase()
-//     if (key.includes('wifi')) return Wifi
-//     if (key.includes('park')) return Car
-//     if (key.includes('gym')) return Dumbbell
-//     if (key.includes('security')) return Shield
-//     if (key.includes('air') || key.includes('ac')) return Wind
-//     return Home
-//   }
-
-//   if (loading && !hasInitialLoadRef.current && !mounted) {
-//     return (
-//       <div className="flex items-center justify-center min-h-[60vh]">
-//         <div className="text-center">
-//           <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-//           <p className="text-slate-600">Loading property...</p>
-//         </div>
-//       </div>
-//     )
-//   }
-
-//   if (!property) {
-//     return (
-//       <div className="flex items-center justify-center min-h-[60vh]">
-//         <div className="text-center">
-//           <p className="text-slate-600 mb-4">Property not found</p>
-//           <Link href="/landlord/properties">
-//             <Button>Back to Properties</Button>
-//           </Link>
-//         </div>
-//       </div>
-//     )
-//   }
-
-//   const images = property.photos || property.images || [DEFAULT_PROPERTY_IMAGE]
-//   const displayImages = images.length >= 4 ? images.slice(0, 4) : [...images, ...Array(4 - images.length).fill(DEFAULT_PROPERTY_IMAGE)]
-
-//   return (
-//     <div className="min-h-screen bg-slate-50">
-//       {/* Breadcrumb Navigation */}
-//       <div className="bg-white border-b border-slate-200">
-//         <div className="max-w-7xl mx-auto px-4 md:px-6 py-3">
-//           <nav className="flex items-center gap-2 text-sm">
-//             <Link href="/landlord/overview" className="text-slate-600 hover:text-orange-600 transition-colors font-medium">
-//               Dashboard
-//             </Link>
-//             <ChevronRight className="h-4 w-4 text-slate-400" />
-//             <Link href="/landlord/properties" className="text-slate-600 hover:text-orange-600 transition-colors font-medium">
-//               My Properties
-//             </Link>
-//             <ChevronRight className="h-4 w-4 text-slate-400" />
-//             <span className="text-slate-900 font-semibold truncate max-w-[300px]">
-//               {property.title}
-//             </span>
-//           </nav>
-//         </div>
-//       </div>
-
-//       {/* Modern Image Gallery */}
-//       <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
-//         <div className="grid grid-cols-4 gap-2 h-[500px] rounded-2xl overflow-hidden">
-//           {/* Main Large Image */}
-//           <div 
-//             className="col-span-2 row-span-2 relative group cursor-pointer overflow-hidden bg-slate-100"
-//             onClick={() => setSelectedImage(0)}
-//           >
-//             <img
-//               src={displayImages[0]}
-//               alt={property.title}
-//               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-//             />
-//             <Badge className="absolute top-4 left-4 bg-green-500 text-white">
-//               {property.status || 'vacant'}
-//             </Badge>
-//           </div>
-
-//           {/* Three Smaller Images */}
-//           {displayImages.slice(1, 4).map((img: string, idx: number) => (
-//             <div
-//               key={idx}
-//               className="relative group cursor-pointer overflow-hidden bg-slate-100"
-//               onClick={() => setSelectedImage(idx + 1)}
-//             >
-//               <img
-//                 src={img}
-//                 alt={`View ${idx + 2}`}
-//                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-//               />
-//               {idx === 2 && images.length > 4 && (
-//                 <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-//                   <span className="text-white text-2xl font-bold">+{images.length - 4}</span>
-//                 </div>
-//               )}
-//             </div>
-//           ))}
-//         </div>
-
-//         {/* Action Buttons Overlay */}
-//         <div className="flex items-center justify-end gap-2 -mt-16 relative z-10 px-4">
-//           <Link href={`/landlord/properties/${propertyId}/edit`}>
-//             <Button className="bg-orange-500 hover:bg-orange-600 shadow-lg">
-//               <Edit className="h-4 w-4 mr-2" />
-//               Edit Property
-//             </Button>
-//           </Link>
-//           <Button
-//             variant="destructive"
-//             onClick={handleDelete}
-//             disabled={deleting}
-//             className="shadow-lg"
-//           >
-//             {deleting ? (
-//               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-//             ) : (
-//               <Trash2 className="h-4 w-4 mr-2" />
-//             )}
-//             Delete
-//           </Button>
-//         </div>
-//       </div>
-
-//       {/* Property Details */}
-//       <div className="max-w-7xl mx-auto px-4 md:px-6 pb-12">
-//         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-//           {/* Main Content */}
-//           <div className="lg:col-span-2 space-y-6">
-//             {/* Title & Price */}
-//             <Card>
-//               <CardContent className="p-6">
-//                 <div className="flex items-start justify-between gap-4 mb-4">
-//                   <div className="flex-1">
-//                     <h1 className="text-3xl font-bold text-slate-900 mb-2">
-//                       {property.title}
-//                     </h1>
-//                     <div className="flex items-center gap-2 text-slate-600 mb-3">
-//                       <MapPin className="h-4 w-4" />
-//                       <span>{property.location}</span>
-//                     </div>
-//                     {/* Performance Badges */}
-//                     <div className="flex flex-wrap items-center gap-2 mt-2">
-//                       <div className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-//                         <Eye className="h-3.5 w-3.5" />
-//                         <span>{property.view_count || 0} views</span>
-//                       </div>
-//                       <div className="inline-flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-//                         <Heart className="h-3.5 w-3.5" />
-//                         <span>{property.favorites_count || 0} favorites</span>
-//                       </div>
-//                       <div className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-//                         <CheckCircle2 className="h-3.5 w-3.5" />
-//                         <span>{property.status || 'vacant'}</span>
-//                       </div>
-//                     </div>
-//                   </div>
-//                   <div className="text-right">
-//                     <div className="text-3xl font-bold text-orange-600">
-//                       {formatPrice(property.rent_amount || property.price || 0)}
-//                     </div>
-//                     <div className="text-sm text-slate-600">/month</div>
-//                   </div>
-//                 </div>
-
-//                 {/* Key Features */}
-//                 <div className="flex items-center gap-6 pt-4 border-t border-slate-200">
-//                   <div className="flex items-center gap-2">
-//                     <Bed className="h-5 w-5 text-slate-400" />
-//                     <span className="font-semibold text-slate-900">{property.bedrooms || property.beds || 0}</span>
-//                     <span className="text-slate-600 text-sm">Beds</span>
-//                   </div>
-//                   <div className="flex items-center gap-2">
-//                     <Bath className="h-5 w-5 text-slate-400" />
-//                     <span className="font-semibold text-slate-900">{property.bathrooms || property.baths || 0}</span>
-//                     <span className="text-slate-600 text-sm">Baths</span>
-//                   </div>
-//                   {(property.square_feet || property.sqft) && (
-//                     <div className="flex items-center gap-2">
-//                       <Square className="h-5 w-5 text-slate-400" />
-//                       <span className="font-semibold text-slate-900">{property.square_feet || property.sqft}</span>
-//                       <span className="text-slate-600 text-sm">sqft</span>
-//                     </div>
-//                   )}
-//                   <div className="flex items-center gap-2">
-//                     <Home className="h-5 w-5 text-slate-400" />
-//                     <span className="font-semibold text-slate-900 capitalize">{property.property_type}</span>
-//                   </div>
-//                 </div>
-//               </CardContent>
-//             </Card>
-
-//             {/* Tabbed Content */}
-//             <Card>
-//               <Tabs value={activeTab} onValueChange={setActiveTab}>
-//                 <CardHeader className="pb-3">
-//                   <TabsList className="w-full justify-start">
-//                     <TabsTrigger value="overview">Overview</TabsTrigger>
-//                     <TabsTrigger value="amenities">Amenities</TabsTrigger>
-//                     <TabsTrigger value="performance">Performance</TabsTrigger>
-//                   </TabsList>
-//                 </CardHeader>
-//                 <CardContent>
-//                   <TabsContent value="overview" className="space-y-4">
-//                     <div>
-//                       <h3 className="font-semibold text-slate-900 mb-2">Description</h3>
-//                       <p className="text-slate-700 leading-relaxed whitespace-pre-line">
-//                         {property.description || 'No description provided.'}
-//                       </p>
-//                     </div>
-//                     {property.address && (
-//                       <div>
-//                         <h3 className="font-semibold text-slate-900 mb-2">Address</h3>
-//                         <p className="text-slate-700">{property.address}</p>
-//                       </div>
-//                     )}
-//                   </TabsContent>
-
-//                   <TabsContent value="amenities">
-//                     {property.amenities && property.amenities.length > 0 ? (
-//                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-//                         {property.amenities.map((amenity: string, idx: number) => {
-//                           const Icon = getAmenityIcon(amenity)
-//                           return (
-//                             <div key={idx} className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
-//                               <Icon className="h-5 w-5 text-orange-500" />
-//                               <span className="text-slate-700">{amenity}</span>
-//                             </div>
-//                           )
-//                         })}
-//                       </div>
-//                     ) : (
-//                       <p className="text-slate-600">No amenities listed</p>
-//                     )}
-//                   </TabsContent>
-
-//                   <TabsContent value="performance">
-//                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-//                       <div className="text-center p-4 bg-blue-50 rounded-lg">
-//                         <Eye className="h-6 w-6 text-blue-500 mx-auto mb-2" />
-//                         <p className="text-2xl font-bold text-slate-900">{property.view_count || 0}</p>
-//                         <p className="text-sm text-slate-600">Total Views</p>
-//                       </div>
-//                       <div className="text-center p-4 bg-red-50 rounded-lg">
-//                         <Heart className="h-6 w-6 text-red-500 mx-auto mb-2" />
-//                         <p className="text-2xl font-bold text-slate-900">{property.favorites_count || 0}</p>
-//                         <p className="text-sm text-slate-600">Favorites</p>
-//                       </div>
-//                       <div className="text-center p-4 bg-green-50 rounded-lg">
-//                         <Calendar className="h-6 w-6 text-green-500 mx-auto mb-2" />
-//                         <p className="text-2xl font-bold text-slate-900">{property.viewings_count || 0}</p>
-//                         <p className="text-sm text-slate-600">Viewing Requests</p>
-//                       </div>
-//                       <div className="text-center p-4 bg-purple-50 rounded-lg">
-//                         <MessageSquare className="h-6 w-6 text-purple-500 mx-auto mb-2" />
-//                         <p className="text-2xl font-bold text-slate-900">{property.messages_count || 0}</p>
-//                         <p className="text-sm text-slate-600">Messages</p>
-//                       </div>
-//                     </div>
-//                   </TabsContent>
-//                 </CardContent>
-//               </Tabs>
-//             </Card>
-//           </div>
-
-//           {/* Sidebar */}
-//           <div className="space-y-6">
-//             {/* Quick Actions */}
-//             <Card>
-//               <CardHeader>
-//                 <CardTitle>Quick Actions</CardTitle>
-//               </CardHeader>
-//               <CardContent className="space-y-3">
-//                 <Link href={`/landlord/viewings?property=${propertyId}`}>
-//                   <Button variant="outline" className="w-full justify-start">
-//                     <Calendar className="mr-2 h-4 w-4" />
-//                     Viewing Requests ({property.viewings_count || 0})
-//                   </Button>
-//                 </Link>
-//                 <Link href={`/landlord/messages?property=${propertyId}`}>
-//                   <Button variant="outline" className="w-full justify-start">
-//                     <MessageSquare className="mr-2 h-4 w-4" />
-//                     Messages ({property.messages_count || 0})
-//                   </Button>
-//                 </Link>
-//                 <Link href={`/landlord/properties/${propertyId}/edit`}>
-//                   <Button variant="outline" className="w-full justify-start border-orange-500 text-orange-600 hover:bg-orange-50">
-//                     <Edit className="mr-2 h-4 w-4" />
-//                     Edit Property
-//                   </Button>
-//                 </Link>
-//               </CardContent>
-//             </Card>
-
-//             {/* Property Info */}
-//             <Card>
-//               <CardHeader>
-//                 <CardTitle>Property Information</CardTitle>
-//               </CardHeader>
-//               <CardContent className="space-y-3 text-sm">
-//                 <div className="flex justify-between">
-//                   <span className="text-slate-600">Property Type</span>
-//                   <span className="font-medium capitalize">{property.property_type}</span>
-//                 </div>
-//                 <div className="flex justify-between">
-//                   <span className="text-slate-600">Status</span>
-//                   <Badge className={property.status === 'vacant' ? 'bg-green-500' : 'bg-slate-500'}>
-//                     {property.status}
-//                   </Badge>
-//                 </div>
-//                 {property.availability_start && (
-//                   <div className="flex justify-between">
-//                     <span className="text-slate-600">Available From</span>
-//                     <span className="font-medium">
-//                       {new Date(property.availability_start).toLocaleDateString()}
-//                     </span>
-//                   </div>
-//                 )}
-//                 <div className="flex justify-between">
-//                   <span className="text-slate-600">Listed On</span>
-//                   <span className="font-medium">
-//                     {new Date(property.created_at).toLocaleDateString()}
-//                   </span>
-//                 </div>
-//               </CardContent>
-//             </Card>
-//           </div>
-//         </div>
-//       </div>
-//     </div>
-//   )
-// }

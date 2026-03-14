@@ -93,6 +93,7 @@ export function ChatModal({
           read: true,
           read_at: new Date(Date.now() - 3000000).toISOString(),
           timestamp: new Date(Date.now() - 3600000).toISOString(),
+          deleted_at: null,
           sender: {
             id: currentUserId,
             full_name: null,
@@ -111,6 +112,7 @@ export function ChatModal({
           read: true,
           read_at: new Date(Date.now() - 2400000).toISOString(),
           timestamp: new Date(Date.now() - 3000000).toISOString(),
+          deleted_at: null,
           sender: {
             id: landlordId,
             full_name: landlordName,
@@ -171,6 +173,7 @@ export function ChatModal({
           read: response.read,
           read_at: response.read_at,
           timestamp: response.timestamp,
+          deleted_at: response.deleted_at || null,
           sender: response.sender
         }
         setMessages(prev => [...prev, message])

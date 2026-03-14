@@ -133,29 +133,36 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   // Fetch notifications from backend
   const fetchNotifications = async () => {
     if (!user) {
-      console.log('🔔 [NOTIF] No user, skipping fetch');
+      dispatch({ type: 'SET_NOTIFICATIONS', payload: [] });
       return;
     }
 
-    console.log('🔔 [NOTIF] Fetching notifications for user:', user.id);
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (!isProduction) {
+      console.log('🔔 [NOTIF] Fetching notifications for user:', user.id);
+    }
+    
     dispatch({ type: 'SET_LOADING', payload: true });
 
     try {
       const response = await notificationsAPI.getNotifications();
       
       if (response.success && response.notifications) {
-        console.log(`🔔 [NOTIF] Fetched ${response.notifications.length} notifications`);
+        if (!isProduction) {
+          console.log(`🔔 [NOTIF] Fetched ${response.notifications.length} notifications`);
+        }
         
         dispatch({ type: 'SET_NOTIFICATIONS', payload: response.notifications });
         dispatch({ type: 'UPDATE_LAST_FETCHED', payload: new Date().toISOString() });
-      } else {
-        // Don't clear notifications on API failure - keep existing ones
-        console.log('🔔 [NOTIF] API returned success=false, keeping existing notifications');
       }
+      // Silently handle API failures - keep existing notifications
     } catch (error) {
-      console.error('🔔 [NOTIF] Error fetching notifications:', error);
-      // Don't clear notifications on network errors - keep existing ones
-      console.log('🔔 [NOTIF] Network issue, keeping existing notifications');
+      // Only log in development for 401 errors (auth issues)
+      const axiosError = error as any;
+      if (!isProduction && axiosError?.response?.status !== 401) {
+        console.log('🔔 [NOTIF] Network issue, keeping existing notifications');
+      }
+      // Silently keep existing notifications on any error
     } finally {
       // Always ensure loading is turned off
       dispatch({ type: 'SET_LOADING', payload: false });
@@ -164,7 +171,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   // Mark notification as read
   const markAsRead = async (notificationId: string) => {
-    console.log('🔔 [NOTIF] Marking notification as read:', notificationId);
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (!isProduction) {
+      console.log('🔔 [NOTIF] Marking notification as read:', notificationId);
+    }
     
     // Optimistic update - update UI immediately
     dispatch({ type: 'MARK_AS_READ', payload: notificationId });
@@ -172,17 +182,19 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     try {
       const response = await notificationsAPI.markAsRead(notificationId);
       
-      if (response.success) {
-        console.log('🔔 [NOTIF] Successfully marked as read:', notificationId);
-      } else {
+      if (!response.success) {
         // If API fails, revert the optimistic update
-        console.log('🔔 [NOTIF] API failed, reverting optimistic update');
+        if (!isProduction) {
+          console.log('🔔 [NOTIF] API failed, reverting optimistic update');
+        }
         dispatch({ type: 'REVERT_MARK_AS_READ', payload: notificationId });
       }
     } catch (error) {
-      console.error('🔔 [NOTIF] Error marking as read:', error);
       // If network fails, revert the optimistic update
-      console.log('🔔 [NOTIF] Network error, reverting optimistic update');
+      const axiosError = error as any;
+      if (!isProduction && axiosError?.response?.status !== 401) {
+        console.log('🔔 [NOTIF] Network error, reverting optimistic update');
+      }
       dispatch({ type: 'REVERT_MARK_AS_READ', payload: notificationId });
     }
   };

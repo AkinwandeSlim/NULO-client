@@ -91,7 +91,7 @@ export default function LandlordPaymentDetailPage() {
   const router = useRouter()
   const params = useParams()
   const { user } = useAuth()
-  const transactionId = params.id as string
+  const transactionId = (params?.id as string) || ""
 
   const [transaction, setTransaction] = useState<Transaction | null>(null)
   const [isLoading, setIsLoading] = useState(true)

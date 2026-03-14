@@ -29,7 +29,7 @@ export default function TenantSignupPage() {
   })
 
   // ✅ Preserve callback URL if coming from property detail page
-  const redirectParam = searchParams.get('redirect_to')
+  const redirectParam = searchParams?.get('redirect_to')
   useSignupCallbackUrl(redirectParam || undefined)
   
   const [formData, setFormData] = useState({

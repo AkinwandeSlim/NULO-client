@@ -107,6 +107,8 @@ export default function LandlordOnboardingStep1() {
 
   // ── Smart back button ────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!searchParams) return
+    
     const from = searchParams.get('from')
     const isOAuthUser = searchParams.get('oauth') === '1' || user?.auth_provider === 'google'
 

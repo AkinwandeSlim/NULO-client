@@ -103,7 +103,7 @@ export function AdminNavigation() {
       <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
         {navigationItems.map((item) => {
           const isActive = pathname === item.href || 
-            (item.href !== "/(dashboard)/admin" && pathname.startsWith(item.href))
+            (item.href !== "/(dashboard)/admin" && pathname?.startsWith(item.href))
           
           return (
             <Link

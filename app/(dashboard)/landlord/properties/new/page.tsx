@@ -678,17 +678,27 @@ export default function AddPropertyPage() {
 
   // ── Page shell ─────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1] p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-4 mb-6">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+
+        {/* Header — matches viewings and application detail page pattern */}
+        <div className="mb-8">
           <Link href="/landlord/properties">
-            <Button variant="ghost" size="sm" className="text-slate-700 hover:text-orange-600 hover:bg-orange-50">
-              <ArrowLeft className="h-4 w-4 mr-2" /> Back to Properties
+            <Button variant="ghost" size="sm" className="mb-4 text-slate-600 hover:text-slate-900">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Properties
             </Button>
           </Link>
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Add New Property</h1>
-            <p className="text-slate-700 mt-1">List your property for rent with our premium platform</p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-3">
+                Add New Property
+              </h1>
+              <p className="text-slate-600">
+                List your property for rent with our premium platform
+              </p>
+            </div>
+            {/* Primary action could go here if needed */}
           </div>
         </div>
 
@@ -704,7 +714,7 @@ export default function AddPropertyPage() {
           </div>
         </div>
 
-        <Card className="border-2 border-slate-200 rounded-2xl shadow-lg bg-white">
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-lg">
           <CardContent className="p-8">
             {renderStepContent()}
           </CardContent>
@@ -718,7 +728,7 @@ export default function AddPropertyPage() {
           <div className="flex items-center gap-3">
             {currentStep < totalSteps ? (
               <Button onClick={nextStep}
-                className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105 shadow-lg">
+                className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105 shadow-lg">
                 Next <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             ) : (
@@ -733,6 +743,7 @@ export default function AddPropertyPage() {
             )}
           </div>
         </div>
+
       </div>
     </div>
   )

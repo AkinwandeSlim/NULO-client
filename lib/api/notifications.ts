@@ -40,27 +40,35 @@ export const notificationsAPI = {
       console.log('✅ [NOTIFICATIONS API] Fetched notifications:', response.data);
       return response.data;
     } catch (error: any) {
+      // Production-ready error handling - minimize console spam
+      const isProduction = process.env.NODE_ENV === 'production';
+      
       // Handle 401 Unauthorized specifically
       if (error.response?.status === 401) {
-        console.log('🔔 [NOTIFICATIONS API] Unauthorized - token may be expired');
-        // Don't return empty - let the auth system handle token refresh
+        if (!isProduction) console.log('🔔 [NOTIFICATIONS API] Unauthorized - token may be expired');
         throw error;
       }
       
-      // Silently handle timeouts - don't log as error
+      // Handle 500 Server errors gracefully
+      if (error.response?.status === 500) {
+        if (!isProduction) console.log('🔔 [NOTIFICATIONS API] Server error - using existing notifications');
+        return { success: false, notifications: [], unread_count: 0, total_count: 0, limit: 20, offset: 0 };
+      }
+      
+      // Silently handle timeouts
       if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-        console.log('🔔 [NOTIFICATIONS API] Request taking time - using existing notifications');
         return { success: false, notifications: [], unread_count: 0, total_count: 0, limit: 20, offset: 0 };
       }
       
       // Silently handle network issues
       if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND' || error.message?.includes('Network Error') || !navigator.onLine) {
-        console.log('🔔 [NOTIFICATIONS API] Network issue - using existing notifications');
         return { success: false, notifications: [], unread_count: 0, total_count: 0, limit: 20, offset: 0 };
       }
       
-      // For other errors, log but don't crash
-      console.log('🔔 [NOTIFICATIONS API] Service unavailable - using existing notifications');
+      // For other errors, only log in development
+      if (!isProduction) {
+        console.log('🔔 [NOTIFICATIONS API] Service unavailable - using existing notifications');
+      }
       return { success: false, notifications: [], unread_count: 0, total_count: 0, limit: 20, offset: 0 };
     }
   },
@@ -80,15 +88,35 @@ export const notificationsAPI = {
       console.log('✅ [NOTIFICATIONS API] Unread count:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('❌ [NOTIFICATIONS API] Failed to get unread count:', error);
+      const isProduction = process.env.NODE_ENV === 'production';
       
-      // For timeout or network errors, return 0 instead of throwing
-      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-        console.log('🔔 [NOTIFICATIONS API] Unread count request timed out - returning 0');
+      // Handle 401 Unauthorized specifically
+      if (error.response?.status === 401) {
+        if (!isProduction) console.log('🔔 [NOTIFICATIONS API] Unauthorized for unread count');
+        throw error;
+      }
+      
+      // Handle 500 Server errors gracefully
+      if (error.response?.status === 500) {
+        if (!isProduction) console.log('🔔 [NOTIFICATIONS API] Server error for unread count');
         return { success: false, unread_count: 0 };
       }
       
-      throw error;
+      // For timeout or network errors, return 0 silently
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        return { success: false, unread_count: 0 };
+      }
+      
+      // For network errors, return 0 silently
+      if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND' || error.message?.includes('Network Error') || !navigator.onLine) {
+        return { success: false, unread_count: 0 };
+      }
+      
+      // For other errors, only log in development
+      if (!isProduction) {
+        console.log('🔔 [NOTIFICATIONS API] Unread count failed - returning 0');
+      }
+      return { success: false, unread_count: 0 };
     }
   },
 

@@ -185,7 +185,7 @@ export default function LandlordAgreementDetailPage() {
   const router = useRouter()
   const params = useParams()
   const { user } = useAuth()
-  const agreementId = params.id as string
+  const agreementId = (params?.id as string) || ""
 
   const [agreement, setAgreement] = useState<AgreementWithDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)

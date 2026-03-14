@@ -31,14 +31,18 @@ export default function PropertiesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const isMounted = useRef(false)
 
-  const fetchProperties = useCallback(async (filter?: string) => {
+  const fetchProperties = useCallback(async (filter: string) => {
     try {
       setLoading(true)
       setError(null)
       console.log('🔄 [PROPERTIES PAGE] Fetching properties...')
       
-      const data = await propertiesAPI.getMyProperties(1, 20, filter || statusFilter)
+      // skipCache: true on every call — the properties page always needs fresh data.
+      // The 5-minute TTL was causing stale empty results to be served after the
+      // status_filter=all bug was previously triggered.
+      const data = await propertiesAPI.getMyProperties(1, 20, filter, { skipCache: true })
       console.log('📦 [PROPERTIES PAGE] Properties data received:', data.properties?.length || 0)
       
       setProperties(data.properties || [])
@@ -49,15 +53,16 @@ export default function PropertiesPage() {
     } finally {
       setLoading(false)
     }
-  }, [statusFilter])
+  }, []) // No statusFilter dependency — filter is passed as an argument
 
+  // Single useEffect watching statusFilter — fires once on mount and on every filter change
   useEffect(() => {
-    fetchProperties()
-  }, [fetchProperties])
+    fetchProperties(statusFilter)
+  }, [statusFilter, fetchProperties])
 
+  // Filter change now only updates state — the useEffect above handles the fetch
   const handleStatusFilterChange = (newFilter: string) => {
     setStatusFilter(newFilter)
-    fetchProperties(newFilter)
   }
 
   const handleDeleteProperty = async (propertyId: string, propertyTitle: string) => {
@@ -70,7 +75,7 @@ export default function PropertiesPage() {
       await propertiesAPI.delete(propertyId)
       setProperties(properties.filter(p => p.id !== propertyId))
       toast.success(`"${propertyTitle}" deleted successfully`)
-      fetchProperties()
+      fetchProperties(statusFilter)
     } catch (error: any) {
       console.error('Failed to delete property:', error)
       toast.error(error.message || 'Failed to delete property')
@@ -79,8 +84,9 @@ export default function PropertiesPage() {
     }
   }
 
+  // Refresh uses the current filter
   const handleRefresh = () => {
-    fetchProperties()
+    fetchProperties(statusFilter)
   }
 
   const formatPrice = (price: number) => {
@@ -105,7 +111,7 @@ export default function PropertiesPage() {
               <AlertCircle className="w-20 h-20 text-red-500 mx-auto mb-6" />
               <h3 className="text-xl font-semibold text-slate-900 mb-2">Failed to Load Properties</h3>
               <p className="text-slate-600 mb-6">{error}</p>
-              <Button onClick={() => fetchProperties()} className="bg-orange-500 hover:bg-orange-600">
+              <Button onClick={() => fetchProperties(statusFilter)} className="bg-orange-500 hover:bg-orange-600">
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Try Again
               </Button>
@@ -165,38 +171,24 @@ export default function PropertiesPage() {
 
             {/* Status Filter Buttons */}
             <div className="flex flex-wrap gap-2 mb-8">
-              <Button
-                variant={statusFilter === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => handleStatusFilterChange('all')}
-                className={statusFilter === 'all' ? 'bg-orange-500 text-white' : 'border-orange-200 text-orange-700 hover:bg-orange-50'}
-              >
-                All Properties
-              </Button>
-              <Button
-                variant={statusFilter === 'vacant' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => handleStatusFilterChange('vacant')}
-                className={statusFilter === 'vacant' ? 'bg-green-500 text-white' : 'border-green-200 text-green-700 hover:bg-green-50'}
-              >
-                ✅ Available
-              </Button>
-              <Button
-                variant={statusFilter === 'rented' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => handleStatusFilterChange('rented')}
-                className={statusFilter === 'rented' ? 'bg-red-500 text-white' : 'border-red-200 text-red-700 hover:bg-red-50'}
-              >
-                🔒 Rented
-              </Button>
-              <Button
-                variant={statusFilter === 'draft' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => handleStatusFilterChange('draft')}
-                className={statusFilter === 'draft' ? 'bg-slate-500 text-white' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}
-              >
-                ⏳ Draft
-              </Button>
+              {[
+                { value: 'all',         label: 'All Properties' },
+                { value: 'vacant',      label: '✅ Available' },
+                { value: 'occupied',    label: '🔒 Occupied' },
+                { value: 'maintenance', label: '🔧 Maintenance' },
+              ].map(({ value, label }) => (
+                <Button
+                  key={value}
+                  variant={statusFilter === value ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleStatusFilterChange(value)}
+                  className={statusFilter === value
+                    ? 'bg-orange-500 text-white'
+                    : 'border-orange-200 text-orange-700 hover:bg-orange-50'}
+                >
+                  {label}
+                </Button>
+              ))}
             </div>
 
             {/* Stats Summary */}
@@ -268,16 +260,19 @@ export default function PropertiesPage() {
                   {/* Rental Status Badge — Top Left */}
                   <Badge 
                     className={`absolute top-3 left-3 ${
-                      property.status === 'vacant' 
-                        ? 'bg-green-500 text-white' 
-                        : property.status === 'rented'
+                      property.status === 'vacant'
+                        ? 'bg-green-500 text-white'
+                        : property.status === 'occupied'
                         ? 'bg-red-500 text-white'
+                        : property.status === 'maintenance'
+                        ? 'bg-yellow-500 text-white'
                         : 'bg-slate-500 text-white'
                     }`}
                   >
-                    {property.status === 'rented' ? '🔒 Rented'
-                      : property.status === 'vacant' ? '✅ Available'
-                      : '⏳ Draft'}
+                    {property.status === 'vacant' ? '✅ Available'
+                      : property.status === 'occupied' ? '🔒 Occupied'
+                      : property.status === 'maintenance' ? '🔧 Maintenance'
+                      : '⏳ Pending'}
                   </Badge>
                   
                   {/* Verification Status — Top Right */}

@@ -31,7 +31,7 @@ const formatNGN = (amount: number) =>
 const getStatusConfig = (status: Transaction["status"]): {
   label: string
   color: string
-  bgColor: string
+  bgColor: string 
   borderColor: string
   icon: React.ReactNode
   description: string
@@ -85,7 +85,7 @@ export default function TenantPaymentCallbackPage() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const { user }     = useAuth()
-  const reference    = searchParams.get("reference")
+  const reference    = searchParams?.get("reference")
 
   const [transaction,   setTransaction]   = useState<Transaction | null>(null)
   const [isLoading,     setIsLoading]     = useState(true)

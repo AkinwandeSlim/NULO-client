@@ -31,6 +31,12 @@ export default function AuthCallback() {
         console.log('🔄 [CALLBACK PAGE] Processing auth callback (fallback)...')
         
         // Check for error in URL parameters first
+        if (!searchParams) {
+          console.error('❌ No searchParams available')
+          router.push('/signin')
+          return
+        }
+        
         const error = searchParams.get('error')
         const errorDescription = searchParams.get('error_description')
         
@@ -87,7 +93,16 @@ export default function AuthCallback() {
           } else if (userType === 'admin') {
             redirectUrl = '/admin'
           } else if (userType === 'landlord') {
-            redirectUrl = '/onboarding/landlord/step-1'
+            // Check if this might be a network error situation
+            // If user has onboarding_completed metadata, go to dashboard instead
+            const onboardingCompleted = session.user.user_metadata?.onboarding_completed
+            if (onboardingCompleted) {
+              redirectUrl = '/landlord'
+              console.log('🏠 [CALLBACK PAGE] Landlord already onboarded, going to dashboard')
+            } else {
+              redirectUrl = '/onboarding/landlord/step-1'
+              console.log('🎓 [CALLBACK PAGE] New landlord, going to onboarding')
+            }
           } else if (userType === 'tenant') {
             redirectUrl = '/properties'
           }

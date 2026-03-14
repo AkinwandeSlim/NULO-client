@@ -132,6 +132,35 @@ export const applicationsAPI = {
   },
 
   /**
+   * Fast version for dashboard - adaptive timeout for Nigeria connectivity
+   */
+  getMyApplicationsFast: async (): Promise<ApplicationsResponse> => {
+    try {
+      // First try with short timeout (10s) for responsive UX
+      const response = await apiClient.get<ApplicationsResponse>('/api/v1/applications/my-applications', { timeout: 10000 });
+      return response.data;
+    } catch (error: any) {
+      // If it's a timeout, try once more with longer timeout for poor connectivity
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        try {
+          const response = await apiClient.get<ApplicationsResponse>('/api/v1/applications/my-applications', { timeout: 25000 });
+          return response.data;
+        } catch (retryError: any) {
+          try {
+            // Final fallback to standard method for reliability
+            const response = await apiClient.get<ApplicationsResponse>('/api/v1/applications/my-applications');
+            return response.data;
+          } catch (finalError: any) {
+            return { success: false, applications: [], total: 0 }
+          }
+        }
+      }
+      // For other errors, return empty immediately
+      return { success: false, applications: [], total: 0 }
+    }
+  },
+
+  /**
    * Get applications received by landlord
    */
   getReceivedApplications: async (): Promise<ApplicationsResponse> => {

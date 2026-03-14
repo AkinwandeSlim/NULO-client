@@ -32,9 +32,9 @@ export function useVerifiedToast(userType: "landlord" | "tenant" = "landlord") {
   const { refreshNotifications } = useNotifications()
 
   useEffect(() => {
-    const isVerified   = searchParams.get("verified") === "1"
-    const isOAuth      = searchParams.get("oauth") === "1"
-    const isCorrection = searchParams.get("correction") === "1"
+    const isVerified   = searchParams?.get("verified") === "1"
+    const isOAuth      = searchParams?.get("oauth") === "1"
+    const isCorrection = searchParams?.get("correction") === "1"
 
     // Nothing to handle — bail early
     if (!isVerified && !isOAuth && !isCorrection) return

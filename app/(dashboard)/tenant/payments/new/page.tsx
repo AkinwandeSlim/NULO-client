@@ -43,7 +43,7 @@ export default function TenantPaymentNewPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user } = useAuth()
-  const agreementId = searchParams.get("agreement_id")
+  const agreementId = searchParams?.get("agreement_id")
 
   const [agreement, setAgreement] = useState<AgreementWithDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)

@@ -23,10 +23,10 @@ const SUPPRESSED_SOURCES = [
   'intercept-console-error.ts',
 ]
 
-// Store original console methods
-const originalLog = console.log
-const originalError = console.error
-const originalWarn = console.warn
+// Store original console methods in a way that preserves context
+const originalLog = console.log.bind(console)
+const originalError = console.error.bind(console) 
+const originalWarn = console.warn.bind(console)
 
 /**
  * Check if a log message should be suppressed
@@ -57,7 +57,7 @@ export function initializeLoggerConfig() {
     
     // Don't suppress actual errors in production debugging
     if (!shouldSuppress(message, stack)) {
-      originalLog.apply(console, args)
+      originalLog(...args)
     }
   }
 
@@ -74,7 +74,7 @@ export function initializeLoggerConfig() {
     }
     
     // Show other errors normally
-    originalError.apply(console, args)
+    originalError(...args)
   }
 
   // Override console.warn
@@ -83,7 +83,7 @@ export function initializeLoggerConfig() {
     const stack = new Error().stack || ''
     
     if (!shouldSuppress(message, stack)) {
-      originalWarn.apply(console, args)
+      originalWarn(...args)
     }
   }
 }

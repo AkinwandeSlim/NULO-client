@@ -74,7 +74,7 @@ export default function LandlordVerificationDetail() {
   const [approvalNotes, setApprovalNotes] = useState("")
   const [dataReady, setDataReady] = useState(false)
 
-  const verificationId = params.id as string
+  const verificationId = (params?.id as string) || ""
 
   // ============================================================================
   // FETCH VERIFICATION DETAIL

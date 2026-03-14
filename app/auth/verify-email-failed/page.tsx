@@ -9,8 +9,8 @@ import { useEffect, useState } from 'react'
 export default function VerifyEmailFailedPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const error = searchParams.get('error')
-  const message = searchParams.get('message')
+  const error = searchParams?.get('error')
+  const message = searchParams?.get('message')
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {

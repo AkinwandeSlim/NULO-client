@@ -699,8 +699,8 @@ export default function PropertiesPage() {
 
   // ✅ CRITICAL: Read URL parameters from home page search/filter redirect
   useEffect(() => {
-    const location = searchParams.get('location')
-    const sort = searchParams.get('sort') as 'newest' | 'price_low' | 'price_high' | 'featured' | null
+    const location = searchParams?.get('location')
+    const sort = searchParams?.get('sort') as 'newest' | 'price_low' | 'price_high' | 'featured' | null
     
     if (location && location !== searchQuery) {
       console.log('🔗 [URL PARAMS] Applying location filter from URL:', location)

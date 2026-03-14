@@ -515,7 +515,9 @@ create: async (data: CreatePropertyData | FormData): Promise<Property> => {
       }
       
       const params: any = { page, limit };
-      if (statusFilter) {
+      // Only send status_filter when a real status is chosen.
+      // 'all' is a UI concept — do not send it to the backend.
+      if (statusFilter && statusFilter !== 'all') {
         params.status_filter = statusFilter;
       }
       
@@ -524,7 +526,13 @@ create: async (data: CreatePropertyData | FormData): Promise<Property> => {
       });
       
       const cacheKey = `my_properties_${page}_${limit}_${statusFilter || 'all'}`;
-      optimizedPropertyCache.set(cacheKey, response.data, 300).catch(() => {});
+      // Only cache if we actually got results back — never cache an empty landlord list.
+      // An empty result is more likely a query bug or transient backend issue than
+      // a legitimate "you have no properties" state.
+      const hasProperties = (response.data as any)?.properties?.length > 0;
+      if (hasProperties) {
+        optimizedPropertyCache.set(cacheKey, response.data, 300).catch(() => {});
+      }
       
       return response.data;
     } catch (error: any) {

@@ -141,9 +141,10 @@ export async function proxy(request: NextRequest) {
   // ========================================
   if (profile.user_type === 'landlord') {
     
-    // Get landlord profile for onboarding status - MUST DO THIS FIRST
-    // Network errors here should redirect to signin (not allow through)
+    // Get landlord profile for onboarding status - with graceful network error handling
     let landlordProfile = null;
+    let networkError = false;
+    
     try {
       const { data, error } = await supabase
         .from('users')
@@ -152,27 +153,56 @@ export async function proxy(request: NextRequest) {
         .single()
       
       if (error) {
-        // ❌ Network error or DB error → redirect to signin
-        // This ensures middleware runs again once connection is restored
-        console.warn('⚠️ [MIDDLEWARE] Landlord profile query failed, redirecting to signin:', error.message)
+        // Check if this is a network error vs other errors
+        if (error.message?.includes('Failed to fetch') || 
+            error.message?.includes('ERR_NAME_NOT_RESOLVED') ||
+            error.message?.includes('timeout') ||
+            error.message?.includes('network')) {
+          console.warn('⚠️ [MIDDLEWARE] Network error detected, allowing dashboard access:', error.message)
+          networkError = true
+          // For network errors, assume user is onboarded and allow dashboard access
+          // This prevents redirect loops during network issues
+          landlordProfile = { onboarding_completed_at: new Date().toISOString() }
+        } else {
+          // For other errors (auth, permissions), redirect to signin
+          console.warn('⚠️ [MIDDLEWARE] Landlord profile query failed, redirecting to signin:', error.message)
+          const url = request.nextUrl.clone()
+          url.pathname = '/signin'
+          url.searchParams.set('redirectTo', pathname)
+          return NextResponse.redirect(url)
+        }
+      } else {
+        landlordProfile = data
+      }
+    } catch (err: any) {
+      // Check if this is a network error vs other errors
+      if (err?.message?.includes('Failed to fetch') || 
+          err?.message?.includes('ERR_NAME_NOT_RESOLVED') ||
+          err?.message?.includes('timeout') ||
+          err?.message?.includes('network')) {
+        console.warn('⚠️ [MIDDLEWARE] Network exception detected, allowing dashboard access:', err.message)
+        networkError = true
+        // For network errors, assume user is onboarded and allow dashboard access
+        landlordProfile = { onboarding_completed_at: new Date().toISOString() }
+      } else {
+        // For other errors, redirect to signin
+        console.warn('⚠️ [MIDDLEWARE] Landlord profile exception, redirecting to signin:', err)
         const url = request.nextUrl.clone()
         url.pathname = '/signin'
         url.searchParams.set('redirectTo', pathname)
         return NextResponse.redirect(url)
       }
-      
-      landlordProfile = data
-    } catch (err) {
-      // ❌ Network exception → redirect to signin
-      console.warn('⚠️ [MIDDLEWARE] Landlord profile exception, redirecting to signin:', err)
-      const url = request.nextUrl.clone()
-      url.pathname = '/signin'
-      url.searchParams.set('redirectTo', pathname)
-      return NextResponse.redirect(url)
     }
 
-    // Allow onboarding routes for authenticated landlords (after successful profile fetch)
+    // Allow onboarding routes for authenticated landlords
+    // But if we're in a network error situation and user is trying to access dashboard, allow it
     if (pathname.startsWith('/onboarding/landlord')) {
+      if (networkError && pathname === '/onboarding/landlord/step-1') {
+        console.log('⚠️ [MIDDLEWARE] Network error on onboarding step-1, allowing dashboard access instead')
+        const url = request.nextUrl.clone()
+        url.pathname = '/landlord'
+        return NextResponse.redirect(url)
+      }
       console.log('✅ Landlord onboarding route (authenticated)')
       return NextResponse.next()
     }
@@ -182,6 +212,7 @@ export async function proxy(request: NextRequest) {
       onboarding_completed: landlordProfile?.onboarding_completed_at,
       profile_done: landlordProfile?.profile_step_completed,
       verification_status: landlordProfile?.verification_status,
+      network_error: networkError
     })
 
     // ✅ EXISTING LANDLORD (completed onboarding) → Allow normal dashboard access

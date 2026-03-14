@@ -28,9 +28,7 @@ import landlordDashboardAPI, {
   formatCurrency,
   formatDate
 } from "@/lib/api/landlordDashboard"
-import { viewingRequestsAPI as landlordViewingRequestsAPI } from "@/lib/api/viewingRequestsLandlord"
-import { applicationsAPI, type Application } from "@/lib/api/applications"
-import { agreementsAPI } from "@/lib/api/agreements"
+import { messagesAPI } from "@/lib/api/messages"
 import { paymentsAPI } from "@/lib/api/payments"
 import { engagementAPI, getEngagementLevelColor, getEngagementLevelTextColor, getEngagementLevelBgColor, getTrustScoreColor, getTrustScoreTextColor, getTrustScoreBgColor, trackEngagement } from "@/lib/api/engagement"
 
@@ -53,15 +51,9 @@ export default function LandlordDashboard() {
 
   const [mounted, setMounted] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [viewingRequests, setViewingRequests] = useState<any[]>([])
-  const [viewingsLoading, setViewingsLoading] = useState(true)
-  const [applications, setApplications] = useState<Application[]>([])
-  const [applicationsLoading, setApplicationsLoading] = useState(true)
+  const [allDataLoading, setAllDataLoading] = useState(true)
   const [engagementMetrics, setEngagementMetrics] = useState<any>(null)
-  const [agreements, setAgreements] = useState<any[]>([])
-  const [agreementsLoading, setAgreementsLoading] = useState(true)
   const [receivedPayments, setReceivedPayments] = useState<any[]>([])
-  const [paymentsLoading, setPaymentsLoading] = useState(true)
 
   // Handle dashboard refresh
   const handleRefresh = useCallback(async () => {
@@ -90,14 +82,6 @@ export default function LandlordDashboard() {
     userProfile?.full_name || user?.full_name || user?.email?.split('@')[0] || 'there'
   , [userProfile, user])
 
-  // Calculate agreement stats from fetched data
-  const agreementStats = useMemo(() => {
-    const totalCount = agreements.length
-    const fullySignedCount = agreements.filter(a => a.status === 'SIGNED' || a.status === 'ACTIVE').length
-    const pendingCount = agreements.filter(a => a.status === 'PENDING_LANDLORD' || a.status === 'PENDING_TENANT').length
-    return { totalCount, fullySignedCount, pendingCount }
-  }, [agreements])
-
   const handleNotificationClick = useCallback(async (notification: Notification) => {
     if (!notification.read) {
       try {
@@ -122,191 +106,66 @@ export default function LandlordDashboard() {
     }
   }, [mounted, user, landlordData])
 
-  // Fetch viewing requests once landlordData is available.
-  // First check if data is in cache, otherwise fetch separately
+  // Secondary fetch: payments and engagement metrics.
+  // Viewings, applications, agreements now come from landlordData
+  // (bundled into the main /api/v1/landlord/dashboard response).
   useEffect(() => {
     if (!landlordData) return
-    
-    const fetchViewings = async () => {
+
+    const fetchSecondaryData = async () => {
       try {
-        // 💾 CHECK CACHE FIRST: Use cached data if available
-        if (landlordData.viewingRequests && landlordData.viewingRequests.length > 0) {
-          console.log('📦 [OVERVIEW] Using cached viewing requests')
-          setViewingRequests(landlordData.viewingRequests.filter((v: any) => v.status === 'pending' || v.status === 'confirmed'))
-          setViewingsLoading(false)
-          return
+        setAllDataLoading(true)
+
+        const [paymentsResult, engagementResult] = await Promise.allSettled([
+          paymentsAPI.getReceivedPayments(),
+          user?.id ? engagementAPI.getEngagementMetrics(user.id) : Promise.resolve(null)
+        ])
+
+        // Payments
+        if (paymentsResult.status === 'fulfilled') {
+          const data = paymentsResult.value
+          const list = Array.isArray(data)
+            ? data
+            : Array.isArray((data as any)?.payments)
+            ? (data as any).payments
+            : Array.isArray((data as any)?.data)
+            ? (data as any).data
+            : []
+          setReceivedPayments(list)
         }
 
-        // 🔄 FALLBACK: Fetch separately if not in cache
-        console.log('🔄 [OVERVIEW] Fetching viewing requests from API...')
-        setViewingsLoading(true)
-        const data = await landlordViewingRequestsAPI.getLandlord()
-        // getLandlord() returns typed objects directly -- handle array or wrapped response
-        const list: any[] = Array.isArray(data)
-          ? data
-          : Array.isArray((data as any)?.viewing_requests)
-          ? (data as any).viewing_requests
-          : Array.isArray((data as any)?.data)
-          ? (data as any).data
-          : []
-        // Show pending + confirmed only -- completed/cancelled not actionable on overview
-        setViewingRequests(list.filter((v: any) => v.status === 'pending' || v.status === 'confirmed'))
+        // Engagement
+        if (engagementResult.status === 'fulfilled') {
+          setEngagementMetrics(engagementResult.value)
+        }
+
       } catch (err) {
-        console.error('❌ Failed to fetch viewings for overview:', err)
-        setViewingRequests([])
+        console.error('Failed to fetch secondary data:', err)
       } finally {
-        setViewingsLoading(false)
+        setAllDataLoading(false)
       }
     }
-    fetchViewings()
-  }, [landlordData])
 
-  // Fetch landlord applications (from tenant applicants)
-  // First check if data is in cache, otherwise fetch separately
-  useEffect(() => {
-    if (!landlordData) return
-    
-    const fetchApplications = async () => {
-      try {
-        // 💾 CHECK CACHE FIRST: Use cached data if available
-        if (landlordData.receivedApplications && landlordData.receivedApplications.length > 0) {
-          console.log('📦 [OVERVIEW] Using cached received applications')
-          setApplications(landlordData.receivedApplications as any[])
-          setApplicationsLoading(false)
-          return
-        }
-
-        // 🔄 FALLBACK: Fetch separately if not in cache
-        console.log('🔄 [OVERVIEW] Fetching applications from API...')
-        setApplicationsLoading(true)
-        const data = await applicationsAPI.getReceivedApplications()
-        // Handle array or wrapped response
-        const list: Application[] = Array.isArray(data)
-          ? data
-          : Array.isArray((data as any)?.applications)
-          ? (data as any).applications
-          : Array.isArray((data as any)?.data)
-          ? (data as any).data
-          : []
-        // Show only relevant statuses: pending review, approved, rejected (not withdrawn)
-        const filtered = list.filter((app: Application) => 
-          app.status !== 'withdrawn'
-        )
-        setApplications(filtered)
-      } catch (err) {
-        console.error('❌ Failed to fetch applications for overview:', err)
-        setApplications([])
-      } finally {
-        setApplicationsLoading(false)
-      }
-    }
-    fetchApplications()
-  }, [landlordData])
-
-  // Fetch landlord agreements
-  // First check if data is in cache, otherwise fetch separately
-  useEffect(() => {
-    if (!landlordData) return
-    
-    const fetchAgreements = async () => {
-      try {
-        // 💾 CHECK CACHE FIRST: Use cached data if available
-        if (landlordData.agreements && landlordData.agreements.length > 0) {
-          console.log('📦 [OVERVIEW] Using cached agreements')
-          setAgreements(landlordData.agreements)
-          setAgreementsLoading(false)
-          return
-        }
-
-        // 🔄 FALLBACK: Fetch separately if not in cache
-        console.log('🔄 [OVERVIEW] Fetching agreements from API...')
-        setAgreementsLoading(true)
-        const data = await agreementsAPI.getMyAgreements()
-        // Handle array or wrapped response
-        const list: any[] = Array.isArray(data)
-          ? data
-          : Array.isArray((data as any)?.agreements)
-          ? (data as any).agreements
-          : Array.isArray((data as any)?.data)
-          ? (data as any).data
-          : []
-        // Show all agreements with relevant statuses
-        const filtered = list.filter((agreement: any) => 
-          ['ACTIVE', 'SIGNED', 'PENDING_LANDLORD', 'PENDING_TENANT', 'EXPIRED'].includes(agreement.status)
-        )
-        setAgreements(filtered)
-      } catch (err) {
-        console.error('❌ Failed to fetch agreements for overview:', err)
-        setAgreements([])
-      } finally {
-        setAgreementsLoading(false)
-      }
-    }
-    fetchAgreements()
-  }, [landlordData])
-
-  // Fetch engagement metrics
-  // First check if data is in cache, otherwise fetch separately
-  useEffect(() => {
-    if (!user?.id) return
-    
-    const fetchEngagementMetrics = async () => {
-      try {
-        // 💾 CHECK CACHE FIRST: Use cached data if available
-        if (landlordData?.engagementMetrics) {
-          console.log('📦 [OVERVIEW] Using cached engagement metrics')
-          setEngagementMetrics(landlordData.engagementMetrics)
-          return
-        }
-
-        // 🔄 FALLBACK: Fetch separately if not in cache
-        console.log('🔄 [OVERVIEW] Fetching engagement metrics from API...')
-        const engagementData = await engagementAPI.getEngagementMetrics(user.id)
-        setEngagementMetrics(engagementData)
-      } catch (error) {
-        console.error('❌ Failed to fetch engagement metrics:', error)
-      }
-    }
-    
-    fetchEngagementMetrics()
-  }, [user?.id, landlordData?.engagementMetrics])
-
-  // Fetch received payments
-  useEffect(() => {
-    if (!user?.id) return
-    
-    const fetchPayments = async () => {
-      try {
-        console.log('🔄 [OVERVIEW] Fetching received payments...')
-        setPaymentsLoading(true)
-        const data = await paymentsAPI.getReceivedPayments()
-        setReceivedPayments(data.payments || [])
-      } catch (error) {
-        console.error('❌ Failed to fetch payments:', error)
-        setReceivedPayments([])
-      } finally {
-        setPaymentsLoading(false)
-      }
-    }
-    
-    fetchPayments()
-  }, [user?.id, paymentsAPI.getReceivedPayments]) // Add paymentsAPI.getReceivedPayments to dependency array
+    fetchSecondaryData()
+  }, [landlordData, user?.id])
 
   // Calculate payment amounts by type
   const totalRentAmount = useMemo(() => {
-    return receivedPayments
-      .filter(p => p.status === 'released' && p.transaction_type === 'rent_payment')
-      .reduce((sum, p) => sum + (p.amount || 0), 0)
+    const rentPayments = receivedPayments.filter(p => p.status === 'released' && p.transaction_type === 'rent_payment')
+    console.log('🔍 [DEBUG] Rent payments:', rentPayments)
+    return rentPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [receivedPayments])
 
   const totalSecurityDeposits = useMemo(() => {
-    return receivedPayments
-      .filter(p => p.status === 'released' && p.transaction_type === 'security_deposit')
-      .reduce((sum, p) => sum + (p.amount || 0), 0)
+    const depositPayments = receivedPayments.filter(p => p.status === 'released' && p.transaction_type === 'security_deposit')
+    console.log('🔍 [DEBUG] Deposit payments:', depositPayments)
+    return depositPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [receivedPayments])
 
   const totalReceivedAmount = useMemo(() => {
-    return totalRentAmount + totalSecurityDeposits
+    const total = totalRentAmount + totalSecurityDeposits
+    console.log('🔍 [DEBUG] Total calculated:', total, 'Rent:', totalRentAmount, 'Deposits:', totalSecurityDeposits)
+    return total
   }, [totalRentAmount, totalSecurityDeposits])
 
   // Calculate pending amount
@@ -335,6 +194,26 @@ export default function LandlordDashboard() {
         return <Activity className="h-4 w-4 text-slate-600" />
     }
   }
+
+  // Handle property-specific messaging - ensures each property has its own conversation thread
+  const handleMessageTenant = useCallback(async (propertyId: string, tenantId: string, tenantName: string) => {
+    if (!user?.id) return
+    
+    try {
+      const existingConversation = await messagesAPI.findConversation(propertyId, tenantId)
+      const conversationId = existingConversation ? existingConversation.id : await messagesAPI.createConversation({
+        property_id: propertyId,
+        landlord_id: user.id,
+        tenant_id: tenantId,  
+        initial_message: `Hi ${tenantName.split(' ')[0]}! Thanks for the payment. I'm here to help with any questions about the property or next steps.`
+      }).then(result => result.conversation_id)
+      
+      router.push(`/landlord/messages?conversation=${conversationId}`)
+    } catch (error) {
+      console.error('Failed to start conversation:', error)
+      toast.error('Failed to start conversation')
+    }
+  }, [user?.id, router])
 
   const getActivityTitle = (type: string, activity: any) => {
     switch (type) {
@@ -374,8 +253,24 @@ export default function LandlordDashboard() {
     }
   }
 
-  // Memoize viewing requests list to prevent unnecessary re-renders
-  const viewingRequestsList = useMemo(() => viewingRequests, [viewingRequests])
+  // These were previously fetched separately. They now come from landlordData
+  // because the backend bundles them in the /dashboard response.
+  // Handle both camelCase and snake_case keys for compatibility
+  const viewingRequests: any[]  = landlordData?.viewingRequests 
+                                 ?? (landlordData as any)?.viewing_requests 
+                                 ?? []
+  const applications: any[]     = landlordData?.receivedApplications 
+                                 ?? (landlordData as any)?.received_applications 
+                                 ?? []
+  const agreements: any[]       = landlordData?.agreements ?? []
+
+  // Calculate agreement stats from fetched data
+  const agreementStats = useMemo(() => {
+    const totalCount = agreements.length
+    const fullySignedCount = agreements.filter(a => a.status === 'SIGNED' || a.status === 'ACTIVE').length
+    const pendingCount = agreements.filter(a => a.status === 'PENDING_LANDLORD' || a.status === 'PENDING_TENANT').length
+    return { totalCount, fullySignedCount, pendingCount }
+  }, [agreements])
 
   // Memoize progressive banner to prevent unnecessary re-renders
   const progressiveBanner = useMemo(() => {
@@ -453,7 +348,7 @@ export default function LandlordDashboard() {
     // Shown BEFORE the viewings banner so the landlord sees the post-payment
     // next steps immediately — not buried below other noise.
     // Window is 48h (not 5min) because landlords don't live on the dashboard.
-    if (!paymentsLoading && receivedPayments.length > 0) {
+    if (!allDataLoading && receivedPayments.length > 0) {
       const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000
       const recentPayment = receivedPayments.find((p: any) =>
         p.status === 'released' && new Date(p.released_at ?? p.created_at).getTime() > fortyEightHoursAgo
@@ -512,12 +407,14 @@ export default function LandlordDashboard() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    {recentPayment.tenant_id && (
-                      <Link href={`/landlord/messages?tenant=${recentPayment.tenant_id}`}>
-                        <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
-                          <Mail className="h-4 w-4 mr-2" />Message {tenantName.split(' ')[0]}
-                        </Button>
-                      </Link>
+                    {recentPayment.tenant_id && recentPayment.property_id && (
+                      <Button 
+                        size="sm" 
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                        onClick={() => handleMessageTenant(recentPayment.property_id, recentPayment.tenant_id, tenantName)}
+                      >
+                        <Mail className="h-4 w-4 mr-2" />Message {tenantName.split(' ')[0]}
+                      </Button>
                     )}
                     <Link href="/landlord/agreements">
                       <Button size="sm" variant="outline" className="border-green-400 text-green-700 hover:bg-green-100">
@@ -544,7 +441,7 @@ export default function LandlordDashboard() {
     // Show if there's an ACTIVE agreement whose status changed in the last 7 days
     // and the landlord hasn't sent a message to this tenant recently.
     // We use `agreement.updated_at` as a proxy for "recently activated".
-    if (!agreementsLoading && agreements.length > 0) {
+    if (!allDataLoading && agreements.length > 0) {
       const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
       const newlyActiveAgreement = agreements.find((a: any) =>
         a.status === 'ACTIVE' && new Date(a.updated_at ?? a.created_at).getTime() > sevenDaysAgo
@@ -553,8 +450,8 @@ export default function LandlordDashboard() {
       if (newlyActiveAgreement) {
         const tenantName = newlyActiveAgreement.tenant?.full_name || 'Your tenant'
         const propertyTitle = newlyActiveAgreement.property?.title || 'your property'
-        const startDate = newlyActiveAgreement.start_date
-          ? new Date(newlyActiveAgreement.start_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })
+        const startDate = newlyActiveAgreement.lease_start_date
+          ? new Date(newlyActiveAgreement.lease_start_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })
           : null
 
         return (
@@ -575,9 +472,9 @@ export default function LandlordDashboard() {
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
                     {newlyActiveAgreement.tenant_id && (
-                      <Link href={`/landlord/messages?tenant=${newlyActiveAgreement.tenant_id}`}>
+                      <Link href={`/landlord/messages?tenant=${newlyActiveAgreement.tenant_id}&property=${newlyActiveAgreement.property_id}`}>
                         <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                          <Mail className="h-4 w-4 mr-2" />Welcome Tenant
+                          <Mail className="h-4 w-4 mr-2" />Welcome {tenantName} to {propertyTitle}
                         </Button>
                       </Link>
                     )}
@@ -597,8 +494,8 @@ export default function LandlordDashboard() {
     }
 
     // ── State 6: Pending viewing requests ─────────────────────────────────────
-    if (viewingRequestsList.filter((v: any) => v.status === 'pending').length > 0) {
-      const pendingViewings = viewingRequestsList.filter((v: any) => v.status === 'pending').length
+    if (viewingRequests.filter((v: any) => v.status === 'pending').length > 0) {
+      const pendingViewings = viewingRequests.filter((v: any) => v.status === 'pending').length
       return (
         <Card className="mb-8 border-blue-200 bg-blue-50">
           <CardContent className="p-4">
@@ -625,10 +522,10 @@ export default function LandlordDashboard() {
     }
 
     return null
-  }, [landlordData, viewingRequestsList, receivedPayments, paymentsLoading, agreements, agreementsLoading])
+  }, [landlordData, viewingRequests, receivedPayments, allDataLoading, agreements])
 
   // ─── Loading — same spinner as tenant ────────────────────────────────────────
-  if (!mounted || loading) {
+  if (!mounted || loading || allDataLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
         <div className="max-w-7xl mx-auto">
@@ -671,6 +568,11 @@ export default function LandlordDashboard() {
   const profile = landlordData?.profile || null
   const { onboarding, stats, properties = [], recentActivity = [] } = landlordData || {}
 
+  // Debug: Log the actual data we're receiving
+  console.log('🔍 [DEBUG] Landlord Data Stats:', stats)
+  console.log('🔍 [DEBUG] Stats total_conversations:', stats?.total_conversations)
+  console.log('🔍 [DEBUG] Stats unread_messages:', stats?.unread_messages)
+
   // Read verification status from landlordData.profile (fresh from API).
   // isLandlordVerified checks profile.verification_status === 'approved'.
   const isVerified = profile ? isLandlordVerified(profile) : false
@@ -688,11 +590,11 @@ export default function LandlordDashboard() {
 
   // Derive accurate counts from real viewingRequests data (fetched from landlord API).
   // stats.pending_viewings from the backend counts confirmed viewings too -- do not use it
-  // for the banner or stat card. Fall back to 0 while viewings are still loading to prevent flashing.
-  const pendingCount = viewingsLoading
+  // for the banner or stat card. Fall back to 0 while data is still loading to prevent flashing.
+  const pendingCount = allDataLoading
     ? 0
     : viewingRequests.filter((v: any) => v.status === 'pending').length
-  const confirmedCount = viewingsLoading
+  const confirmedCount = allDataLoading
     ? 0
     : viewingRequests.filter((v: any) => v.status === 'confirmed').length
 
@@ -837,10 +739,10 @@ export default function LandlordDashboard() {
                             {formatCurrency(totalPendingAmount)} pending
                           </span>
                         )}
-                        {totalReceivedAmount === 0 && totalPendingAmount === 0 && !paymentsLoading && (
+                        {totalReceivedAmount === 0 && totalPendingAmount === 0 && !allDataLoading && (
                           <span className="text-xs text-slate-400">no payments yet</span>
                         )}
-                        {paymentsLoading && (
+                        {allDataLoading && (
                           <span className="text-xs text-slate-400">loading...</span>
                         )}
                         <span className="text-xs text-purple-600 group-hover:text-purple-700 hidden sm:inline">View breakdown →</span>
@@ -872,7 +774,7 @@ export default function LandlordDashboard() {
                             {confirmedCount} confirmed
                           </span>
                         )}
-                        {pendingCount === 0 && confirmedCount === 0 && !viewingsLoading && (
+                        {pendingCount === 0 && confirmedCount === 0 && !allDataLoading && (
                           <span className="text-xs text-slate-400">none active</span>
                         )}
                       </div>
@@ -917,20 +819,31 @@ export default function LandlordDashboard() {
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-start gap-3 sm:gap-4">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0 relative">
                       <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+                      {stats.unread_messages > 0 && (
+                        <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full animate-pulse" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Unread Messages</p>
-                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{stats.unread_messages}</p>
-                      <div className="flex items-center gap-1 mt-1">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Messages</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">
+                        {stats.total_conversations ?? stats.unread_messages ?? 0}
+                      </p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <span className="text-xs font-semibold text-purple-600 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full inline-block">
+                          {stats.total_conversations ?? stats.unread_messages ?? 0} conversation{((stats.total_conversations ?? stats.unread_messages ?? 0) !== 1) ? 's' : ''}
+                        </span>
                         {stats.unread_messages > 0 && (
-                          <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full inline-block">
+                          <span className="text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full inline-block">
                             {stats.unread_messages} unread
                           </span>
                         )}
-                        {stats.unread_messages === 0 && (
-                          <span className="text-xs text-slate-400">all read</span>
+                        {stats.unread_messages === 0 && ((stats.total_conversations || 0) > 0) && (
+                          <span className="text-xs text-slate-500">all read</span>
+                        )}
+                        {((stats.total_conversations || 0) === 0) && (stats.unread_messages === 0) && (
+                          <span className="text-xs text-slate-400">no messages yet</span>
                         )}
                       </div>
                     </div>
@@ -1215,7 +1128,7 @@ export default function LandlordDashboard() {
 
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
                 <CardContent className="p-6">
-                  {viewingsLoading ? (
+                  {allDataLoading ? (
                     <div className="space-y-3">
                       {[1, 2, 3].map((i) => (
                         <div key={i} className="h-20 rounded-xl bg-slate-100 animate-pulse" />
@@ -1312,7 +1225,7 @@ export default function LandlordDashboard() {
 
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
                 <CardContent className="p-6">
-                  {applicationsLoading ? (
+                  {allDataLoading ? (
                     <div className="space-y-3">
                       {[1, 2, 3].map((i) => (
                         <div key={i} className="h-20 rounded-xl bg-slate-100 animate-pulse" />
@@ -1409,7 +1322,7 @@ export default function LandlordDashboard() {
 
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
                 <CardContent className="p-6">
-                {agreementsLoading ? (
+                {allDataLoading ? (
                   <div className="space-y-3">
                     {[1, 2, 3].map((i) => (
                       <div key={i} className="h-20 rounded-xl bg-slate-100 animate-pulse" />
@@ -1465,14 +1378,14 @@ export default function LandlordDashboard() {
                             {agreement.property?.title || 'Property'}
                           </p>
                           <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
-                            {agreement.start_date && (
-                              <span>From: {formatDate(agreement.start_date)}</span>
+                            {agreement.lease_start_date && (
+                              <span>From: {formatDate(agreement.lease_start_date)}</span>
                             )}
-                            {agreement.end_date && (
-                              <span>Until: {formatDate(agreement.end_date)}</span>
+                            {agreement.lease_end_date && (
+                              <span>Until: {formatDate(agreement.lease_end_date)}</span>
                             )}
-                            {agreement.monthly_rent && (
-                              <span className="text-orange-600 font-semibold">{formatCurrency(agreement.monthly_rent)}/mo</span>
+                            {agreement.rent_amount && (
+                              <span className="text-orange-600 font-semibold">{formatCurrency(agreement.rent_amount)}/mo</span>
                             )}
                           </div>
                         </div>
