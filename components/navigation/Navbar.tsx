@@ -32,8 +32,8 @@ export function Navbar() {
   // ✅ REMOVED: No search bar in navbar - search is now only in dedicated sections
   const showSearchBar = false
   
-  // ✅ UPDATED: Show navigation links on all public pages including properties
-  const showNavLinks = pathname === '/' || pathname?.startsWith('/properties') || pathname === '/about' || pathname === '/blog' || pathname === '/contact' ||
+  // ✅ UPDATED: Show navigation links on all public pages including properties and new pages
+  const showNavLinks = pathname === '/' || pathname?.startsWith('/properties') || pathname === '/about' || pathname === '/blog' || pathname === '/contact' || pathname === '/help' || pathname === '/privacy' || pathname === '/terms' ||
     pathname?.startsWith('/admin') || pathname?.startsWith('/landlord') || pathname?.startsWith('/tenant')
   
   // ✅ NEW: Check if user is on dashboard
@@ -353,6 +353,19 @@ export function Navbar() {
                       Blog
                     </div>
                   </Link>
+                  <Link
+                    href="/help"
+                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                      isActive('/help')
+                        ? 'text-orange-600 bg-orange-50'
+                        : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4" />
+                      Help
+                    </div>
+                  </Link>
                 </>
               )}
             </div>
@@ -591,6 +604,16 @@ export function Navbar() {
                 >
                   <BookOpen className="h-4 w-4" />
                   Blog
+                </Link>
+                <Link
+                  href="/help"
+                  className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all ${
+                    isActive('/help') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                  }`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <BookOpen className="h-4 w-4" />
+                  Help
                 </Link>
               </>
             )}

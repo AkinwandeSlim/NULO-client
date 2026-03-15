@@ -578,36 +578,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // ─── Build Google OAuth URL directly (no Supabase redirect) ──────────────────
-  const buildGoogleOAuthUrl = (userType: 'tenant' | 'landlord' | 'signin'): string => {
-    const clientId    = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!
-    const redirectUri = typeof window !== 'undefined'
-      ? `${window.location.origin}/auth/google/callback`
-      : `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/google/callback`
-
-    // Generate a random nonce for CSRF protection
-    const nonce = Math.random().toString(36).substring(2, 15)
-
-    // Store nonce in cookie so the callback can verify it
-    const exp = new Date()
-    exp.setMinutes(exp.getMinutes() + 15)
-    document.cookie = `nulo_oauth_nonce=${nonce}; path=/; expires=${exp.toUTCString()}; SameSite=Lax`
-
-    // state encodes both userType and nonce: "tenant:abc123"
-    const state = `${userType}:${nonce}`
-
-    const params = new URLSearchParams({
-      client_id:     clientId,
-      redirect_uri:  redirectUri,
-      response_type: 'code',
-      scope:         'email profile openid',
-      state,
-      access_type:   'offline',
-      prompt:        'consent',
-    })
-
-    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
-  }
 
   // Admin signup
   const signUpAdmin = async (fullName: string, email: string, password: string, adminCode: string) => {
@@ -895,42 +865,125 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
   // Google signup for tenant
   const signUpTenantWithGoogle = async () => {
     try {
-      console.log('[AUTH] Starting tenant Google signup (custom OAuth)...')
-
-      const callbackUrl = typeof window !== 'undefined'
-        ? localStorage.getItem('signup_callback_url')
-        : null
-
-      if (callbackUrl && typeof window !== 'undefined') {
-        const exp = new Date()
-        exp.setHours(exp.getHours() + 1)
-        document.cookie = `nulo_redirect_path=${encodeURIComponent(callbackUrl)}; path=/; expires=${exp.toUTCString()}; SameSite=Lax`
+      console.log('👤 [AUTH] Starting tenant Google signup...');
+      
+      // ✅ METHOD 1: Store user_type in localStorage (most reliable, persists through OAuth)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('nulo_oauth_user_type', 'tenant');
+        console.log('💾 [AUTH] Stored user_type in localStorage: tenant');
+      }
+      
+      // ✅ METHOD 2: Also set in cookie (fallback if localStorage fails)
+      if (typeof window !== 'undefined') {
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        document.cookie = `nulo_user_type=tenant; path=/; expires=${expirationDate.toUTCString()}; SameSite=None; Secure`;
+        console.log('🍪 [AUTH] Stored user_type in cookie: tenant');
       }
 
-      const googleUrl = buildGoogleOAuthUrl('tenant')
-      window.location.href = googleUrl
+      // ✅ Get redirect URL from localStorage BEFORE OAuth
+      const callbackUrl = typeof window !== 'undefined' ? localStorage.getItem('signup_callback_url') : null;
+      console.log('📍 [AUTH] Redirect URL from localStorage:', callbackUrl);
+      
+      // ✅ Store in cookie BEFORE redirecting to Google
+      if (callbackUrl && typeof window !== 'undefined') {
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        document.cookie = `nulo_redirect_path=${callbackUrl}; path=/; expires=${expirationDate.toUTCString()}; SameSite=None; Secure`;
+        console.log('🍪 [AUTH] Stored redirect path in cookie:', callbackUrl);
+      }
+      
+      // ✅ Callback URL with user_type as fallback
+      const baseCallbackUrl = `${window.location.origin}/auth/callback?user_type=tenant`;
+      console.log('🔀 [AUTH] Callback URL:', baseCallbackUrl);
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: baseCallbackUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
+        }
+      });
 
-      return { data: null, error: null }
+      if (error) {
+        console.error('❌ [AUTH] Google signup error:', error);
+        toast.error(error.message);
+        return { error };
+      }
+
+      console.log('✅ [AUTH] Tenant Google signup initiated');
+      return { data, error: null };
     } catch (error: any) {
-      console.error('[AUTH] Tenant Google signup error:', error)
-      toast.error(error.message || 'Failed to sign up with Google')
-      return { error }
+      console.error('❌ [AUTH] Google signup error:', error);
+      toast.error(error.message || 'Failed to sign up with Google');
+      return { error };
     }
   };
 
   // Google signup for landlord
   const signUpLandlordWithGoogle = async () => {
     try {
-      console.log('[AUTH] Starting landlord Google signup (custom OAuth)...')
+      console.log('🏠 [AUTH] Starting landlord Google signup...');
+      
+      // ✅ METHOD 1: Store user_type in localStorage (most reliable, persists through OAuth)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('nulo_oauth_user_type', 'landlord');
+        console.log('💾 [AUTH] Stored user_type in localStorage: landlord');
+        console.log('💾 [AUTH] Verify localStorage:', localStorage.getItem('nulo_oauth_user_type'));
+      }
+      
+      // ✅ METHOD 2: Also set in cookie (fallback if localStorage fails)
+      if (typeof window !== 'undefined') {
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        document.cookie = `nulo_user_type=landlord; path=/; expires=${expirationDate.toUTCString()}; SameSite=None; Secure`;
+        console.log('🍪 [AUTH] Stored user_type in cookie: landlord');
+        console.log('🍪 [AUTH] All cookies:', document.cookie);
+      }
 
-      const googleUrl = buildGoogleOAuthUrl('landlord')
-      window.location.href = googleUrl
+      // ✅ Get redirect URL from localStorage BEFORE OAuth
+      const callbackUrl = typeof window !== 'undefined' ? localStorage.getItem('signup_callback_url') : null;
+      console.log('📍 [AUTH] Redirect URL from localStorage:', callbackUrl);
+      
+      // ✅ Store in cookie BEFORE redirecting to Google
+      if (callbackUrl && typeof window !== 'undefined') {
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        document.cookie = `nulo_redirect_path=${callbackUrl}; path=/; expires=${expirationDate.toUTCString()}; SameSite=None; Secure`;
+        console.log('🍪 [AUTH] Stored redirect path in cookie:', callbackUrl);
+      }
+      
+      // ✅ Callback URL with user_type as fallback
+      const baseCallbackUrl = `${window.location.origin}/auth/callback?user_type=landlord`;
+      console.log('🔀 [AUTH] Callback URL being sent to Google:', baseCallbackUrl);
+      console.log('🔀 [AUTH] Window origin:', window.location.origin);
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: baseCallbackUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
+        }
+      });
 
-      return { data: null, error: null }
+      if (error) {
+        console.error('❌ [AUTH] Google signup error:', error);
+        toast.error(error.message);
+        return { error };
+      }
+
+      console.log('✅ [AUTH] Landlord Google signup initiated');
+      console.log('✅ [AUTH] Google should now redirect to:', baseCallbackUrl);
     } catch (error: any) {
-      console.error('[AUTH] Landlord Google signup error:', error)
-      toast.error(error.message || 'Failed to sign up with Google')
-      return { error }
+      console.error('❌ [AUTH] Google signup error:', error);
+      toast.error(error.message || 'Failed to sign up with Google');
+      return { error };
     }
   };
 
@@ -1126,24 +1179,46 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
 // ...
   const signInWithGoogle = async (redirectUrl?: string) => {
     try {
-      console.log('[AUTH] Starting Google sign in (custom OAuth)...')
-
-      // Store redirect path in cookie if provided
+      console.log('🔐 [AUTH] Starting Google sign in...');
+      
+      // ✅ CRITICAL: Store redirect URL in cookie BEFORE OAuth
+      // This is used by the server-side callback handler
       if (redirectUrl && typeof window !== 'undefined') {
-        const exp = new Date()
-        exp.setHours(exp.getHours() + 1)
-        document.cookie = `nulo_redirect_path=${encodeURIComponent(redirectUrl)}; path=/; expires=${exp.toUTCString()}; SameSite=Lax`
+        const expirationDate = new Date();
+        expirationDate.setHours(expirationDate.getHours() + 1);
+        // Simple cookie without encoding - server will parse it
+        document.cookie = `nulo_redirect_path=${redirectUrl}; path=/; expires=${expirationDate.toUTCString()}; SameSite=Lax`;
+        console.log('🍪 [AUTH] Stored redirect path in cookie for Google signin:', redirectUrl);
+      }
+      
+      // ✅ CRITICAL: Use simple redirectTo WITHOUT query params
+      // Supabase will add its own query params (?code=..., etc.)
+      const baseCallbackUrl = `${window.location.origin}/auth/callback`;
+      console.log('🔀 [AUTH] Base callback URL for signin:', baseCallbackUrl);
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: baseCallbackUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
+        }
+      });
+
+      if (error) {
+        console.error('❌ [AUTH] Google sign in error:', error);
+        toast.error(error.message);
+        return { error };
       }
 
-      const googleUrl = buildGoogleOAuthUrl('signin')
-      window.location.href = googleUrl
-
-      // Return null — page is navigating away, no need to return data
-      return { data: null, error: null }
+      console.log('✅ [AUTH] Google sign in initiated, will use cookie for redirect');
+      return { data, error: null };
     } catch (error: any) {
-      console.error('[AUTH] Google sign in error:', error)
-      toast.error(error.message || 'Failed to sign in with Google')
-      return { error }
+      console.error('❌ [AUTH] Google sign in error:', error);
+      toast.error(error.message || 'Failed to sign in with Google');
+      return { error };
     }
   };
 

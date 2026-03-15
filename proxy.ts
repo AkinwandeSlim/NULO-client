@@ -22,6 +22,10 @@ export async function proxy(request: NextRequest) {
     '/properties',  // Public property browsing
     '/about',
     '/contact',
+    '/help',
+    '/privacy',
+    '/terms',
+    '/blog',
     '/api',
     '/_next',
     '/favicon.ico',
