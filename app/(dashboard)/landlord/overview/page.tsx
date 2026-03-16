@@ -6,6 +6,11 @@ import { useAuth } from "@/contexts/AuthContext"
 import { useLandlordDashboard } from "@/contexts/DashboardContext"
 import { useNotifications } from "@/contexts/NotificationContext"
 import { Notification } from "@/contexts/NotificationContext"
+// Components
+import SearchBar from '@/components/properties/SearchBar'
+import ViewModeToggle, { ViewMode } from '@/components/properties/ViewModeToggle'
+import PaginationControls from '@/components/properties/PaginationControls'
+import PropertyCardGrid from '@/components/properties/PropertyCardGrid'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -1013,93 +1018,14 @@ export default function LandlordDashboard() {
                       )}
                     </div>
                   ) : (
-                    /* Cards — exact same card anatomy as tenant property cards */
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      {(properties ?? []).slice(0, 4).map((property: any) => (
-                        <Link key={property.id} href={`/landlord/properties/${property.id}`}>
-                          <div className="group relative bg-white rounded-2xl overflow-hidden border-2 border-slate-200 hover:border-orange-300 hover:shadow-xl transition-all duration-300 cursor-pointer hover:scale-[1.02]">
-                            <div className="relative h-48 overflow-hidden">
-                              <img
-                                src={property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
-                                alt={property.title}
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                              />
-                              {/* Status & Verification badges - top right */}
-                              <div className="absolute top-3 right-3 flex flex-col gap-2">
-                                {/* Rental Status Badge */}
-                                <div className={`px-2 py-1 rounded-full text-xs font-bold ${
-                                  property.status === 'rented' ? 'bg-red-500 text-white' 
-                                  : property.status === 'vacant' ? 'bg-green-500 text-white'
-                                  : 'bg-slate-500 text-white'
-                                }`}>
-                                  {property.status === 'rented' ? '🔒 Rented'
-                                    : property.status === 'vacant' ? '✅ Available'
-                                    : '⏳ Draft'}
-                                </div>
-                                {/* Verification badge */}
-                                <div className={`px-2 py-1 rounded-full text-xs font-bold ${
-                                  property.verification_status === 'approved' ? 'bg-green-500 text-white'
-                                  : property.verification_status === 'rejected' ? 'bg-red-500 text-white'
-                                  : 'bg-orange-500 text-white'
-                                }`}>
-                                  {property.verification_status === 'approved' ? '✓ Approved'
-                                    : property.verification_status === 'rejected' ? '✗ Rejected'
-                                    : '⏳ Pending'}
-                                </div>
-                              </div>
-                              {/* View count — top left, same position as tenant Star rating */}
-                              {property.view_count > 0 && (
-                                <div className="absolute top-3 left-3">
-                                  <div className="bg-white/95 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 text-slate-700 shadow-lg">
-                                    <Eye className="h-3 w-3" />{property.view_count} views
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="p-5">
-                              <div className="flex items-center justify-between mb-3">
-                                <p className="text-2xl font-bold text-orange-600">
-                                  {formatCurrency(property.price)}
-                                  <span className="text-sm font-normal text-slate-500">/yr</span>
-                                </p>
-                                {property.application_count > 0 && (
-                                  <Badge className="bg-purple-100 text-purple-800 text-xs">
-                                    {property.application_count} applicant{property.application_count > 1 ? 's' : ''}
-                                  </Badge>
-                                )}
-                              </div>
-
-                              <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
-                                {property.title}
-                              </h3>
-
-                              <p className="text-sm text-slate-600 flex items-center mb-4">
-                                <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
-                                <span className="line-clamp-1">{property.city}, {property.state}</span>
-                              </p>
-
-                              <div className="flex items-center gap-4 text-sm text-slate-600 pt-4 border-t border-slate-100">
-                                <div className="flex items-center gap-1.5">
-                                  <Bed className="h-4 w-4 text-orange-500" />
-                                  <span className="font-medium">{property.beds}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <Bath className="h-4 w-4 text-orange-500" />
-                                  <span className="font-medium">{property.baths}</span>
-                                </div>
-                                {property.sqft && (
-                                  <div className="flex items-center gap-1.5">
-                                    <Square className="h-4 w-4 text-orange-500" />
-                                    <span className="font-medium">{property.sqft.toLocaleString()} sqft</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
+                    /* Properties Grid - 6 properties, 3 columns for better detail view */
+                    <PropertyCardGrid
+                      properties={(properties ?? []).slice(0, 6)}
+                      onSelect={(property) => router.push(`/landlord/properties/${property.id}`)}
+                      onFavorite={() => {}} // No-op for landlord's own properties
+                      variant="dashboard"
+                      emptyMessage="No properties available"
+                    />
                   )}
                 </CardContent>
               </Card>

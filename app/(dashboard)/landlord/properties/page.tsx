@@ -6,7 +6,7 @@ import {
   useCallback, 
   useRef 
 } from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,10 +15,11 @@ import {
   Building2, Plus, Edit, Trash2, Eye,
   MapPin, Bed, Bath, Square, ArrowLeft,
   MoreVertical, TrendingUp, Heart, Calendar, RefreshCw,
-  Home, ArrowRight, AlertCircle, DollarSign
+  Home, ArrowRight, AlertCircle, DollarSign, Loader2
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
+import PropertyCardGrid from "@/components/properties/PropertyCardGrid"
 import { propertiesAPI } from "@/lib/api/properties"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
@@ -26,6 +27,7 @@ const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02
 export default function PropertiesPage() {
   const { user, userProfile } = useAuth()
   const pathname = usePathname()
+  const router = useRouter()
   const [properties, setProperties] = useState<any[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -244,153 +246,141 @@ export default function PropertiesPage() {
             </CardContent>
           </Card>
         ) : (
-          /* Properties Grid — Same card anatomy as tenant */
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {properties.map((property) => (
-              <Card key={property.id} className="border-2 border-slate-200 hover:border-orange-300 hover:shadow-xl transition-all duration-300 overflow-hidden group hover:scale-[1.02]">
-                <div className="relative h-48 overflow-hidden">
-                  <Link href={`/landlord/properties/${property.id}`}>
+          /* Properties Grid — Using PropertyCardGrid for consistent styling */
+          <div>
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {properties.map((property) => (
+                <div
+                  key={property.id}
+                  className="relative bg-white rounded-2xl overflow-hidden border-2 border-slate-200 hover:border-orange-300 hover:shadow-xl transition-all duration-300 flex flex-col"
+                >
+                  {/* Image Section - Click to view details */}
+                  <div 
+                    onClick={() => router.push(`/landlord/properties/${property.id}`)}
+                    className="relative h-56 overflow-hidden bg-slate-100 cursor-pointer group"
+                  >
                     <img
                       src={property.images?.[0] || DEFAULT_PROPERTY_IMAGE}
                       alt={property.title}
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                     />
-                  </Link>
-                  
-                  {/* Rental Status Badge — Top Left */}
-                  <Badge 
-                    className={`absolute top-3 left-3 ${
-                      property.status === 'vacant'
-                        ? 'bg-green-500 text-white'
-                        : property.status === 'occupied'
-                        ? 'bg-red-500 text-white'
-                        : property.status === 'maintenance'
-                        ? 'bg-yellow-500 text-white'
-                        : 'bg-slate-500 text-white'
-                    }`}
-                  >
-                    {property.status === 'vacant' ? '✅ Available'
-                      : property.status === 'occupied' ? '🔒 Occupied'
-                      : property.status === 'maintenance' ? '🔧 Maintenance'
-                      : '⏳ Pending'}
-                  </Badge>
-                  
-                  {/* Verification Status — Top Right */}
-                  <Badge 
-                    className={`absolute top-3 right-3 ${
-                      property.verification_status === 'approved' 
-                        ? 'bg-green-600 text-white' 
-                        : property.verification_status === 'rejected'
-                        ? 'bg-red-600 text-white'
-                        : property.verification_status === 'pending'
-                        ? 'bg-yellow-600 text-white'
-                        : 'bg-blue-600 text-white'
-                    }`}
-                  >
-                    {property.verification_status === 'pending' && '⏳ Pending'}
-                    {property.verification_status === 'approved' && '✅ Verified'}
-                    {property.verification_status === 'rejected' && '❌ Rejected'}
-                    {property.verification_status === 'needs_review' && '📋 Review'}
-                  </Badge>
+                    
+                    {/* Status Badge */}
+                    <Badge 
+                      className={`absolute top-4 left-4 ${
+                        property.status === 'vacant'
+                          ? 'bg-green-500 text-white'
+                          : property.status === 'occupied'
+                          ? 'bg-red-500 text-white'
+                          : property.status === 'maintenance'
+                          ? 'bg-yellow-500 text-white'
+                          : 'bg-slate-500 text-white'
+                      }`}
+                    >
+                      {property.status === 'vacant' ? '✅ Available'
+                        : property.status === 'occupied' ? '🔒 Occupied'
+                        : property.status === 'maintenance' ? '🔧 Maintenance'
+                        : '⏳ Pending'}
+                    </Badge>
 
-                  {/* View Count — Bottom Left */}
-                  {property.view_count > 0 && (
-                    <div className="absolute bottom-3 left-3">
-                      <div className="bg-white/95 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 text-slate-700 shadow-lg">
+                    {/* Verification Badge */}
+                    <Badge 
+                      className={`absolute top-4 right-4 ${
+                        property.verification_status === 'approved' 
+                          ? 'bg-green-600 text-white' 
+                          : property.verification_status === 'rejected'
+                          ? 'bg-red-600 text-white'
+                          : 'bg-orange-500 text-white'
+                      }`}
+                    >
+                      {property.verification_status === 'pending' && '⏳ Pending'}
+                      {property.verification_status === 'approved' && '✅ Verified'}
+                      {property.verification_status === 'rejected' && '❌ Rejected'}
+                    </Badge>
+
+                    {/* View Count */}
+                    {property.view_count > 0 && (
+                      <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 text-slate-700 shadow-lg">
                         <Eye className="h-3 w-3" />{property.view_count} views
                       </div>
-                    </div>
-                  )}
-
-                  {/* Edit Button — Bottom Right */}
-                  <div className="absolute bottom-3 right-3">
-                    <Link href={`/landlord/properties/${property.id}/edit`}>
-                      <Button
-                        size="icon"
-                        className="bg-white/95 hover:bg-white shadow-lg h-9 w-9"
-                      >
-                        <Edit className="h-4 w-4 text-slate-600" />
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-
-                <CardContent className="p-5">
-                  {/* Price */}
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-2xl font-bold text-orange-600">
-                      {formatPrice(property.rent_amount || property.price || 0)}
-                      <span className="text-sm font-normal text-slate-500">/year</span>
-                    </p>
-                    {property.favorites_count > 0 && (
-                      <Badge className="bg-pink-100 text-pink-800 border-pink-200">
-                        <Heart className="h-3 w-3 mr-1" />{property.favorites_count}
-                      </Badge>
                     )}
                   </div>
 
-                  {/* Title */}
-                  <Link href={`/landlord/properties/${property.id}`}>
-                    <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
+                  <CardContent className="p-5 flex flex-col flex-grow">
+                    {/* Price & Favorites */}
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-2xl font-bold text-orange-600">
+                        {formatPrice(property.rent_amount || property.price || 0)}
+                        <span className="text-sm font-normal text-slate-500">/year</span>
+                      </p>
+                      {property.favorites_count > 0 && (
+                        <Badge className="bg-pink-100 text-pink-800 border-pink-200">
+                          <Heart className="h-3 w-3 mr-1" />{property.favorites_count}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Title */}
+                    <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 hover:text-orange-600 transition-colors cursor-pointer">
                       {property.title}
                     </h3>
-                  </Link>
 
-                  {/* Location */}
-                  <p className="text-sm text-slate-600 flex items-center mb-4">
-                    <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
-                    <span className="line-clamp-1">{property.location || `${property.city}, ${property.state}`}</span>
-                  </p>
+                    {/* Location */}
+                    <p className="text-sm text-slate-600 flex items-center mb-4">
+                      <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
+                      <span className="line-clamp-1">{property.location || `${property.city}, ${property.state}`}</span>
+                    </p>
 
-                  {/* Property Specs */}
-                  <div className="flex items-center gap-4 text-sm text-slate-600 pt-4 border-t border-slate-100 mb-4">
-                    <div className="flex items-center gap-1.5">
-                      <Bed className="h-4 w-4 text-orange-500" />
-                      <span className="font-medium">{property.bedrooms || property.beds || 0}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Bath className="h-4 w-4 text-orange-500" />
-                      <span className="font-medium">{property.bathrooms || property.baths || 0}</span>
-                    </div>
-                    {(property.square_feet || property.sqft) && (
+                    {/* Property Specs */}
+                    <div className="flex items-center gap-4 text-sm text-slate-600 py-4 border-t border-b border-slate-100 mb-4">
                       <div className="flex items-center gap-1.5">
-                        <Square className="h-4 w-4 text-orange-500" />
-                        <span className="font-medium">{property.square_feet || property.sqft} sqft</span>
+                        <Bed className="h-4 w-4 text-orange-500" />
+                        <span className="font-medium">{property.bedrooms || property.beds || 0}</span>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="grid grid-cols-3 gap-2">
-                    <Link href={`/landlord/properties/${property.id}`}>
-                      <Button variant="outline" size="sm" className="w-full text-xs border-orange-200 text-orange-700 hover:bg-orange-50">
-                        <Eye className="mr-1 h-3 w-3" />View
-                      </Button>
-                    </Link>
-                    <Link href={`/landlord/properties/${property.id}/edit`}>
-                      <Button variant="outline" size="sm" className="w-full text-xs border-slate-200 hover:bg-slate-50">
-                        <Edit className="mr-1 h-3 w-3" />Edit
-                      </Button>
-                    </Link>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="w-full text-xs text-red-600 border-red-200 hover:bg-red-50"
-                      onClick={() => handleDeleteProperty(property.id, property.title)}
-                      disabled={deletingId === property.id}
-                    >
-                      {deletingId === property.id ? (
-                        <div className="w-3 h-3 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <>
-                          <Trash2 className="mr-1 h-3 w-3" />Delete
-                        </>
+                      <div className="flex items-center gap-1.5">
+                        <Bath className="h-4 w-4 text-orange-500" />
+                        <span className="font-medium">{property.bathrooms || property.baths || 0}</span>
+                      </div>
+                      {(property.square_feet || property.sqft) && (
+                        <div className="flex items-center gap-1.5">
+                          <Square className="h-4 w-4 text-orange-500" />
+                          <span className="font-medium">{(property.square_feet || property.sqft).toLocaleString()} sqft</span>
+                        </div>
                       )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    </div>
+
+                    {/* Action Buttons - Always Visible for Accessibility */}
+                    <div className="flex gap-2 mt-auto">
+                      <Button 
+                        onClick={() => router.push(`/landlord/properties/${property.id}/edit`)}
+                        className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                      <Button 
+                        onClick={() => handleDeleteProperty(property.id, property.title)}
+                        disabled={deletingId === property.id}
+                        variant="outline" 
+                        className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        {deletingId === property.id ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

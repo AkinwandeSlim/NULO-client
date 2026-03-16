@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
-import PropertyCard from "@/components/properties/PropertyCard"
+import PropertyCardGrid from "@/components/properties/PropertyCardGrid"
 
 interface Property {
   id: string
@@ -81,19 +81,16 @@ export function FeaturedPropertiesSection({
           </p>
         </div>
 
-        {/* Properties Grid - Using same grid as search page */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-          {properties.map((property) => (
-            <PropertyCard
-              key={property.id}
-              property={property}
-              onSelect={handleSelectProperty}
-              onFavorite={handleFave}
-              isFavorite={favorites.includes(property.id)}
-              isAuthLoading={isAuthLoading}
-            />
-          ))}
-        </div>
+        {/* Properties Grid - Using reusable PropertyCardGrid component */}
+        <PropertyCardGrid
+          properties={properties}
+          onSelect={handleSelectProperty}
+          onFavorite={handleFave}
+          favorites={favorites}
+          variant="featured"
+          isAuthLoading={isAuthLoading}
+          emptyMessage="No featured properties available"
+        />
 
         {/* View All Button */}
         <div className="text-center">

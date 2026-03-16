@@ -1,6 +1,8 @@
 // Home Components Barrel Export
 export { HeroSection } from './HeroSection'
 export { SearchBar } from './SearchBar'
+export { SearchBarCompact } from './SearchBarCompact'
+export { AdvancedFiltersModal } from './AdvancedFiltersModal'
 export { FeaturesSection } from './FeaturesSection'
 export { StatsSection } from './StatsSection'
 export { HowItWorksSection } from './HowItWorksSection'

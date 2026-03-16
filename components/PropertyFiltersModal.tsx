@@ -41,9 +41,9 @@ const preferences = [
 ]
 
 const formatPrice = (value: number) => {
-  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
-  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`
-  return `$${value}`
+  if (value >= 1000000) return `₦${(value / 1000000).toFixed(1)}M`
+  if (value >= 1000) return `₦${(value / 1000).toFixed(0)}K`
+  return `₦${value}`
 }
 
 export function PropertyFiltersModal({
@@ -155,11 +155,11 @@ export function PropertyFiltersModal({
                       />
                     </div>
                     <div className="flex justify-between text-xs font-medium text-slate-500 px-1">
-                      <span>$0</span>
-                      <span>$250K</span>
-                      <span>$500K</span>
-                      <span>$750K</span>
-                      <span>$1M+</span>
+                      <span>₦0</span>
+                      <span>₦250K</span>
+                      <span>₦500K</span>
+                      <span>₦750K</span>
+                      <span>₦1M+</span>
                     </div>
                   </div>
                 </div>

@@ -1,21 +1,12 @@
 /**
- * 🚀 OPTIMIZED PROPERTIES PAGE - ENHANCED VERSION
+ * 🏠 MARKETPLACE PROPERTIES PAGE - AIRBNB/ZILLOW STYLE
  * 
- * IMPROVEMENTS:
- * 1. Intelligent property caching (stale-while-revalidate)
- * 2. Parallel loading of favorites + properties
- * 3. Debounced search with cancellation
- * 4. Request deduplication (prevent duplicate API calls)
- * 5. Progressive rendering (show cache first)
- * 6. Optimized filter memoization
- * 7. Smart pagination caching
- * 8. Network resilience (offline support)
- * 
- * PERFORMANCE TARGETS:
- * - Cache hit: <300ms (instant)
- * - Cache miss: <1.5s
- * - Search repeat: <200ms
- * - Favorites load: Parallel (no blocking)
+ * FEATURES:
+ * - Map always mounted (no unmounting on search)
+ * - List LEFT (42%) + Map RIGHT (58%) layout
+ * - Compact horizontal cards (5-6 visible at once)
+ * - Auto-scroll sync between map and list
+ * - Performance optimized loading states
  */
 "use client"
 
@@ -34,12 +25,11 @@ import { favoritesAPI } from '@/lib/api/favorites'
 import SearchBar from '@/components/properties/SearchBar'
 import ViewModeToggle, { ViewMode } from '@/components/properties/ViewModeToggle'
 import PaginationControls from '@/components/properties/PaginationControls'
+import PropertyCardGrid from '@/components/properties/PropertyCardGrid'
 import { PropertyFiltersModal } from '@/components/PropertyFiltersModal'
 import SaveFavoriteModal from '@/components/SaveFavoriteModal'
 import PropertyCard from '@/components/properties/PropertyCard'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { 
   Filter, 
@@ -47,12 +37,14 @@ import {
   AlertCircle, 
   RefreshCw, 
   MapPin,
-  Loader2, 
+  Loader2,
+  Bed,
+  Bath,
 } from 'lucide-react'
 import { Navbar } from '@/components/navigation/Navbar'
 
-// Lazy load map
-const PropertyMap = dynamic(() => import('@/components/PropertyMap'), {
+// Lazy load optimized map
+const PropertyMapOptimized = dynamic(() => import('@/components/PropertyMapOptimized'), {
   ssr: false,
   loading: () => (
     <div className="w-full h-full flex items-center justify-center bg-slate-100">
@@ -71,16 +63,7 @@ const PropertyMap = dynamic(() => import('@/components/PropertyMap'), {
 const DEFAULT_LAGOS_LAT = 6.5244
 const DEFAULT_LAGOS_LNG = 3.3792
 const SEARCH_DEBOUNCE_MS = 300
-const ITEMS_PER_PAGE = 20
-const PROPERTIES_CACHE_TTL = 5 * 60 * 1000  // 5 minutes
-const FAVORITES_CACHE_TTL = 10 * 60 * 1000  // 10 minutes
-
-interface CachedProperty {
-  properties: any[]
-  pagination: any
-  timestamp: number
-  ttl: number
-}
+const ITEMS_PER_PAGE = 24
 
 interface SearchFilters {
   location?: string
@@ -89,400 +72,9 @@ interface SearchFilters {
   bedrooms?: number
   bathrooms?: number
   property_type?: string
-  sort?: 'newest' | 'price_low' | 'price_high' | 'featured'  // ✅ Specific sort values
+  sort?: 'newest' | 'price_low' | 'price_high' | 'featured'
   page: number
   limit: number
-}
-
-// ============================================================================
-// PROPERTY CACHE MANAGER
-// ============================================================================
-
-class PropertyCacheManager {
-  private cache = new Map() as Map<string, CachedProperty>
-  private stats = {
-    hits: 0,
-    misses: 0,
-    size: 0
-  }
-
-  /**
-   * Generate cache key from filters (stable across renders)
-   */
-  private getCacheKey(filters: SearchFilters): string {
-    const { page, limit, ...rest } = filters
-    return `properties:${JSON.stringify(rest)}:page:${page}:limit:${limit}`
-  }
-
-  /**
-   * Get cached properties if valid
-   */
-  get(filters: SearchFilters): CachedProperty | null {
-    const key = this.getCacheKey(filters)
-    const item = this.cache.get(key)
-
-    if (!item) {
-      this.stats.misses++
-      console.log(`📭 [CACHE] MISS: ${key}`)
-      return null
-    }
-
-    // Check expiration
-    if (Date.now() - item.timestamp > item.ttl) {
-      this.cache.delete(key)
-      this.stats.misses++
-      console.log(`⏰ [CACHE] EXPIRED: ${key}`)
-      return null
-    }
-
-    this.stats.hits++
-    console.log(`✅ [CACHE] HIT: ${key}`)
-    return item
-  }
-
-  /**
-   * Set cached properties
-   */
-  set(filters: SearchFilters, data: any, pagination: any, ttl: number = PROPERTIES_CACHE_TTL): void {
-    const key = this.getCacheKey(filters)
-    this.cache.set(key, {
-      properties: data,
-      pagination,
-      timestamp: Date.now(),
-      ttl
-    })
-    this.stats.size = this.cache.size
-    console.log(`💾 [CACHE] SET: ${key}`)
-  }
-
-  /**
-   * Clear specific cache entry
-   */
-  invalidate(filters: SearchFilters): void {
-    const key = this.getCacheKey(filters)
-    this.cache.delete(key)
-    this.stats.size = this.cache.size
-    console.log(`🗑️  [CACHE] INVALIDATED: ${key}`)
-  }
-
-  /**
-   * Clear all cache (on logout or user action)
-   */
-  clear(): void {
-    this.cache.clear()
-    this.stats.size = 0
-    this.stats.hits = 0
-    this.stats.misses = 0
-    console.log(`🧹 [CACHE] CLEARED ALL`)
-  }
-
-  /**
-   * Get cache statistics
-   */
-  getStats() {
-    return {
-      ...this.stats,
-      hitRate: this.stats.hits + this.stats.misses > 0
-        ? ((this.stats.hits / (this.stats.hits + this.stats.misses)) * 100).toFixed(1)
-        : 0
-    }
-  }
-}
-
-// ============================================================================
-// SEARCH STATS - AIRBNB/ZILLOW STYLE (ONE-LINE COMPACT)
-// ============================================================================
-
-function SearchStats({ 
-  total, 
-  loadingTime,
-  location,
-  isLoading,
-}: { 
-  total: number
-  loadingTime?: number
-  location?: string
-  isLoading?: boolean
-}) {
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 mb-4">
-        <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
-        <span className="text-sm text-slate-600">Finding properties...</span>
-      </div>
-    )
-  }
-
-  // Results state (Airbnb/Zillow style: compact, informative)
-  return (
-    <div className="flex items-center gap-2 mb-4 flex-wrap">
-      <span className="text-sm font-semibold text-slate-900">
-        {total.toLocaleString()}
-        <span className="font-normal text-slate-600"> {total === 1 ? 'property' : 'properties'}</span>
-      </span>
-      
-      {location && (
-        <>
-          <span className="text-slate-400">in</span>
-          <Badge variant="secondary" className="bg-orange-50 text-orange-700 border-orange-200 px-2 py-0.5 text-xs">
-            <MapPin className="h-3 w-3 mr-1 inline" />
-            {location}
-          </Badge>
-        </>
-      )}
-      
-      {/* {loadingTime && (
-        <span className="text-xs text-slate-500 ml-auto">
-          Loaded in {loadingTime}ms
-        </span>
-      )} */}
-    </div>
-  )
-}
-
-// ============================================================================
-// LOADING & EMPTY STATES
-// ============================================================================
-
-function PropertySkeleton() {
-  return (
-    <Card className="overflow-hidden shadow-lg rounded-2xl border-slate-200 hover:shadow-xl transition-all duration-300">
-      <div className="relative">
-        <Skeleton className="h-48 w-full" />
-        <div className="absolute top-3 left-3">
-          <Skeleton className="h-6 w-16 rounded-full" />
-        </div>
-        <div className="absolute top-3 right-3">
-          <Skeleton className="h-8 w-8 rounded-full" />
-        </div>
-      </div>
-      <CardContent className="p-4">
-        <Skeleton className="h-5 w-3/4 mb-2" />
-        <Skeleton className="h-4 w-full mb-1" />
-        <Skeleton className="h-4 w-2/3 mb-3" />
-        <div className="flex items-center gap-4 mb-3">
-          <Skeleton className="h-4 w-16" />
-          <Skeleton className="h-4 w-16" />
-          <Skeleton className="h-4 w-16" />
-        </div>
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-5 w-24" />
-          <Skeleton className="h-8 w-20 rounded-lg" />
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// Skeleton grid that matches the actual content layout
-function SkeletonGrid({ count = 8, columns = 4 }: { count?: number; columns?: number }) {
-  const colClass = {
-    1: 'grid-cols-1',
-    2: 'md:grid-cols-2',
-    3: 'md:grid-cols-2 lg:grid-cols-3',
-    4: 'md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
-  }[columns] || 'md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-  
-  return (
-    <div className={`grid grid-cols-1 ${colClass} gap-6`}>
-      {Array.from({ length: count }).map((_, i) => (
-        <PropertySkeleton key={i} />
-      ))}
-    </div>
-  )
-}
-
-function LoadingState({ viewMode, searchQuery, selectedType, priceRange, sortBy, onSearchChange, onClear, onFilterClick }: { viewMode: ViewMode; searchQuery: string; selectedType: string; priceRange: [number, number]; sortBy: string; onSearchChange: (query: string) => void; onClear: () => void; onFilterClick: () => void }) {
-  if (viewMode === 'split') {
-    return (
-      <>
-        {/* REAL HEADER - Same as loaded state */}
-        <div className="bg-white border-b border-slate-200 sticky top-[64px] z-40">
-          <div className="container mx-auto px-4 lg:px-6 py-4">
-            <div className="space-y-4">
-              <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">
-                <div className="flex-1">
-                  <SearchBar
-                    searchQuery={searchQuery}
-                    onSearchChange={onSearchChange}
-                    onSearchSubmit={(query) => onSearchChange(query)}
-                    onClear={onClear}
-                    placeholder="Search by location, property type..."
-                    className="w-full"
-                  />
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <ViewModeToggle viewMode={viewMode} onViewModeChange={() => {}} />
-                  {(searchQuery || priceRange[0] > 0 || selectedType !== 'all') && (
-                    <Button variant="ghost" size="sm" onClick={onClear} className="text-slate-700 hover:bg-slate-50">
-                      Clear Filters
-                    </Button>
-                  )}
-                  <Button variant="outline" size="sm" onClick={onFilterClick} className="flex items-center gap-2">
-                    <Filter className="h-4 w-4" />
-                    <span className="hidden sm:inline">Filters</span>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="h-[calc(100vh-120px)] grid grid-cols-1 lg:grid-cols-2 gap-0">
-          <div className="h-full bg-slate-100 flex items-center justify-center">
-            <div className="text-center">
-              <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto mb-2" />
-              <p className="text-slate-500 text-sm">Loading map...</p>
-            </div>
-          </div>
-          <div className="h-full overflow-y-auto bg-slate-50 p-4">
-            <SkeletonGrid count={4} columns={1} />
-          </div>
-        </div>
-      </>
-    )
-  }
-
-  if (viewMode === 'map') {
-    return (
-      <>
-        {/* REAL HEADER */}
-        <div className="bg-white border-b border-slate-200 sticky top-[64px] z-40">
-          <div className="container mx-auto px-4 lg:px-6 py-4">
-            <div className="space-y-4">
-              <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">
-                <div className="flex-1">
-                  <SearchBar
-                    searchQuery={searchQuery}
-                    onSearchChange={onSearchChange}
-                    onSearchSubmit={(query) => onSearchChange(query)}
-                    onClear={onClear}
-                    placeholder="Search by location, property type..."
-                    className="w-full"
-                  />
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <ViewModeToggle viewMode={viewMode} onViewModeChange={() => {}} />
-                  {(searchQuery || priceRange[0] > 0 || selectedType !== 'all') && (
-                    <Button variant="ghost" size="sm" onClick={onClear} className="text-slate-700 hover:bg-slate-50">
-                      Clear Filters
-                    </Button>
-                  )}
-                  <Button variant="outline" size="sm" onClick={onFilterClick} className="flex items-center gap-2">
-                    <Filter className="h-4 w-4" />
-                    <span className="hidden sm:inline">Filters</span>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="h-[calc(100vh-120px)] bg-slate-100 flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto mb-2" />
-            <p className="text-slate-600 text-sm">Loading map...</p>
-          </div>
-        </div>
-      </>
-    )
-  }
-
-  return (
-    <>
-      {/* REAL HEADER */}
-      <div className="bg-white border-b border-slate-200 sticky top-[64px] z-40">
-        <div className="container mx-auto px-4 lg:px-6 py-4">
-          <div className="space-y-4">
-            <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">
-              <div className="flex-1">
-                <SearchBar
-                  searchQuery={searchQuery}
-                  onSearchChange={onSearchChange}
-                  onSearchSubmit={(query) => onSearchChange(query)}
-                  onClear={onClear}
-                  placeholder="Search by location, property type..."
-                  className="w-full"
-                />
-              </div>
-
-              <div className="flex items-center gap-3">
-                <ViewModeToggle viewMode={viewMode} onViewModeChange={() => {}} />
-                {(searchQuery || priceRange[0] > 0 || selectedType !== 'all') && (
-                  <Button variant="ghost" size="sm" onClick={onClear} className="text-slate-700 hover:bg-slate-50">
-                    Clear Filters
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" onClick={onFilterClick} className="flex items-center gap-2">
-                  <Filter className="h-4 w-4" />
-                  <span className="hidden sm:inline">Filters</span>
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="container mx-auto px-4 lg:px-6 py-8">
-        <SkeletonGrid count={8} columns={4} />
-      </div>
-    </>
-  )
-}
-
-function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center">
-      <div className="container mx-auto px-4 lg:px-6">
-        <div className="flex flex-col items-center justify-center py-16 text-center max-w-md mx-auto">
-          <div className="bg-orange-50 rounded-full p-6 mb-6">
-            <AlertCircle className="h-12 w-12 text-orange-500" />
-          </div>
-          <h3 className="text-2xl font-bold text-slate-900 mb-3">Oops! Something went wrong</h3>
-          <p className="text-slate-600 mb-8 text-lg">{error}</p>
-          <Button
-            onClick={onRetry}
-            className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl shadow-lg"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Try Again
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function EmptyState({ onClearFilters, searchQuery }: { onClearFilters: () => void; searchQuery: string }) {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center">
-      <div className="container mx-auto px-4 lg:px-6">
-        <div className="flex flex-col items-center justify-center py-16 text-center max-w-md mx-auto">
-          <div className="bg-slate-100 rounded-full p-8 mb-8">
-            <Home className="h-16 w-16 text-slate-400" />
-          </div>
-          <h3 className="text-2xl font-bold text-slate-900 mb-4">
-            {searchQuery ? `No properties found for "${searchQuery}"` : 'No properties found'}
-          </h3>
-          <p className="text-slate-600 text-lg mb-8">
-            Try adjusting your search or filters
-          </p>
-          <Button
-            onClick={onClearFilters}
-            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl"
-          >
-            Clear Filters
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ============================================================================
@@ -490,186 +82,111 @@ function EmptyState({ onClearFilters, searchQuery }: { onClearFilters: () => voi
 // ============================================================================
 
 export default function PropertiesPage() {
-  const searchParams = useSearchParams()
   const router = useRouter()
-  const { user } = useAuth()
-
+  const searchParams = useSearchParams()
+  const { user, loading: authLoading } = useAuth()
   useSignupCallbackUrl()
 
-  // ✅ UI State
+  // State
+  const [viewMode, setViewMode] = useState<ViewMode>('split')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [properties, setProperties] = useState<any[]>([])
   const [selectedProperty, setSelectedProperty] = useState<any | null>(null)
+  const [pagination, setPagination] = useState<any>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [renderState, setRenderState] = useState<'loading' | 'error' | 'empty' | 'loaded'>('loading')
+
+  // Filters
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])
+  const [selectedType, setSelectedType] = useState('all')
+  const [minBeds, setMinBeds] = useState(0)
+  const [minBaths, setMinBaths] = useState(0)
+  const [sortBy, setSortBy] = useState('featured')
+
+  // Modals
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false)
   const [pendingFavoriteId, setPendingFavoriteId] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<ViewMode>('split')
+
+  // Favorites
   const [favorites, setFavorites] = useState<string[]>([])
   const [favoritesLoading, setFavoritesLoading] = useState(false)
+  const [pendingFavorites, setPendingFavorites] = useState<Set<string>>(new Set())
+  const lastFavoritesCheckRef = useRef(0)
 
-  // ✅ Properties State
-  const [properties, setProperties] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [pagination, setPagination] = useState<any>(null)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [loadingTime, setLoadingTime] = useState<number | undefined>()
-  const [shouldShowEmpty, setShouldShowEmpty] = useState(false)
-
-  // ✅ Filters State
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])
-  const [selectedType, setSelectedType] = useState("all")
-  const [minBeds, setMinBeds] = useState(0)
-  const [minBaths, setMinBaths] = useState(0)
-  const [sortBy, setSortBy] = useState<'newest' | 'price_low' | 'price_high' | 'featured'>('newest')
-
-  // ✅ Refs for optimization
-  const propertiesCacheRef = useRef(new PropertyCacheManager())
-  const abortControllerRef = useRef<AbortController | null>(null)
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const lastFavoritesCheckRef = useRef<number>(0)
-
-  // ✅ Derived render state - ONE CLEAR STATE FOR ENTIRE APP
-  const renderState = useMemo(() => {
-    // Priority order: Loading > Error > Empty > Loaded
-    if (isLoading) return 'loading'
-    if (error) return 'error'
-    if (shouldShowEmpty) return 'empty'
-    return 'loaded'  // Default: show content (even if 0 properties in cache scenario)
-  }, [isLoading, error, shouldShowEmpty])
-
-  // ✅ Memoized search filters (stable across renders)
-  const searchFilters = useMemo(() => ({
-    location: searchQuery || undefined,
-    min_price: priceRange[0] > 0 ? priceRange[0] : undefined,
-    max_price: priceRange[1] < 10000000 ? priceRange[1] : undefined,
-    bedrooms: minBeds > 0 ? minBeds : undefined,
-    bathrooms: minBaths > 0 ? minBaths : undefined,
-    property_type: selectedType !== 'all' ? selectedType : undefined,
-    sort: sortBy,  // ✅ Include sort in filters
-    page: currentPage,
-    limit: ITEMS_PER_PAGE
-  }), [searchQuery, priceRange, minBeds, minBaths, selectedType, sortBy, currentPage])
+  // Refs
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   // ============================================================================
-  // DEBOUNCED SEARCH
-  // ============================================================================
-
-  const debouncedSearch = useMemo(
-    () => debounce((query: string) => {
-      setSearchQuery(query)
-      setCurrentPage(1)
-      setShouldShowEmpty(false)
-    }, SEARCH_DEBOUNCE_MS),
-    []
-  )
-
-  // ============================================================================
-  // PROPERTY FETCHING WITH CACHE-FIRST & STALE-WHILE-REVALIDATE
+  // API FUNCTIONS
   // ============================================================================
 
   const fetchProperties = useCallback(async (page: number = 1, forceRefresh: boolean = false) => {
-    // Cancel previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-    }
-
-    abortControllerRef.current = new AbortController()
-    const startTime = performance.now()
-
     try {
+      setIsLoading(true)
+      setError(null)
+      setRenderState('loading')
+
       const filters: SearchFilters = {
-        ...searchFilters,
-        page
+        location: searchQuery || undefined,
+        min_price: priceRange[0] > 0 ? priceRange[0] : undefined,
+        max_price: priceRange[1] < 10000000 ? priceRange[1] : undefined,
+        bedrooms: minBeds > 0 ? minBeds : undefined,
+        bathrooms: minBaths > 0 ? minBaths : undefined,
+        property_type: selectedType !== 'all' ? selectedType : undefined,
+        sort: sortBy as any,
+        page,
+        limit: ITEMS_PER_PAGE,
       }
 
-      // ✅ STEP 1: Check cache first (unless force refresh)
-      if (!forceRefresh) {
-        const cached = propertiesCacheRef.current.get(filters)
-        if (cached) {
-          console.log('⚡ [PROPERTIES] Using cached data - showing immediately')
-          setProperties(cached.properties)
-          setPagination(cached.pagination)
-          setCurrentPage(page)
-          setIsLoading(false)
-          setError(null)
-          setShouldShowEmpty(false)
-        } else {
-          setIsLoading(true)
-        }
-      } else {
-        setIsLoading(true)
-        propertiesCacheRef.current.invalidate(filters)
-      }
-
-      // ✅ STEP 2: Fetch fresh data from API
-      console.log('🔄 [PROPERTIES] Fetching from API...')
-      
-      const response = await propertiesAPI.search(filters, {
-        signal: abortControllerRef.current.signal
+      console.log('🔍 [PROPERTIES] Fetching...', { 
+        searchQuery, 
+        filters, 
+        forceRefresh,
+        debug: 'Current state values'
       })
 
-      const endTime = performance.now()
-      setLoadingTime(Math.round(endTime - startTime))
+      const response = await propertiesAPI.search(filters, {
+        skipCache: forceRefresh,
+      })
 
-      // ✅ STEP 3: Cache the fresh data
-      propertiesCacheRef.current.set(filters, response.properties || [], response.pagination)
+      console.log('✅ [PROPERTIES] Response:', {
+        total: response.pagination?.total,
+        page: response.pagination?.page,
+        properties: response.properties?.length,
+        cached: response.performance?.cache_hit,
+      })
 
-      // ✅ STEP 4: Update state with fresh data
       setProperties(response.properties || [])
       setPagination(response.pagination)
       setCurrentPage(page)
-      setError(null)
 
-      // ✅ STEP 5: Show empty state after grace period if no results
-      if (!response.properties || response.properties.length === 0) {
-        // Keep loading spinner visible during grace period to avoid "0 properties" flash
-        timeoutRef.current = setTimeout(() => {
-          setShouldShowEmpty(true)
-          setIsLoading(false)
-        }, 500)
+      if (response.properties?.length === 0) {
+        setRenderState('empty')
       } else {
-        setShouldShowEmpty(false)
-        setIsLoading(false)
+        setRenderState('loaded')
       }
-
-      console.log(`✅ [PROPERTIES] Loaded ${response.properties?.length || 0} properties`)
 
     } catch (err: any) {
-      // Ignore abort errors (user changed filters)
-      if (err.name === 'AbortError' || err.isCancelled || err.message === 'Search cancelled') {
-        if (err.message !== 'Search cancelled') {
-          console.log('ℹ️  [PROPERTIES] Request cancelled by user')
-        }
+      // Check for cancellation FIRST - don't log these as errors
+      if (err?.isCancelled || err?.message === 'Search cancelled') {
+        console.log('🔍 [PROPERTIES] Search cancelled (expected behavior)')
         return
       }
-
+      
       console.error('❌ [PROPERTIES] Fetch error:', err)
-      setError('Failed to load properties. Please try again.')
+      setError(err instanceof Error ? err.message : 'Failed to load properties')
+      setRenderState('error')
+    } finally {
       setIsLoading(false)
     }
-  }, [searchFilters])
-
-  // ============================================================================
-  // FAVORITES LOADING (PARALLEL)
-  // ============================================================================
+  }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy])
 
   const loadFavorites = useCallback(async () => {
-    // Skip if user not authenticated
-    if (!user?.id) {
-      setFavorites([])
-      return
-    }
-
-    // Skip for non-tenants — admins/landlords don't have favorites
-    if (user?.user_type !== 'tenant') {
-      setFavorites([])
-      return
-    }
-
-    // Skip if recently loaded (cache favorites for 2 seconds)
+    if (!user || authLoading) return
+    
     const now = Date.now()
     if (now - lastFavoritesCheckRef.current < 2000) {
       return
@@ -691,44 +208,39 @@ export default function PropertiesPage() {
     } finally {
       setFavoritesLoading(false)
     }
-  }, [user?.id])
+  }, [user, authLoading])
 
   // ============================================================================
-  // EFFECTS
+  // SEARCH & FILTERS
   // ============================================================================
 
-  // ✅ CRITICAL: Read URL parameters from home page search/filter redirect
-  useEffect(() => {
-    const location = searchParams?.get('location')
-    const sort = searchParams?.get('sort') as 'newest' | 'price_low' | 'price_high' | 'featured' | null
-    
-    if (location && location !== searchQuery) {
-      console.log('🔗 [URL PARAMS] Applying location filter from URL:', location)
-      setSearchQuery(location)
+  const debouncedSearch = useMemo(
+    () => debounce((query: string) => {
+      setSearchQuery(query)
       setCurrentPage(1)
+    }, SEARCH_DEBOUNCE_MS),
+    []
+  )
+
+  const handleSearch = useCallback((filters: Partial<SearchFilters>) => {
+    if (filters.location !== undefined) {
+      setSearchQuery(filters.location || '')
     }
-    
-    if (sort && ['newest', 'price_low', 'price_high', 'featured'].includes(sort) && sort !== sortBy) {
-      console.log('🔗 [URL PARAMS] Applying sort from URL:', sort)
-      setSortBy(sort)
-    }
+    setCurrentPage(1)
   }, [])
 
-  // ✅ Fetch properties when filters change
-  useEffect(() => {
-    fetchProperties(1)
-  }, [searchFilters, fetchProperties])
+  const clearAllFilters = useCallback(() => {
+    setSearchQuery('')
+    setPriceRange([0, 10000000])
+    setSelectedType('all')
+    setMinBeds(0)
+    setMinBaths(0)
+    setSortBy('featured')
+    setCurrentPage(1)
+    router.push('/properties', { scroll: false })
+  }, [router])
 
-  // ✅ Load favorites in parallel (doesn't block properties)
-  useEffect(() => {
-    loadFavorites()
-  }, [user?.id, loadFavorites])
-
-  // ============================================================================
-  // HANDLERS
-  // ============================================================================
-
-  const handleFavoriteClick = async (propertyId: string) => {
+  const handleFavoriteClick = useCallback(async (propertyId: string) => {
     if (!user) {
       setPendingFavoriteId(propertyId)
       setShowSaveFavoriteModal(true)
@@ -736,9 +248,12 @@ export default function PropertiesPage() {
     }
 
     try {
-      const isFavorited = favorites.includes(propertyId)
-
-      if (isFavorited) {
+      // Add to pending set
+      setPendingFavorites(prev => new Set([...prev, propertyId]))
+      
+      const isFavorite = favorites.includes(propertyId)
+      
+      if (isFavorite) {
         await favoritesAPI.remove(propertyId)
         setFavorites(prev => prev.filter(id => id !== propertyId))
         toast.success('Removed from favorites')
@@ -747,219 +262,497 @@ export default function PropertiesPage() {
         setFavorites(prev => [...prev, propertyId])
         toast.success('Added to favorites')
       }
-    } catch (err: any) {
-      console.error('❌ Failed to update favorite:', err)
-      toast.error(err.message || 'Failed to update favorite')
+    } catch (err) {
+      console.error('❌ [FAVORITES] Toggle error:', err)
+      toast.error('Failed to update favorites')
+    } finally {
+      // Remove from pending set
+      setPendingFavorites(prev => {
+        const next = new Set(prev)
+        next.delete(propertyId)
+        return next
+      })
     }
-  }
-
-  const clearAllFilters = useCallback(() => {
-    setSearchQuery("")
-    setPriceRange([0, 10000000])
-    setSelectedType("all")
-    setMinBeds(0)
-    setMinBaths(0)
-    setCurrentPage(1)
-    router.push('/properties', { scroll: false })
-  }, [router])
+  }, [user, favorites])
 
   // ============================================================================
-  // RENDER
+  // EFFECTS
   // ============================================================================
 
-  // ✅ LOADING STATE
-  if (renderState === 'loading') {
-    return (
-      <>
-        <Navbar />
-        <LoadingState 
-          viewMode={viewMode} 
-          searchQuery={searchQuery}
-          selectedType={selectedType}
-          priceRange={priceRange}
-          sortBy={sortBy}
-          onSearchChange={(query) => setSearchQuery(query)}
-          onClear={clearAllFilters}
-          onFilterClick={() => setShowFilterModal(true)}
-        />
-      </>
-    )
-  }
+  // ✅ Responsive view mode - Auto-switch based on screen size
+  useEffect(() => {
+    const handleResize = () => {
+      // Tailwind lg breakpoint is 1024px
+      // Mobile: < 1024px -> List view
+      // Desktop: >= 1024px -> Split view
+      const isMobile = window.innerWidth < 1024
+      setViewMode(isMobile ? 'list' : 'split')
+    }
 
-  // ✅ ERROR STATE
-  if (renderState === 'error') {
-    return (
-      <>
-        <Navbar />
-        <ErrorState error={error || 'Failed to load properties'} onRetry={() => fetchProperties(currentPage, true)} />
-      </>
-    )
-  }
+    // Set initial view mode on mount
+    handleResize()
 
-  // ✅ EMPTY STATE
-  if (renderState === 'empty') {
-    return (
-      <>
-        <Navbar />
-        <EmptyState onClearFilters={clearAllFilters} searchQuery={searchQuery} />
-      </>
-    )
-  }
+    // Add resize listener
+    window.addEventListener('resize', handleResize)
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
-  // ✅ LOADED STATE - SHOW CONTENT
+  // Initialize from URL params
+  useEffect(() => {
+    const location = searchParams?.get('location')
+    const type = searchParams?.get('type')
+    const beds = searchParams?.get('beds')
+    const baths = searchParams?.get('baths')
+    const minPrice = searchParams?.get('min_price')
+    const maxPrice = searchParams?.get('max_price')
+    const sort = searchParams?.get('sort')
+
+    console.log('🔍 [URL PARAMS] Processing:', {
+      location,
+      type,
+      beds,
+      baths,
+      minPrice,
+      maxPrice,
+      sort
+    })
+
+    if (location) {
+      console.log('🏙️ [URL PARAMS] Setting searchQuery to:', location)
+      setSearchQuery(location)
+    }
+    if (type) setSelectedType(type)
+    if (beds) setMinBeds(parseInt(beds))
+    if (baths) setMinBaths(parseInt(baths))
+    if (minPrice) setPriceRange(prev => [parseInt(minPrice), prev[1]])
+    if (maxPrice) setPriceRange(prev => [prev[0], parseInt(maxPrice)])
+    if (sort) setSortBy(sort)
+
+    // Focus search input if location param exists
+    if (location) {
+      setTimeout(() => searchInputRef.current?.focus(), 100)
+    }
+  }, [searchParams])
+
+  // Load properties when filters change
+  useEffect(() => {
+    fetchProperties(currentPage)
+  }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy, currentPage])
+
+  // Load favorites when user changes
+  useEffect(() => {
+    loadFavorites()
+  }, [user, loadFavorites])
+
+  // ============================================================================
+  // RENDER - MARKETPLACE LAYOUT
+  // ============================================================================
 
   return (
     <>
       <Navbar />
       <div className="min-h-screen bg-slate-50">
-        {/* Header with search & filters */}
+
+        {/* ── Sticky search header ───────────────────────────────────────── */}
         <div className="bg-white border-b border-slate-200 sticky top-[64px] z-40">
-          <div className="container mx-auto px-4 lg:px-6 py-4">
-            <div className="space-y-4">
-              <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">
-                <div className="flex-1">
-                  <SearchBar
-                    searchQuery={searchQuery}
-                    onSearchChange={debouncedSearch}
-                    onSearchSubmit={(query) => setSearchQuery(query)}
-                    onClear={clearAllFilters}
-                    placeholder="Search by location, property type..."
-                    className="w-full"
-                  />
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <ViewModeToggle
-                    viewMode={viewMode}
-                    onViewModeChange={setViewMode}
-                  />
-
-                  {(searchQuery || priceRange[0] > 0 || selectedType !== 'all') && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={clearAllFilters}
-                      className="text-slate-700 hover:bg-slate-50"
-                    >
-                      Clear Filters
-                    </Button>
-                  )}
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowFilterModal(true)}
-                    className="flex items-center gap-2"
-                  >
-                    <Filter className="h-4 w-4" />
-                    <span className="hidden sm:inline">Filters</span>
+          <div className="container mx-auto px-4 lg:px-6 py-3">
+            <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center">
+              <div className="flex-1">
+                <SearchBar
+                  searchQuery={searchQuery}
+                  onSearchChange={debouncedSearch}
+                  onSearchSubmit={(query) => setSearchQuery(query)}
+                  onClear={clearAllFilters}
+                  placeholder="Search by location, property type..."
+                  className="w-full"
+                />
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <ViewModeToggle viewMode={viewMode} onViewModeChange={setViewMode} />
+                {(searchQuery || priceRange[0] > 0 || selectedType !== 'all') && (
+                  <Button variant="ghost" size="sm" onClick={clearAllFilters}
+                    className="text-slate-500 hover:text-slate-900 text-sm px-2">
+                    Clear
                   </Button>
-                </div>
+                )}
+                <Button variant="outline" size="sm" onClick={() => setShowFilterModal(true)}
+                  className="flex items-center gap-2 border-slate-300 rounded-full px-4">
+                  <Filter className="h-3.5 w-3.5" />
+                  <span className="text-sm">Filters</span>
+                  {(priceRange[0] > 0 || selectedType !== 'all' || minBeds > 0 || minBaths > 0) && (
+                    <span className="bg-orange-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                      {[priceRange[0] > 0, selectedType !== 'all', minBeds > 0, minBaths > 0].filter(Boolean).length}
+                    </span>
+                  )}
+                </Button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Main content based on view mode */}
+        {/* ── Inline error banner — map stays mounted ────────────────────── */}
+        {renderState === 'error' && (
+          <div className="bg-red-50 border-b border-red-200 px-4 py-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+              <span className="text-sm text-red-700">{error || 'Failed to load properties'}</span>
+            </div>
+            <Button size="sm" variant="outline"
+              onClick={() => fetchProperties(currentPage, true)}
+              className="border-red-300 text-red-600 hover:bg-red-100 text-xs h-7 px-2">
+              <RefreshCw className="h-3 w-3 mr-1" />Retry
+            </Button>
+          </div>
+        )}
+
+        {/* ── Split view — list LEFT, map RIGHT ─────────────────────────── */}
         {viewMode === 'split' ? (
-          <div className="h-[calc(100vh-120px)] grid grid-cols-1 lg:grid-cols-2 gap-0">
-            <div className="h-full relative">
-              <PropertyMap
+          <div style={{ height: 'calc(100vh - 130px)' }} className="flex overflow-hidden">
+
+            {/* List panel — 42% width, scrollable */}
+            <div className="w-[42%] flex-shrink-0 h-full overflow-y-auto bg-white border-r border-slate-200"
+                 id="property-list-panel">
+              <div className="p-4">
+
+                {/* Result count + sort */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    {isLoading ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                        <span className="text-sm text-slate-500">Searching...</span>
+                      </div>
+                    ) : (
+                      <span className="text-sm font-semibold text-slate-900">
+                        {properties.length.toLocaleString()}
+                        <span className="font-normal text-slate-500"> {properties.length === 1 ? 'property' : 'properties'}</span>
+                        {searchQuery && (
+                          <span className="font-normal text-slate-500"> in <span className="text-orange-600 font-medium">{searchQuery}</span></span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Loading skeletons — 2-column grid */}
+                {isLoading && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {[...Array(6)].map((_, i) => (
+                      <div key={i} className="animate-pulse">
+                        <div className="h-32 bg-slate-200 rounded-xl mb-2" />
+                        <div className="space-y-2">
+                          <div className="h-3 bg-slate-200 rounded w-3/4" />
+                          <div className="h-3 bg-slate-200 rounded w-1/2" />
+                          <div className="h-4 bg-slate-200 rounded w-1/3" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty state inline */}
+                {!isLoading && renderState === 'empty' && (
+                  <div className="flex flex-col items-center py-16 text-center">
+                    <div className="bg-slate-100 rounded-full p-6 mb-3">
+                      <Home className="h-8 w-8 text-slate-400" />
+                    </div>
+                    <p className="text-sm font-semibold text-slate-900 mb-1">No properties found</p>
+                    <p className="text-xs text-slate-500 mb-3">Try adjusting your filters</p>
+                    <Button size="sm" onClick={clearAllFilters}
+                      className="bg-orange-500 hover:bg-orange-600 text-white text-xs">
+                      Clear filters
+                    </Button>
+                  </div>
+                )}
+
+                {/* 2-column property cards */}
+                {!isLoading && properties.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {properties.map((property) => (
+                      <div
+                        key={property.id}
+                        id={`property-card-${property.id}`}
+                        className={`group bg-white rounded-xl border overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-orange-300 ${
+                          selectedProperty?.id === property.id
+                            ? 'border-orange-400 shadow-lg ring-2 ring-orange-200'
+                            : 'border-slate-200'
+                        }`}
+                        onClick={() => {
+                          // Select property for map sync (don't navigate)
+                          setSelectedProperty(property)
+                          
+                          // Scroll to card in view
+                          const card = document.getElementById(`property-card-${property.id}`)
+                          card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                        }}
+                      >
+                        {/* Image container */}
+                        <div className="relative h-32 overflow-hidden bg-slate-100">
+                          {property.images?.[0] ? (
+                            <img
+                              src={property.images[0]}
+                              alt={property.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Home className="h-8 w-8 text-slate-300" />
+                            </div>
+                          )}
+                          
+                          {/* Status badge - Improved visibility */}
+                          <div className={`absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-semibold shadow-md ${
+                            property.status === 'vacant' 
+                              ? 'bg-green-500 text-white' 
+                              : 'bg-orange-500 text-white'
+                          }`}>
+                            {property.status === 'vacant' ? 'Available' : 'Rented'}
+                          </div>
+
+                          {/* Favorite button */}
+                          <button
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              handleFavoriteClick(property.id) 
+                            }}
+                            className="absolute top-2 left-2 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center shadow-md hover:bg-white transition-colors"
+                          >
+                            <svg className={`w-4 h-4 ${favorites.includes(property.id) ? 'fill-red-500 text-red-500' : 'text-slate-400'}`}
+                              viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd"/>
+                            </svg>
+                          </button>
+
+                          {/* Price overlay */}
+                          <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm px-2 py-1 rounded-md shadow-md">
+                            <span className="text-sm font-bold text-orange-600">
+                              ₦{(property.price || 0).toLocaleString()}
+                              <span className="text-xs font-normal text-slate-400">/mo</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-3">
+                          {/* Title */}
+                          <h3 className="text-sm font-semibold text-slate-900 leading-tight line-clamp-2 group-hover:text-orange-600 transition-colors mb-1">
+                            {property.title}
+                          </h3>
+
+                          {/* Location */}
+                          <p className="text-xs text-slate-500 truncate flex items-center gap-1 mb-2">
+                            <MapPin className="h-3 w-3 text-orange-400 flex-shrink-0" />
+                            {property.location || `${property.city}, ${property.state}`}
+                          </p>
+
+                          {/* Specs - Improved with better icons and tooltips */}
+                          <div className="flex items-center gap-2 text-xs mb-2">
+                            {property.beds && (
+                              <div 
+                                className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded hover:bg-orange-50 transition-colors group relative"
+                                title={`${property.beds} Bedroom${property.beds !== 1 ? 's' : ''}`}
+                              >
+                                <Bed className="w-3 h-3 text-orange-500" />
+                                <span className="font-semibold text-slate-700">{property.beds}</span>
+                                {/* Tooltip */}
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                                  {property.beds} Bedroom{property.beds !== 1 ? 's' : ''}
+                                </div>
+                              </div>
+                            )}
+                            {property.baths && (
+                              <div 
+                                className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded hover:bg-blue-50 transition-colors group relative"
+                                title={`${property.baths} Bathroom${property.baths !== 1 ? 's' : ''}`}
+                              >
+                                <Bath className="w-3 h-3 text-blue-500" />
+                                <span className="font-semibold text-slate-700">{property.baths}</span>
+                                {/* Tooltip */}
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                                  {property.baths} Bathroom{property.baths !== 1 ? 's' : ''}
+                                </div>
+                              </div>
+                            )}
+                            {property.sqft && (
+                              <div className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded text-slate-700">
+                                <span className="text-[10px] font-semibold">{Math.round(property.sqft / 100) * 100}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Verified badge */}
+                          {property.landlord?.verified && (
+                            <div className="flex items-center gap-1 text-[10px] text-green-600 font-medium">
+                              <svg viewBox="0 0 20 20" fill="currentColor" width="10" height="10">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                              </svg>
+                              Verified
+                            </div>
+                          )}
+
+                          {/* Action buttons */}
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                // Select property and fly to it on map
+                                setSelectedProperty(property)
+                                // Scroll to card
+                                const card = document.getElementById(`property-card-${property.id}`)
+                                card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                              }}
+                              className={`flex-1 text-xs py-1.5 px-2 rounded-md font-medium transition-colors ${
+                                selectedProperty?.id === property.id
+                                  ? 'bg-orange-100 text-orange-700 border border-orange-200'
+                                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                              }`}
+                            >
+                              {selectedProperty?.id === property.id ? '📍 Selected' : '📍 View on Map'}
+                            </button>
+                            <button
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                router.push(`/properties/${property.id}`)
+                              }}
+                              className="flex-1 text-xs py-1.5 px-2 rounded-md bg-orange-500 text-white hover:bg-orange-600 font-medium transition-colors"
+                            >
+                              View Details
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Pagination */}
+                {pagination && !isLoading && properties.length > 0 && (
+                  <div className="flex justify-center mt-4 pb-2">
+                    <PaginationControls
+                      pagination={pagination}
+                      currentPage={currentPage}
+                      onPageChange={(page) => fetchProperties(page)}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Map panel — 58% width, always mounted */}
+            <div className="flex-1 h-full relative">
+              {/* Translucent shimmer during search — map tiles stay visible */}
+              {isLoading && (
+                <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] z-10 flex items-center justify-center pointer-events-none">
+                  <div className="bg-white rounded-full px-4 py-2 shadow-lg flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                    <span className="text-sm font-medium text-slate-700">Updating...</span>
+                  </div>
+                </div>
+              )}
+              <PropertyMapOptimized
                 properties={properties}
                 selectedProperty={selectedProperty}
-                onPropertySelect={setSelectedProperty}
+                onPropertySelect={(property) => {
+                  setSelectedProperty(property)
+                  if (property) {
+                    setTimeout(() => {
+                      const card = document.getElementById(`property-card-${property.id}`)
+                      card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                    }, 100)
+                  }
+                }}
                 zoom={11}
               />
             </div>
-
-            <div className="h-full overflow-y-auto bg-slate-50 p-4">
-              {!isLoading && properties.length > 0 && (
-                <SearchStats 
-                  total={properties.length}
-                  loadingTime={loadingTime}
-                  location={searchQuery}
-                  isLoading={isLoading}
-                />
-              )}
-              
-              <div className="space-y-4">
-                {properties.map(property => (
-                  <PropertyCard
-                    key={property.id}
-                    property={property}
-                    isFavorite={favorites.includes(property.id)}
-                    onFavorite={(id) => handleFavoriteClick(id)}
-                    onSelect={() => setSelectedProperty(property)}
-                  />
-                ))}
-              </div>
-
-              {pagination && !isLoading && (
-                <div className="flex justify-center mt-6">
-                  <PaginationControls
-                    pagination={pagination}
-                    currentPage={currentPage}
-                    onPageChange={(page) => fetchProperties(page)}
-                  />
-                </div>
-              )}
-            </div>
           </div>
+
         ) : viewMode === 'map' ? (
-          <div className="h-[calc(100vh-120px)]">
-            <PropertyMap
+          /* Full-screen map view */
+          <div style={{ height: 'calc(100vh - 130px)' }} className="relative">
+            {isLoading && (
+              <div className="absolute inset-0 bg-white/40 z-10 flex items-center justify-center pointer-events-none">
+                <div className="bg-white rounded-full px-4 py-2 shadow-lg flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                  <span className="text-sm text-slate-700">Updating...</span>
+                </div>
+              </div>
+            )}
+            <PropertyMapOptimized
               properties={properties}
               selectedProperty={selectedProperty}
               onPropertySelect={setSelectedProperty}
               zoom={11}
             />
           </div>
+
         ) : (
-          <div className="container mx-auto px-4 lg:px-6 py-8">
-            {properties.length > 0 && (
-              <SearchStats 
-                total={properties.length}
-                loadingTime={loadingTime}
-                location={searchQuery}
-                isLoading={false}
-              />
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {properties.map(property => (
-                <PropertyCard
-                  key={property.id}
-                  property={property}
-                  isFavorite={favorites.includes(property.id)}
-                  onFavorite={(id) => handleFavoriteClick(id)}
-                  onSelect={() => router.push(`/properties/${property.id}`)}
-                />
-              ))}
-            </div>
-
-            {pagination && (
-              <div className="flex justify-center mt-8">
-                <PaginationControls
-                  pagination={pagination}
-                  currentPage={currentPage}
-                  onPageChange={(page) => fetchProperties(page)}
-                />
+          /* Grid view - Optimized compact layout */
+          <div className="container mx-auto px-3 lg:px-6 py-8">
+            {isLoading ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                {[...Array(12)].map((_, i) => (
+                  <div key={i} className="rounded-xl border border-slate-200 overflow-hidden animate-pulse">
+                    <div className="h-32 bg-slate-200" />
+                    <div className="p-3 space-y-2">
+                      <div className="h-3 bg-slate-200 rounded w-3/4" />
+                      <div className="h-2 bg-slate-200 rounded w-1/2" />
+                      <div className="h-3 bg-slate-200 rounded w-1/3" />
+                    </div>
+                  </div>
+                ))}
               </div>
+            ) : renderState === 'empty' ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
+                <div className="bg-slate-100 rounded-full p-8 mb-6">
+                  <Home className="h-14 w-14 text-slate-400" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mb-3">
+                  {searchQuery ? `No results for "${searchQuery}"` : 'No properties found'}
+                </h3>
+                <p className="text-slate-500 mb-6">Try adjusting your search or filters</p>
+                <Button onClick={clearAllFilters} className="bg-orange-500 hover:bg-orange-600 text-white">
+                  Clear filters
+                </Button>
+              </div>
+            ) : (
+              <>
+                {properties.length > 0 && (
+                  <p className="text-sm text-slate-600 mb-6">
+                    <span className="font-semibold text-slate-900">{properties.length.toLocaleString()}</span> properties found
+                    {searchQuery && <> in <span className="text-orange-600 font-medium">{searchQuery}</span></>}
+                  </p>
+                )}
+                <PropertyCardGrid
+                  properties={properties}
+                  onSelect={(property) => router.push(`/properties/${property.id}`)}
+                  onFavorite={handleFavoriteClick}
+                  favorites={favorites}
+                  variant="compact"
+                  isAuthLoading={authLoading}
+                  isPendingFavorites={pendingFavorites}
+                />
+                {pagination && (
+                  <div className="flex justify-center mt-8">
+                    <PaginationControls
+                      pagination={pagination}
+                      currentPage={currentPage}
+                      onPageChange={(page) => fetchProperties(page)}
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
 
-        {/* Modals */}
+        {/* ── Modals ──────────────────────────────────────────────────────── */}
         {showFilterModal && (
           <PropertyFiltersModal
             isOpen={showFilterModal}
             onClose={() => setShowFilterModal(false)}
-            filters={{
-              priceRange,
-              propertyType: selectedType,
-              bedrooms: minBeds,
-              bathrooms: minBaths
-            }}
+            filters={{ priceRange, propertyType: selectedType, bedrooms: minBeds, bathrooms: minBaths }}
             onFiltersChange={(filters) => {
               setPriceRange(filters.priceRange || [0, 10000000])
               setSelectedType(filters.propertyType || 'all')
@@ -969,20 +762,13 @@ export default function PropertiesPage() {
             }}
           />
         )}
-
         {showSaveFavoriteModal && (
           <SaveFavoriteModal
             isOpen={showSaveFavoriteModal}
             onClose={() => setShowSaveFavoriteModal(false)}
             propertyTitle={properties.find(p => p.id === pendingFavoriteId)?.title || ''}
-            onSaveWithEmail={() => {
-              setShowSaveFavoriteModal(false)
-              toast.success('Please sign in to save favorites')
-            }}
-            onContinueBrowsing={() => {
-              setShowSaveFavoriteModal(false)
-              setPendingFavoriteId(null)
-            }}
+            onSaveWithEmail={() => { setShowSaveFavoriteModal(false); toast.success('Please sign in to save favorites') }}
+            onContinueBrowsing={() => { setShowSaveFavoriteModal(false); setPendingFavoriteId(null) }}
           />
         )}
       </div>

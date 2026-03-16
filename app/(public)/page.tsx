@@ -226,7 +226,7 @@ export default function HomePage() {
         console.log('🌟 Fetching featured properties...')
         
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-        const response = await fetch(`${API_BASE_URL}/api/v1/properties/search?status=vacant&sort=newest&limit=6`)
+        const response = await fetch(`${API_BASE_URL}/api/v1/properties/search?status=vacant&sort=newest&limit=12`)
         
         if (!response.ok) {
           throw new Error('Failed to fetch featured properties')
@@ -245,12 +245,12 @@ export default function HomePage() {
         try {
           const response = await propertiesAPI.search({
             page: 1,
-            limit: 6,
+            limit: 12,
             sort: 'newest'
           })
           
           console.log('✅ Using fallback featured properties:', response.properties?.length || 0)
-          setFeaturedProperties(response.properties?.slice(0, 6) || [])
+          setFeaturedProperties(response.properties?.slice(0, 12) || [])
         } catch (fallbackError) {
           console.error('❌ Fallback also failed:', fallbackError)
           // Don't show error toast - silently fallback to empty

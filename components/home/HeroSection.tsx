@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { Home, Building2, Sparkles, Search, CheckCircle } from 'lucide-react'
 import { motion, useScroll, useTransform, Variants } from 'framer-motion'
-import { SearchBar } from './SearchBar'
+import { SearchBarCompact } from './SearchBarCompact'
+import { AdvancedFiltersModal } from './AdvancedFiltersModal'
 
 interface HeroSectionProps {
   location: string
@@ -36,6 +37,9 @@ export function HeroSection({
   const { user } = useAuth()
   const [userType, setUserType] = useState<'tenant' | 'landlord'>('tenant')
   const [showWelcome, setShowWelcome] = useState(false)
+  const [bedrooms, setBedrooms] = useState<string>('Any')
+  const [bathrooms, setBathrooms] = useState<string>('Any')
+  const [minSize, setMinSize] = useState<string>('')
   
   // ✅ PERFORMANCE: Only enable parallax on desktop
   const [isDesktop, setIsDesktop] = useState(true)
@@ -254,8 +258,8 @@ export function HeroSection({
         })}
       </div>
 
-      {/* ✅ Main Content Container - IMPROVED SPACING */}
-      <div className="relative z-10 w-full flex flex-col items-center justify-center min-h-screen px-4 sm:px-6 lg:px-8 py-12 md:py-16">
+      {/* ✅ Main Content Container - IMPROVED SPACING & ISOLATION */}
+      <div className="relative z-10 w-full flex flex-col items-center justify-center min-h-screen px-4 sm:px-6 lg:px-8 py-12 md:py-16 pb-32 md:pb-40 overflow-visible isolation-auto">
         <motion.div 
           className="w-full max-w-5xl mx-auto"
           variants={containerVariants}
@@ -447,13 +451,13 @@ export function HeroSection({
             </motion.div>
           )}
 
-          {/* ✅ CRITICAL IMPROVEMENT: Search Bar with proper spacing */}
+          {/* ✅ CRITICAL IMPROVEMENT: Compact Search Bar with Modal Filters */}
           <motion.div 
             variants={itemVariants}
-            className="search-section w-full px-4 mt-6 md:mt-8"
+            className="search-section w-full px-4 mt-6 md:mt-8 pb-16 md:pb-20"
           >
             <div className="max-w-4xl mx-auto">
-              <SearchBar
+              <SearchBarCompact
                 location={location}
                 setLocation={setLocation}
                 priceRange={priceRange}
@@ -467,6 +471,29 @@ export function HeroSection({
               />
             </div>
           </motion.div>
+
+          {/* Advanced Filters Modal */}
+          <AdvancedFiltersModal
+            isOpen={showAdvanced}
+            onClose={() => setShowAdvanced(false)}
+            filters={{
+              priceRange,
+              bedrooms,
+              bathrooms,
+              minSize
+            }}
+            onFiltersChange={(filters) => {
+              setPriceRange(filters.priceRange)
+              setBedrooms(filters.bedrooms)
+              setBathrooms(filters.bathrooms)
+              setMinSize(filters.minSize)
+            }}
+            onApply={() => {
+              // Trigger search with new filters
+              const event = new Event('searchWithFilters')
+              window.dispatchEvent(event)
+            }}
+          />
         </motion.div>
       </div>
 
