@@ -175,6 +175,10 @@ export function useOnboarding() {
   // Runs once after auth is resolved. Handles all redirect logic in one place
   // so individual step pages don't need to repeat it.
   //
+  // KEY FIX: After Google OAuth callback, the AuthContext user object can be
+  // stale (user_type still 'tenant'). Query it fresh from the database instead
+  // of trusting the potentially stale session metadata.
+  //
   // KEY FIX: Google OAuth users have their email verified by Google, but
   // user.email_verified in the DB can be false right after sign-up (the trigger
   // hasn't fired yet, or doesn't set the flag for OAuth users). Sending them to
@@ -195,74 +199,82 @@ export function useOnboarding() {
       return
     }
 
-    // 1. Wrong user type
-    if (user.user_type !== 'landlord') {
-      toast.error('This page is only for landlords')
-      router.push('/properties')
-      return
-    }
-
-    // 2. Email not verified — skip for Google OAuth users
-    const isOAuthUser =
-      user.auth_provider === 'google' ||
-      (user as any).provider === 'google'
-
-    if (!user.email_verified && !isOAuthUser) {
-      toast.error('Please verify your email first')
-      router.push('/signup/landlord/confirmation')
-      return
-    }
-
-    // 3. Onboarding completed — verify against DB before redirecting
-    //    (the flag can go stale on partial submits)
-    //    IMPORTANT: Skip this redirect if the user is on a step page right now.
-    //    When step-5 submits, it sets onboarding_completed=true which triggers
-    //    this effect — but the step page handles its own redirect to
-    //    verification-pending. Redirecting here simultaneously causes a bounce.
-    const isOnStepPage = pathname?.includes('/onboarding/landlord/step-')
-    if (user.onboarding_completed && !isOnStepPage) {
-      const verify = async () => {
-        try {
-          const { createClient } = await import('@/utils/supabase/client')
-          const supabase = createClient()
-          const { data } = await supabase
-            .from('landlord_onboarding')
-            .select('all_steps_completed, submitted_for_review')
-            .eq('landlord_id', user.id)
-            .single()
-
-          if (data?.all_steps_completed && data?.submitted_for_review) {
-            router.push('/landlord/overview')
-          } else {
-            // Flag is stale — reset it and let the user continue
-            await supabase
-              .from('users')
-              .update({ onboarding_completed: false })
-              .eq('id', user.id)
-            setIsReady(true)
+    // ✅ CRITICAL FIX: Query fresh user_type from database instead of trusting
+    // the potentially stale AuthContext user object (especially after Google OAuth)
+    const verifyUserType = async () => {
+      try {
+        const { createClient } = await import('@/utils/supabase/client')
+        const supabase = createClient()
+        
+        const { data: freshUser, error } = await supabase
+          .from('users')
+          .select('user_type, email_verified, onboarding_completed, auth_provider')
+          .eq('id', user.id)
+          .single()
+        
+        if (error) {
+          console.warn('⚠️ [HOOK] Failed to fetch fresh user data:', error.message)
+          // Fallback to potentially stale user object
+          if (user.user_type !== 'landlord') {
+            toast.error('This page is only for landlords')
+            router.push('/properties')
           }
-        } catch {
-          // Can't confirm — let the user through rather than blocking them
-          setIsReady(true)
+          return
         }
+
+        // 1. Check user type (use fresh data from database)
+        if (freshUser.user_type !== 'landlord') {
+          console.log('❌ [HOOK] User type mismatch:', {
+            db: freshUser.user_type,
+            context: user.user_type
+          })
+          toast.error('This page is only for landlords')
+          router.push('/properties')
+          return
+        }
+
+        // Update user object with fresh data for rest of the auth checks
+        const freshUserData = {
+          ...user,
+          ...freshUser,
+          auth_provider: freshUser.auth_provider || user.auth_provider
+        }
+        
+        continueAuthGuard(freshUserData)
+      } catch (err) {
+        console.error('⚠️ [HOOK] Error fetching fresh user data:', err)
+        // Fallback: check stale user object
+        if (user.user_type !== 'landlord') {
+          toast.error('This page is only for landlords')
+          router.push('/properties')
+          return
+        }
+        continueAuthGuard(user)
       }
-      verify()
-      return
     }
 
-    // 4. Onboarding NOT completed - but for established users, verify in database
-    //    to avoid incorrect redirects due to stale session metadata
-    if (!user.onboarding_completed && !isOnStepPage) {
-      const isNewUser = user.created_at && 
-        (Date.now() - new Date(user.created_at).getTime()) < 5 * 60 * 1000; // Created less than 5 min ago
-      
-      if (isNewUser) {
-        // New user - allow onboarding flow
-        console.log('👤 [HOOK] New landlord user, allowing onboarding...')
-        setIsReady(true)
-      } else {
-        // Established user with potentially stale session - verify in database
-        console.log('⏳ [HOOK] Established landlord user, verifying onboarding status in database...')
+    // Helper function for remaining auth checks
+    const continueAuthGuard = (freshUserData: any) => {
+      // 2. Email not verified — skip for Google OAuth users
+      const isOAuthUser =
+        freshUserData.auth_provider === 'google' ||
+        (freshUserData as any).provider === 'google'
+
+      if (!freshUserData.email_verified && !isOAuthUser) {
+        console.log('❌ [HOOK] Email not verified and not OAuth user')
+        toast.error('Please verify your email first')
+        router.push('/signup/landlord/confirmation')
+        return
+      }
+
+      // 3. Onboarding completed — verify against DB before redirecting
+      //    (the flag can go stale on partial submits)
+      //    IMPORTANT: Skip this redirect if the user is on a step page right now.
+      //    When step-5 submits, it sets onboarding_completed=true which triggers
+      //    this effect — but the step page handles its own redirect to
+      //    verification-pending. Redirecting here simultaneously causes a bounce.
+      const isOnStepPage = pathname?.includes('/onboarding/landlord/step-')
+      if (freshUserData.onboarding_completed && !isOnStepPage) {
         const verify = async () => {
           try {
             const { createClient } = await import('@/utils/supabase/client')
@@ -270,35 +282,85 @@ export function useOnboarding() {
             const { data } = await supabase
               .from('landlord_onboarding')
               .select('all_steps_completed, submitted_for_review')
-              .eq('landlord_id', user.id)
+              .eq('landlord_id', freshUserData.id)
               .single()
 
-            console.log('📊 [HOOK] Database check result:', data)
-
             if (data?.all_steps_completed && data?.submitted_for_review) {
-              // Onboarding actually complete - redirect to dashboard
-              console.log('✅ [HOOK] Onboarding complete, redirecting to dashboard...')
+              console.log('✅ [HOOK] Onboarding complete, redirecting to dashboard')
               router.push('/landlord/overview')
             } else {
-              // Onboarding incomplete - allow step pages
-              console.log('🎓 [HOOK] Onboarding incomplete, allowing steps...')
+              // Flag is stale — reset it and let the user continue
+              await supabase
+                .from('users')
+                .update({ onboarding_completed: false })
+                .eq('id', freshUserData.id)
+              console.log('🔄 [HOOK] Reset stale onboarding flag')
               setIsReady(true)
             }
-          } catch (error) {
-            console.error('⚠️ [HOOK] Database verification failed:', error)
-            // On error, let the user continue (they might be in the middle of onboarding)
-            console.log('💭 [HOOK] Continuing due to verification error...')
+          } catch (e) {
+            console.error('⚠️ [HOOK] Verification error:', e)
+            // Can't confirm — let the user through rather than blocking them
             setIsReady(true)
           }
         }
         verify()
         return
       }
+
+      // 4. Onboarding NOT completed - but for established users, verify in database
+      //    to avoid incorrect redirects due to stale session metadata
+      if (!freshUserData.onboarding_completed && !isOnStepPage) {
+        const isNewUser = freshUserData.created_at && 
+          (Date.now() - new Date(freshUserData.created_at).getTime()) < 5 * 60 * 1000; // Created less than 5 min ago
+        
+        if (isNewUser) {
+          // New user - allow onboarding flow
+          console.log('👤 [HOOK] New landlord user, allowing onboarding...')
+          setIsReady(true)
+        } else {
+          // Established user with potentially stale session - verify in database
+          console.log('⏳ [HOOK] Established landlord user, verifying onboarding status in database...')
+          const verify = async () => {
+            try {
+              const { createClient } = await import('@/utils/supabase/client')
+              const supabase = createClient()
+              const { data } = await supabase
+                .from('landlord_onboarding')
+                .select('all_steps_completed, submitted_for_review')
+                .eq('landlord_id', freshUserData.id)
+                .single()
+
+              console.log('📊 [HOOK] Database check result:', data)
+
+              if (data?.all_steps_completed && data?.submitted_for_review) {
+                // Onboarding actually complete - redirect to dashboard
+                console.log('✅ [HOOK] Onboarding complete, redirecting to dashboard...')
+                router.push('/landlord/overview')
+              } else {
+                // Onboarding incomplete - allow step pages
+                console.log('🎓 [HOOK] Onboarding incomplete, allowing steps...')
+                setIsReady(true)
+              }
+            } catch (error) {
+              console.error('⚠️ [HOOK] Database verification failed:', error)
+              // On error, let the user continue (they might be in the middle of onboarding)
+              console.log('💭 [HOOK] Continuing due to verification error...')
+              setIsReady(true)
+            }
+          }
+          verify()
+          return
+        }
+      }
+
+      // All checks passed
+      console.log('✅ [HOOK] All auth guards passed, ready for onboarding')
+      setIsReady(true)
     }
 
-    // All checks passed
-    setIsReady(true)
-  }, [user, loading, router, pathname])
+    verifyUserType()
+  }, [loading, user, router, pathname])
+
   const saveStep1 = useCallback(async (data: OnboardingStep1Data) => {
     console.log('📤 [STEP 1] Saving data to localStorage...')
     setIsProcessing(true)

@@ -16,6 +16,7 @@ export async function proxy(request: NextRequest) {
     '/signin',
     '/signup',
     '/auth/callback',
+    '/auth/google/callback',
     '/auth/verify-email',
     '/auth/verify-email-failed',
     '/auth/reset-password',
@@ -144,106 +145,53 @@ export async function proxy(request: NextRequest) {
   // LANDLORD ROUTING
   // ========================================
   if (profile.user_type === 'landlord') {
-    
-    // Get landlord profile for onboarding status - with graceful network error handling
-    let landlordProfile = null;
-    let networkError = false;
+    // Get landlord profile for onboarding status
+    let landlordProfile = null
     
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('first_time_visit, onboarding_completed_at, profile_step_completed, verification_status, onboarding_completed')
+        .select('onboarding_completed, verification_status, email_verified')
         .eq('id', session.user.id)
         .single()
       
       if (error) {
-        // Check if this is a network error vs other errors
-        if (error.message?.includes('Failed to fetch') || 
-            error.message?.includes('ERR_NAME_NOT_RESOLVED') ||
-            error.message?.includes('timeout') ||
-            error.message?.includes('network')) {
-          console.warn('⚠️ [MIDDLEWARE] Network error detected, allowing dashboard access:', error.message)
-          networkError = true
-          // For network errors, assume user is onboarded and allow dashboard access
-          // This prevents redirect loops during network issues
-          landlordProfile = { onboarding_completed_at: new Date().toISOString() }
-        } else {
-          // For other errors (auth, permissions), redirect to signin
-          console.warn('⚠️ [MIDDLEWARE] Landlord profile query failed, redirecting to signin:', error.message)
-          const url = request.nextUrl.clone()
-          url.pathname = '/signin'
-          url.searchParams.set('redirectTo', pathname)
-          return NextResponse.redirect(url)
-        }
+        console.warn('⚠️ [MIDDLEWARE] Landlord profile query failed:', error.message)
+        // Fallback: assume incomplete if can't fetch
+        landlordProfile = { onboarding_completed: false }
       } else {
         landlordProfile = data
       }
     } catch (err: any) {
-      // Check if this is a network error vs other errors
-      if (err?.message?.includes('Failed to fetch') || 
-          err?.message?.includes('ERR_NAME_NOT_RESOLVED') ||
-          err?.message?.includes('timeout') ||
-          err?.message?.includes('network')) {
-        console.warn('⚠️ [MIDDLEWARE] Network exception detected, allowing dashboard access:', err.message)
-        networkError = true
-        // For network errors, assume user is onboarded and allow dashboard access
-        landlordProfile = { onboarding_completed_at: new Date().toISOString() }
-      } else {
-        // For other errors, redirect to signin
-        console.warn('⚠️ [MIDDLEWARE] Landlord profile exception, redirecting to signin:', err)
-        const url = request.nextUrl.clone()
-        url.pathname = '/signin'
-        url.searchParams.set('redirectTo', pathname)
-        return NextResponse.redirect(url)
-      }
+      console.warn('⚠️ [MIDDLEWARE] Landlord profile exception:', err.message)
+      landlordProfile = { onboarding_completed: false }
     }
 
-    // Allow onboarding routes for authenticated landlords
-    // But if we're in a network error situation and user is trying to access dashboard, allow it
+    // ✅ Allow access to onboarding routes when authenticated
     if (pathname.startsWith('/onboarding/landlord')) {
-      if (networkError && pathname === '/onboarding/landlord/step-1') {
-        console.log('⚠️ [MIDDLEWARE] Network error on onboarding step-1, allowing dashboard access instead')
-        const url = request.nextUrl.clone()
-        url.pathname = '/landlord'
-        return NextResponse.redirect(url)
-      }
-      console.log('✅ Landlord onboarding route (authenticated)')
+      console.log('✅ Landlord onboarding route - allowing access')
       return NextResponse.next()
     }
 
     console.log('🏠 Landlord Status:', {
-      first_time: landlordProfile?.first_time_visit,
-      onboarding_completed: landlordProfile?.onboarding_completed_at,
-      profile_done: landlordProfile?.profile_step_completed,
+      onboarding_completed: landlordProfile?.onboarding_completed,
       verification_status: landlordProfile?.verification_status,
-      network_error: networkError
     })
 
-    // ✅ EXISTING LANDLORD (completed onboarding) → Allow normal dashboard access
-    if (landlordProfile?.onboarding_completed_at) {
-      console.log('✅ Existing landlord - onboarding complete')
+    // ✅ RETURNING LANDLORD (completed onboarding) → Allow dashboard access
+    if (landlordProfile?.onboarding_completed === true) {
+      console.log('✅ Landlord onboarding complete - allow dashboard access')
       return NextResponse.next()
     }
 
     // ❌ NEW LANDLORD (incomplete onboarding) → Force to onboarding
-    if (!landlordProfile?.onboarding_completed_at) {
+    if (landlordProfile?.onboarding_completed === false) {
       if (!pathname.startsWith('/onboarding/landlord')) {
-        console.log('🔀 New landlord - incomplete onboarding → redirect to step-1')
+        console.log('🔀 Landlord incomplete onboarding → redirect to step-1')
         const url = request.nextUrl.clone()
         url.pathname = '/onboarding/landlord/step-1'
         return NextResponse.redirect(url)
       }
-      // Allow access to onboarding pages
-      return NextResponse.next()
-    }
-
-    // PREVENT PROPERTY CREATION without profile step
-    if (pathname.includes('/landlord/properties/new') && 
-        !landlordProfile?.profile_step_completed) {
-      console.log('❌ Can\'t create property → complete profile first')
-      const url = request.nextUrl.clone()
-      url.pathname = '/onboarding/landlord/step-1'
-      return NextResponse.redirect(url)
     }
 
     return NextResponse.next()

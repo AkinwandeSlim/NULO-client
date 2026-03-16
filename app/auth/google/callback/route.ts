@@ -108,10 +108,16 @@ async function fireSignupNotification(
 export async function GET(request: NextRequest) {
   const url   = new URL(request.url)
   const code  = url.searchParams.get('code')
-  const state = url.searchParams.get('state') || 'signin'
+  const state = url.searchParams.get('state')
   const error = url.searchParams.get('error')
 
-  console.log('[GOOGLE-CB] Received callback, state:', state)
+  // ✅ CRITICAL DEBUGGING: Log all parameters received
+  console.log('[GOOGLE-CB] ========================================')
+  console.log('[GOOGLE-CB] CALLBACK RECEIVED')
+  console.log('[GOOGLE-CB] State parameter:', state)
+  console.log('[GOOGLE-CB] State is null/undefined:', !state)
+  console.log('[GOOGLE-CB] Full URL:', request.url)
+  console.log('[GOOGLE-CB] ========================================')
 
   // ── Handle Google errors ───────────────────────────────────────────────────
   if (error) {
@@ -126,21 +132,58 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/signin?error=no_code', url.origin))
   }
 
-  // ── Validate CSRF nonce ────────────────────────────────────────────────────
+  // ── Parse state parameter ──────────────────────────────────────────────────
   // state format: "{userType}:{nonce}"  e.g. "landlord:abc123"
-  const [userTypeFromState, nonceFromState] = state.split(':')
+  let userTypeFromState = 'tenant' // Default fallback
+  let nonceFromState: string | undefined
+
+  if (state && state.includes(':')) {
+    const [extractedType, extractedNonce] = state.split(':')
+    
+    // ✅ CRITICAL: Validate extracted type against known values
+    if (['tenant', 'landlord', 'admin', 'signin'].includes(extractedType)) {
+      userTypeFromState = extractedType === 'signin' ? 'tenant' : extractedType
+      nonceFromState = extractedNonce
+      console.log('[GOOGLE-CB] ✅ State parsed successfully')
+      console.log('[GOOGLE-CB] Extracted user type:', extractedType)
+      console.log('[GOOGLE-CB] Resolved user type:', userTypeFromState)
+      console.log('[GOOGLE-CB] Extracted nonce:', nonceFromState)
+    } else {
+      console.warn('[GOOGLE-CB] ⚠️ Unknown user type in state:', extractedType)
+      userTypeFromState = 'tenant'
+    }
+  } else {
+    // ✅ NEW: Better logging when state is missing
+    console.warn('[GOOGLE-CB] ⚠️ State parameter missing or malformed:', state)
+    console.log('[GOOGLE-CB] Defaulting to "tenant" for safety')
+    userTypeFromState = 'tenant'
+  }
+
+  // ── Validate CSRF nonce ────────────────────────────────────────────────────
   const cookieHeader = request.headers.get('cookie') || ''
   const nonceMatch   = cookieHeader.match(/nulo_oauth_nonce=([^;]+)/)
   const storedNonce  = nonceMatch ? decodeURIComponent(nonceMatch[1]) : null
 
+  console.log('[GOOGLE-CB] Nonce validation:')
+  console.log('[GOOGLE-CB]   Raw cookie:', cookieHeader)
+  console.log('[GOOGLE-CB]   Nonce match found:', !!nonceMatch)
+  console.log('[GOOGLE-CB]   Raw stored nonce (before decode):', nonceMatch ? nonceMatch[1] : 'NOT FOUND')
+  console.log('[GOOGLE-CB]   Decoded stored nonce:', storedNonce)
+  console.log('[GOOGLE-CB]   Nonce from state:', nonceFromState)
+  console.log('[GOOGLE-CB]   Nonces match:', storedNonce === nonceFromState)
+  console.log('[GOOGLE-CB]   Both present:', !!storedNonce && !!nonceFromState)
+
   if (!storedNonce || storedNonce !== nonceFromState) {
-    console.error('[GOOGLE-CB] CSRF nonce mismatch')
+    console.error('[GOOGLE-CB] ❌ CSRF nonce mismatch or missing!')
+    console.error('[GOOGLE-CB]   Cookie has nonce:', !!storedNonce)
+    console.error('[GOOGLE-CB]   State has nonce:', !!nonceFromState)
+    if (storedNonce && nonceFromState) {
+      console.error('[GOOGLE-CB]   Stored:', storedNonce)
+      console.error('[GOOGLE-CB]   From state:', nonceFromState)
+      console.error('[GOOGLE-CB]   Match result:', storedNonce === nonceFromState)
+    }
     return NextResponse.redirect(new URL('/signin?error=csrf_failed', url.origin))
   }
-
-  const finalUserType = ['tenant', 'landlord'].includes(userTypeFromState)
-    ? userTypeFromState
-    : 'tenant'
 
   try {
     // ── Exchange code with Google ──────────────────────────────────────────
@@ -186,35 +229,198 @@ export async function GET(request: NextRequest) {
     const supabaseUser = data.session.user
     console.log('[GOOGLE-CB] Supabase session created for:', supabaseUser.id)
 
-    // ── Determine if new user (created in last 60 seconds) ──────────────────
-    const isNewUser = Date.now() - new Date(supabaseUser.created_at).getTime() < 60_000
-
     // ── Check if user already exists in public.users ────────────────────────
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id, user_type, onboarding_completed')
-      .eq('id', supabaseUser.id)
-      .single()
+    // ✅ FIX: Use retry logic to handle DB cold starts
+    let existingUser = null
+    let userQueryError = null
+    
+    for (let attempt = 0; attempt < 4; attempt++) {
+      console.log(`[GOOGLE-CB] DB query attempt ${attempt + 1}/4...`)
+      
+      const result = await supabase
+        .from('users')
+        .select('id, user_type, onboarding_completed, email, verification_status, created_at')
+        .eq('id', supabaseUser.id)
+        .single()
+      
+      if (result.data && !result.error) {
+        existingUser = result.data
+        console.log(`[GOOGLE-CB] ✅ Found existing user on attempt ${attempt + 1}`)
+        break
+      }
+      
+      // PGRST116 = "No rows found" - this is expected for new users
+      if (result.error?.code === 'PGRST116') {
+        console.log('[GOOGLE-CB] No user found (expected for new signup users) - stopping retry')
+        userQueryError = result.error
+        break
+      }
+      
+      // Other errors - retry with delay
+      if (result.error && attempt < 3) {
+        console.warn(`[GOOGLE-CB] Query failed on attempt ${attempt + 1}:`, result.error.message)
+        await new Promise(resolve => setTimeout(resolve, 600))
+      } else if (result.error) {
+        userQueryError = result.error
+        console.error(`[GOOGLE-CB] Query failed after all retries:`, result.error.message)
+      }
+    }
 
-    const isReturningUser = !!existingUser
+    console.log('[GOOGLE-CB] Query for existing user:')
+    console.log('[GOOGLE-CB]   Error (expected if new):', userQueryError?.message)
+    console.log('[GOOGLE-CB]   Existing user data:', existingUser)
 
-    // For returning users, preserve their existing user_type from DB
-    const resolvedUserType = isReturningUser
-      ? (existingUser.user_type || finalUserType)
-      : finalUserType
+    // ✅ BETTER SIGNAL: Detect signup vs signin using onboarding_completed status
+    // - Signup flow: onboarding_completed = false (user just started or is new)
+    // - Signin flow: onboarding_completed = true (user already went through flow)
+    // This is more reliable than account age checks which fail with clock skew
+    const isSignupFlow = !existingUser || existingUser.onboarding_completed === false
+    const isSigninFlow = existingUser && existingUser.onboarding_completed === true
+    
+    console.log('[GOOGLE-CB] Flow detection:')
+    console.log('[GOOGLE-CB]   Is signup flow:', isSignupFlow)
+    console.log('[GOOGLE-CB]   Is signin flow:', isSigninFlow)
+    console.log('[GOOGLE-CB]   onboarding_completed:', existingUser?.onboarding_completed)
+
+    // ✅ NOW we can resolve user type (existingUser is defined!)
+    const dbUserType = existingUser?.user_type
+
+    // Check cookie for user_type (set during signup flow)
+    const cookieMatch = cookieHeader.match(/nulo_user_type=([^;]+)/)
+    const cookieUserType = cookieMatch ? decodeURIComponent(cookieMatch[1]) : null
+
+    // Already have urlUserType (userTypeFromState) and metaUserType (not used in this route)
+    const urlUserType = userTypeFromState
+    const metaUserType = null // Could extract from metadata if needed
+
+    // ✅ Check if user explicitly chose a type during signup
+    const userChoseTypeExplicitly = urlUserType && urlUserType !== 'signin'
+    const hasExistingDifferentType = existingUser?.user_type && existingUser.user_type !== urlUserType
+
+    // 5-level fallback hierarchy
+    // BUT: If user chose type explicitly AND has different existing type, prioritize their choice
+    let finalUserType: string
+    
+    if (userChoseTypeExplicitly && hasExistingDifferentType) {
+      // User is switching types (e.g., tenant → landlord) - honor their choice!
+      finalUserType = urlUserType
+      console.log('[GOOGLE-CB] 🔄 User switching types:', `${dbUserType} → ${urlUserType}`)
+    } else {
+      // Standard fallback hierarchy
+      finalUserType =
+        dbUserType ||           // 1. DB (most reliable for existing users)
+        cookieUserType ||       // 2. Cookie (from signup flow)
+        urlUserType ||          // 3. URL/State (from OAuth state param)
+        metaUserType ||         // 4. Metadata (from auth provider)
+        'tenant'                // 5. Default (safe fallback)
+    }
+
+    console.log('[GOOGLE-CB] ✅ Complete user type resolution:')
+    console.log('[GOOGLE-CB]   DB user_type:', dbUserType || '(none)')
+    console.log('[GOOGLE-CB]   Cookie user_type:', cookieUserType || '(none)')
+    console.log('[GOOGLE-CB]   URL/State user_type:', urlUserType || '(none)')
+    console.log('[GOOGLE-CB]   User chose type explicitly:', userChoseTypeExplicitly)
+    console.log('[GOOGLE-CB]   Has existing different type:', hasExistingDifferentType)
+    console.log('[GOOGLE-CB]   → Final user_type:', finalUserType)
+
+    // ✅ FIX: Proper "returning user" detection for sync purposes  
+    // Use signin flow status (onboarding_completed = true) as signal
+    const shouldSyncUser = isSignupFlow || (userChoseTypeExplicitly && hasExistingDifferentType)
+    
+    console.log('[GOOGLE-CB] User classification:')
+    console.log('[GOOGLE-CB]   Is signup flow:', isSignupFlow)
+    console.log('[GOOGLE-CB]   Is signin flow:', isSigninFlow)
+    console.log('[GOOGLE-CB]   Should sync with backend:', shouldSyncUser)
+
+    // ✅ CRITICAL FIX: For signin flows, preserve existing type UNLESS user explicitly chose different type
+    // This supports type switching: tenant user clicking "I'm a landlord" should switch to landlord
+    // But returning landlords signing in should stay as landlords (not reverted to tenant by old DB value)
+    const resolvedUserType = 
+      (isSigninFlow && dbUserType && !userChoseTypeExplicitly) 
+        ? dbUserType 
+        : finalUserType
+
+    console.log('[GOOGLE-CB] Final resolved user_type:', resolvedUserType)
 
     // ── New user: sync with backend + notify ───────────────────────────────
-    if (!isReturningUser) {
+    // Also sync if user is explicitly changing their type (e.g., tenant → landlord)
+    if (shouldSyncUser) {
       const googleName =
         supabaseUser.user_metadata?.full_name ||
         supabaseUser.user_metadata?.name ||
         supabaseUser.email ||
         'User'
 
+      // ✅ FIX: Update database immediately with correct user_type
+      // This ensures the database is updated BEFORE backend sync, avoiding race conditions
+      console.log('[GOOGLE-CB] Updating user record with correct user_type...')
+      const updateData: any = { user_type: resolvedUserType }
+      
+      // For new landlords, set flags for onboarding
+      if (resolvedUserType === 'landlord') {
+        updateData.verification_status = 'pending'
+        updateData.onboarding_completed = false  // ✅ Must complete 4Ps onboarding
+      }
+      
+      const { error: dbUpdateError } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('id', supabaseUser.id)
+      
+      if (dbUpdateError) {
+        console.error('[GOOGLE-CB] ⚠️ Failed to update user_type in database:', dbUpdateError.message)
+        // Continue - backend sync will attempt to set it
+      } else {
+        console.log('[GOOGLE-CB] ✅ User record updated:', updateData)
+      }
+
+      console.log('[GOOGLE-CB] Syncing new user with backend...')
       await syncNewOAuthUser(supabaseUser.id, supabaseUser.email!, googleName, resolvedUserType)
+      
+      console.log('[GOOGLE-CB] Firing signup notification...')
       await fireSignupNotification(supabaseUser.id, supabaseUser.email!, googleName, resolvedUserType)
+      
+      // ✅ CRITICAL: Verify AND refresh user data from database
+      // Must refresh because we just updated onboarding_completed, and redirect logic needs fresh data
+      console.log('[GOOGLE-CB] Verifying user in database...')
+      
+      let verifyError = null
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        const result = await supabase
+          .from('users')
+          .select('id, user_type, email, onboarding_completed')
+          .eq('id', supabaseUser.id)
+          .single()
+        
+        if (!result.error && result.data) {
+          // ✅ ESSENTIAL: Update existingUser with FRESH data after DB update
+          // This ensures redirect logic uses the NEW onboarding_completed value (false for new landlords)
+          existingUser = result.data
+          
+          console.log('[GOOGLE-CB] ✅ User verified in database:')
+          console.log('[GOOGLE-CB]   ID:', existingUser.id)
+          console.log('[GOOGLE-CB]   Email:', existingUser.email)
+          console.log('[GOOGLE-CB]   User Type:', existingUser.user_type)
+          console.log('[GOOGLE-CB]   Onboarding Completed:', existingUser.onboarding_completed)
+          
+          if (existingUser.user_type !== resolvedUserType) {
+            console.error('[GOOGLE-CB] ⚠️ CRITICAL: User type mismatch!')
+            console.error('[GOOGLE-CB]   Expected:', resolvedUserType)
+            console.error('[GOOGLE-CB]   Got:', existingUser.user_type)
+          }
+          break
+        }
+        
+        if (attempt < 4) {
+          console.log(`[GOOGLE-CB] Verification attempt ${attempt}/4 failed, retrying...`)
+          await new Promise(resolve => setTimeout(resolve, 500))
+        } else {
+          verifyError = result.error
+          console.warn('[GOOGLE-CB] User verification failed after all retries:', verifyError?.message)
+        }
+      }
     } else {
-      console.log('[GOOGLE-CB] Returning user — skipping sync and notification')
+      console.log('[GOOGLE-CB] Signin flow (not syncing backend) - skipping sync and notification')
     }
 
     // ── Determine redirect ─────────────────────────────────────────────────
@@ -229,9 +435,14 @@ export async function GET(request: NextRequest) {
     if (resolvedUserType === 'admin') {
       redirectTo = '/admin'
     } else if (resolvedUserType === 'landlord') {
-      if (isReturningUser && existingUser?.onboarding_completed === true) {
+      // ✅ CRITICAL: Check onboarding_completed, not just isReturningUser
+      // - Signup flow OR incomplete onboarding → go to onboarding
+      // - Signin flow AND completed onboarding → go to dashboard
+      if (isSigninFlow && existingUser?.onboarding_completed === true) {
+        // User signing in who already completed onboarding
         redirectTo = '/landlord/overview'
       } else {
+        // New signup OR incomplete onboarding
         redirectTo = '/onboarding/landlord/step-1?oauth=1'
       }
     } else if (resolvedUserType === 'tenant') {

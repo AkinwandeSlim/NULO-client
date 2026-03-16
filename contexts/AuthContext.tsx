@@ -588,10 +588,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Generate a random nonce for CSRF protection
     const nonce = Math.random().toString(36).substring(2, 15)
 
+    console.log('[AUTH] Building Google OAuth URL:')
+    console.log('[AUTH]   User type:', userType)
+    console.log('[AUTH]   Nonce generated:', nonce)
+    console.log('[AUTH]   State will be:', `${userType}:${nonce}`)
+
     // Store nonce in cookie so the callback can verify it
+    // ✅ URL encode the nonce in the cookie to avoid any parsing issues
     const exp = new Date()
     exp.setMinutes(exp.getMinutes() + 15)
-    document.cookie = `nulo_oauth_nonce=${nonce}; path=/; expires=${exp.toUTCString()}; SameSite=Lax`
+    const encodedNonce = encodeURIComponent(nonce)
+    document.cookie = `nulo_oauth_nonce=${encodedNonce}; path=/; expires=${exp.toUTCString()}; SameSite=Lax`
+    
+    console.log('[AUTH]   Cookie set: nulo_oauth_nonce=', encodedNonce)
 
     // state encodes both userType and nonce: "tenant:abc123"
     const state = `${userType}:${nonce}`
@@ -606,7 +615,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       prompt:        'consent',
     })
 
-    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+    const finalUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+    console.log('[AUTH]   Final OAuth URL state param:', state)
+    
+    return finalUrl
   }
 
   // Admin signup
