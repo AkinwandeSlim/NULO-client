@@ -981,54 +981,196 @@ export default function LandlordDashboard() {
           {/* Left 3 cols */}
           <div className="lg:col-span-3 space-y-8">
 
-            {/* Properties — mirrors tenant "Saved Properties" section */}
+            {/* Properties — Premium Airbnb/Zillow style management */}
             <section>
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-900 mb-2">Your Properties</h2>
-                  <p className="text-gray-600">Properties you've listed on NuloAfrica</p>
+                  <h2 className="text-3xl font-bold text-slate-900 mb-2">Your Listings</h2>
+                  <div className="flex items-center gap-4 text-sm text-slate-600">
+                    <span className="flex items-center gap-1">
+                      <Building2 className="h-4 w-4 text-orange-500" />
+                      {properties?.length ?? 0} propert{(properties?.length ?? 0) !== 1 ? 'ies' : ''}
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span className="flex items-center gap-1">
+                      <Eye className="h-4 w-4 text-blue-500" />
+                      {stats.total_views || 0} total views
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span className="flex items-center gap-1">
+                      <TrendingUp className="h-4 w-4 text-green-500" />
+                      {stats.active_listings || (properties?.length ?? 0)} active
+                    </span>
+                  </div>
                 </div>
-                <Link href="/landlord/properties">
-                  <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
-                    View All <ArrowRight className="ml-1 h-4 w-4" />
-                  </Button>
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link href="/landlord/properties">
+                    <Button variant="outline" size="sm" className="border-slate-300 hover:bg-slate-100">
+                      Manage All <ArrowRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </Link>
+                  {isVerified && (
+                    <Link href="/landlord/properties/new">
+                      <Button size="sm" className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-md">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  )}
+                </div>
               </div>
 
-              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
-                <CardContent className="p-6">
-                  {(properties?.length ?? 0) === 0 ? (
-                    /* Empty — same anatomy as tenant empty state */
-                    <div className="text-center py-12">
-                      <div className="h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Building2 className="h-8 w-8 text-blue-600" />
+              <div>
+                {(properties?.length ?? 0) === 0 ? (
+                  /* Empty state — premium design */
+                  <Card className="border-slate-200 bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50 shadow-sm hover:shadow-md transition-shadow">
+                    <CardContent className="p-12">
+                      <div className="max-w-md mx-auto text-center">
+                        <div className="h-16 w-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                          <Building2 className="h-8 w-8 text-orange-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-900 mb-2">Ready to list your first property?</h3>
+                        <p className="text-slate-600 mb-6">
+                          {isVerified
+                            ? 'Join thousands of landlords earning with NuloAfrica. List your property in under 5 minutes.'
+                            : 'Complete your verification first, then start listing properties.'}
+                        </p>
+                        {isVerified && (
+                          <Link href="/landlord/properties/new">
+                            <Button className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg">
+                              <Plus className="mr-2 h-4 w-4" />
+                              List Your First Property
+                            </Button>
+                          </Link>
+                        )}
                       </div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-2">No properties listed yet</h3>
-                      <p className="text-slate-600 mb-6">
-                        {isVerified
-                          ? 'Add your first property to start receiving viewing requests from tenants.'
-                          : 'Complete your verification to start listing properties.'}
-                      </p>
-                      {isVerified && (
-                        <Link href="/landlord/properties/new">
-                          <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg">
-                            <Plus className="mr-2 h-4 w-4" />List Your First Property
-                          </Button>
-                        </Link>
-                      )}
-                    </div>
-                  ) : (
-                    /* Properties Grid - 6 properties, 3 columns for better detail view */
-                    <PropertyCardGrid
-                      properties={(properties ?? []).slice(0, 6)}
-                      onSelect={(property) => router.push(`/landlord/properties/${property.id}`)}
-                      onFavorite={() => {}} // No-op for landlord's own properties
-                      variant="dashboard"
-                      emptyMessage="No properties available"
-                    />
-                  )}
-                </CardContent>
-              </Card>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  /* Properties Grid - Left-aligned, responsive columns */
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {(properties ?? []).slice(0, 6).map((property: any) => {
+                      // Safe property data extraction with fallbacks
+                      const imageUrl = (property?.images?.[0] as any)?.url || property?.image_url || DEFAULT_PROPERTY_IMAGE
+                      const title = String(property?.title || 'Untitled Property')
+                      const address = String(property?.full_address || property?.address || 'Location not specified')
+                      const bedrooms = Number(property?.bedrooms) || null
+                      const bathrooms = Number(property?.bathrooms) || null
+                      const sqft = Number(property?.square_footage || property?.sqft || property?.area) || null
+                      const monthlyPrice = Number(property?.monthly_rent || property?.rent || property?.monthly_price || 0)
+                      const viewCount = Number(property?.view_count || property?.views || 0)
+                      const inquiryCount = Number(property?.inquiry_count || property?.inquiries || property?.applications?.length || 0)
+
+                      return (
+                        <div key={property?.id} className="group cursor-pointer" onClick={() => router.push(`/landlord/properties/${property?.id}`)}>
+                          <Card className="border-slate-200 bg-white overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 h-full flex flex-col">
+                            {/* Image Container with Overlay */}
+                            <div className="relative h-48 bg-slate-200 overflow-hidden">
+                              <img
+                                src={imageUrl}
+                                alt={title}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROPERTY_IMAGE }}
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                              
+                              {/* Status Badge */}
+                              <div className="absolute top-3 left-3 flex items-center gap-2">
+                                <Badge className="bg-green-500 text-white border-0 shadow-md">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Active
+                                </Badge>
+                              </div>
+                              
+                              {/* Stats Overlay (show on hover) */}
+                              <div className="absolute inset-0 flex items-end p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                <div className="flex gap-3 w-full text-white text-sm">
+                                  <div className="flex items-center gap-1 bg-white/20 backdrop-blur-sm px-2 py-1 rounded">
+                                    <Eye className="h-4 w-4" />
+                                    {viewCount}
+                                  </div>
+                                  <div className="flex items-center gap-1 bg-white/20 backdrop-blur-sm px-2 py-1 rounded">
+                                    <MessageSquare className="h-4 w-4" />
+                                    {inquiryCount}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Property Info */}
+                            <CardContent className="p-4 flex-1 flex flex-col">
+                              <h3 className="font-bold text-slate-900 mb-1 line-clamp-2 group-hover:text-orange-600 transition-colors">
+                                {title}
+                              </h3>
+                              <p className="text-sm text-slate-600 mb-3 line-clamp-1">
+                                <MapPin className="h-3 w-3 inline mr-1" />
+                                {address}
+                              </p>
+
+                              {/* Property Details */}
+                              <div className="flex gap-3 text-xs text-slate-600 mb-4">
+                                {bedrooms ? (
+                                  <span className="flex items-center gap-1">
+                                    <Bed className="h-4 w-4" />{bedrooms}
+                                  </span>
+                                ) : null}
+                                {bathrooms ? (
+                                  <span className="flex items-center gap-1">
+                                    <Bath className="h-4 w-4" />{bathrooms}
+                                  </span>
+                                ) : null}
+                                {sqft ? (
+                                  <span className="flex items-center gap-1">
+                                    <Square className="h-4 w-4" />{sqft}m²
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              {/* Price and Quick Actions */}
+                              <div className="space-y-3 mt-auto">
+                                {monthlyPrice > 0 && (
+                                  <div className="flex items-baseline justify-between">
+                                    <span className="text-xs text-slate-500 font-medium">Monthly</span>
+                                    <span className="text-lg font-bold text-orange-600">
+                                      {formatCurrency(monthlyPrice)}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-100"
+                                    onClick={(e) => { e.stopPropagation(); router.push(`/landlord/properties/${property?.id}/edit`) }}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                                    onClick={(e) => { e.stopPropagation(); router.push(`/landlord/properties/${property?.id}`) }}
+                                  >
+                                    Manage
+                                  </Button>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {(properties?.length ?? 0) > 6 && (
+                <div className="text-center mt-8">
+                  <Link href="/landlord/properties">
+                    <Button variant="ghost" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                      View all {properties?.length} properties <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+              )}
             </section>
 
             {/* Viewing Requests — sourced from /landlord viewings API, not recentActivity */}

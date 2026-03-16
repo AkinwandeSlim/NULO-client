@@ -53,27 +53,70 @@ export default function PropertyCardGrid({
     // Featured section: 6-column grid, matches marketplace
     featured: 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 mb-12',
     
-    // Dashboard: More generous spacing, 3-column on desktop
-    dashboard: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+    // Dashboard: More generous spacing, responsive based on property count
+    dashboard: 'gap-6 mb-12'
   }
 
   // Determine if using compact card mode
   const useCompactCard = variant === 'compact' || variant === 'featured'
 
+  // Dashboard-specific responsive layout: adapt grid columns based on property count
+  let dashboardGridClass = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+  if (variant === 'dashboard') {
+    if (properties.length === 1) {
+      // Single property: center it with appropriate max-width for visibly
+      dashboardGridClass = 'flex justify-center'
+    } else if (properties.length === 2) {
+      // Two properties: 2 columns centered on desktop for symmetry
+      dashboardGridClass = 'grid grid-cols-1 sm:grid-cols-2 lg:max-w-2xl lg:mx-auto'
+    } else if (properties.length === 3) {
+      // Three properties: full 3-column grid but better spacing
+      dashboardGridClass = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+    } else {
+      // 4+ properties: maintain consistent 3-column grid
+      dashboardGridClass = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+    }
+  }
+
+  const finalGridClass = variant === 'dashboard' 
+    ? `${dashboardGridClass} ${gridClasses[variant]}`
+    : gridClasses[variant]
+
   return (
-    <div className={gridClasses[variant]}>
-      {properties.map((property) => (
-        <PropertyCard
-          key={property.id}
-          property={property}
-          onSelect={onSelect}
-          onFavorite={onFavorite}
-          isFavorite={favorites.includes(property.id)}
-          compact={useCompactCard}
-          isAuthLoading={isAuthLoading}
-          isPendingFavorite={isPendingFavorites.has(property.id)}
-        />
-      ))}
+    <div className={finalGridClass}>
+      {properties.length === 1 && variant === 'dashboard' ? (
+        // Wrap single card in a container to control width
+        <div className="w-full max-w-sm">
+          {properties.map((property) => (
+            <PropertyCard
+              key={property.id}
+              property={property}
+              onSelect={onSelect}
+              onFavorite={onFavorite}
+              isFavorite={favorites.includes(property.id)}
+              compact={useCompactCard}
+              isAuthLoading={isAuthLoading}
+              isPendingFavorite={isPendingFavorites.has(property.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        // Multiple cards: render directly
+        <>
+          {properties.map((property) => (
+            <PropertyCard
+              key={property.id}
+              property={property}
+              onSelect={onSelect}
+              onFavorite={onFavorite}
+              isFavorite={favorites.includes(property.id)}
+              compact={useCompactCard}
+              isAuthLoading={isAuthLoading}
+              isPendingFavorite={isPendingFavorites.has(property.id)}
+            />
+          ))}
+        </>
+      )}
     </div>
   )
 }

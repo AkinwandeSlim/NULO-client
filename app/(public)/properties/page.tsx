@@ -15,6 +15,7 @@ import React from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/contexts/AuthContext'
+import { useDashboard } from '@/contexts/DashboardContext'
 import { useSignupCallbackUrl } from '@/hooks/useSignupCallbackUrl'
 import { toast } from 'sonner'
 import { propertiesAPI } from '@/lib/api/properties'
@@ -85,6 +86,7 @@ export default function PropertiesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, loading: authLoading } = useAuth()
+  const { invalidateTenantCache } = useDashboard()
   useSignupCallbackUrl()
 
   // State
@@ -184,11 +186,39 @@ export default function PropertiesPage() {
     }
   }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy])
 
-  const loadFavorites = useCallback(async () => {
-    if (!user || authLoading) return
+  // const loadFavorites = useCallback(async () => {
+  //   if (!user || authLoading) return
     
+  //   const now = Date.now()
+  //   if (now - lastFavoritesCheckRef.current < 2000) {
+  //     return
+  //   }
+
+  //   try {
+  //     setFavoritesLoading(true)
+  //     console.log('🤍 [FAVORITES] Loading...')
+
+  //     const data = await favoritesAPI.getAll()
+  //     const favoriteIds = data.favorites.map((fav: any) => fav.property_id)
+  //     setFavorites(favoriteIds)
+  //     lastFavoritesCheckRef.current = now
+
+  //     console.log(`✅ [FAVORITES] Loaded ${favoriteIds.length} favorites`)
+  //   } catch (err) {
+  //     console.warn('⚠️  [FAVORITES] Failed to load:', err)
+  //     setFavorites([])
+  //   } finally {
+  //     setFavoritesLoading(false)
+  //   }
+  // }, [user, authLoading])
+
+
+  const loadFavorites = useCallback(async (force = false) => {
+    if (!user || authLoading) return
+
     const now = Date.now()
-    if (now - lastFavoritesCheckRef.current < 2000) {
+    // Allow bypassing the debounce with force=true (used after mutations)
+    if (!force && now - lastFavoritesCheckRef.current < 2000) {
       return
     }
 
@@ -204,7 +234,7 @@ export default function PropertiesPage() {
       console.log(`✅ [FAVORITES] Loaded ${favoriteIds.length} favorites`)
     } catch (err) {
       console.warn('⚠️  [FAVORITES] Failed to load:', err)
-      setFavorites([])
+      // Don't wipe existing favorites on a background sync failure
     } finally {
       setFavoritesLoading(false)
     }
@@ -240,40 +270,193 @@ export default function PropertiesPage() {
     router.push('/properties', { scroll: false })
   }, [router])
 
+  // const handleFavoriteClick = useCallback(async (propertyId: string) => {
+  //   // Step 0: Check if user is logged in
+  //   if (!user) {
+  //     console.log(`🔐 [FAVORITES] User not logged in, showing modal for property: ${propertyId}`)
+  //     setPendingFavoriteId(propertyId)
+  //     setShowSaveFavoriteModal(true)
+  //     return
+  //   }
+
+  //   const isFavorite = favorites.includes(propertyId)
+  //   console.log(`📍 [FAVORITES] Toggle favorite request:`, {
+  //     propertyId,
+  //     isFavorite,
+  //     userId: user.id,
+  //     userType: user.user_type
+  //   })
+
+  //   try {
+  //     // Add to pending set for UI feedback
+  //     setPendingFavorites(prev => new Set([...prev, propertyId]))
+      
+  //     if (isFavorite) {
+  //       // ── REMOVE FAVORITE ────────────────────────────────────────────────
+  //       console.log(`🗑️ [FAVORITES] Removing favorite: ${propertyId}`)
+        
+  //       try {
+  //         const removeResponse = await favoritesAPI.remove(propertyId)
+  //         console.log(`✅ [FAVORITES] Backend confirmed removal:`, removeResponse)
+          
+  //         // Only update UI AFTER server confirms
+  //         setFavorites(prev => prev.filter(id => id !== propertyId))
+  //         toast.success('Removed from favorites')
+          
+  //         // Invalidate tenant dashboard cache so it refetches updated favorites
+  //         if (user?.user_type === 'tenant') {
+  //           invalidateTenantCache()
+  //           console.log(`🔄 [FAVORITES] Invalidated tenant dashboard cache after removal`)
+  //         }
+          
+  //         // Immediately refetch to ensure sync
+  //         await loadFavorites()
+  //       } catch (err: any) {
+  //         const errorMsg = err?.response?.data?.detail || err?.message || 'Failed to remove from favorites'
+  //         console.error(`❌ [FAVORITES] Remove failed:`, {
+  //           errorMsg,
+  //           status: err?.response?.status,
+  //           fullError: err?.response?.data
+  //         })
+  //         toast.error(errorMsg)
+  //       }
+  //     } else {
+  //       // ── ADD FAVORITE ───────────────────────────────────────────────────
+  //       console.log(`💾 [FAVORITES] Backend call - Adding favorite: ${propertyId}`)
+        
+  //       try {
+  //         const addResponse = await favoritesAPI.add(propertyId)
+  //         console.log(`✅ [FAVORITES] Backend confirmed addition:`, addResponse)
+          
+  //         // Only update UI AFTER server confirms
+  //         setFavorites(prev => [...prev, propertyId])
+  //         toast.success('Added to favorites!')
+          
+  //         // Invalidate tenant dashboard cache so it refetches updated favorites
+  //         if (user?.user_type === 'tenant') {
+  //           invalidateTenantCache()
+  //           console.log(`🔄 [FAVORITES] Invalidated tenant dashboard cache after addition`)
+  //         }
+          
+  //         // Immediately refetch to ensure sync with database
+  //         console.log(`🔄 [FAVORITES] Refetching all favorites after addition...`)
+  //         await loadFavorites()
+  //         console.log(`✅ [FAVORITES] Refetch complete`)
+  //       } catch (err: any) {
+  //         const errorMsg = err?.response?.data?.detail || err?.message || 'Failed to add to favorites'
+  //         console.error(`❌ [FAVORITES] Add failed:`, {
+  //           errorMsg,
+  //           status: err?.response?.status,
+  //           propertyId,
+  //           userId: user.id,
+  //           fullError: err?.response?.data
+  //         })
+          
+  //         // Show error to user
+  //         toast.error(errorMsg)
+          
+  //         // Debug: Log if it's an auth issue
+  //         if (err?.response?.status === 401) {
+  //           console.error(`❌ [FAVORITES] Auth error - Token may be invalid or expired`)
+  //         } else if (err?.response?.status === 403) {
+  //           console.error(`❌ [FAVORITES] Permission denied - User might not be a tenant`)
+  //         }
+  //       }
+  //     }
+  //   } catch (err) {
+  //     console.error('❌ [FAVORITES] Unexpected error:', err)
+  //     toast.error('Unexpected error updating favorites')
+  //   } finally {
+  //     // Remove from pending set
+  //     setPendingFavorites(prev => {
+  //       const next = new Set(prev)
+  //       next.delete(propertyId)
+  //       return next
+  //     })
+  //   }
+  // }, [user, favorites, loadFavorites, invalidateTenantCache])
+
+
   const handleFavoriteClick = useCallback(async (propertyId: string) => {
     if (!user) {
+      console.log(`🔐 [FAVORITES] User not logged in, showing modal for property: ${propertyId}`)
       setPendingFavoriteId(propertyId)
       setShowSaveFavoriteModal(true)
       return
     }
 
+    const isFavorite = favorites.includes(propertyId)
+    console.log(`📍 [FAVORITES] Toggle favorite:`, { propertyId, isFavorite, userId: user.id })
+
+    // ── OPTIMISTIC UPDATE: update the heart icon immediately ──────────────────
+    if (isFavorite) {
+      setFavorites(prev => prev.filter(id => id !== propertyId))
+    } else {
+      setFavorites(prev => [...prev, propertyId])
+    }
+
+    setPendingFavorites(prev => new Set([...prev, propertyId]))
+
     try {
-      // Add to pending set
-      setPendingFavorites(prev => new Set([...prev, propertyId]))
-      
-      const isFavorite = favorites.includes(propertyId)
-      
       if (isFavorite) {
+        // ── REMOVE ────────────────────────────────────────────────────────────
         await favoritesAPI.remove(propertyId)
-        setFavorites(prev => prev.filter(id => id !== propertyId))
         toast.success('Removed from favorites')
+        if (user?.user_type === 'tenant') {
+          invalidateTenantCache()
+        }
       } else {
-        await favoritesAPI.add(propertyId)
-        setFavorites(prev => [...prev, propertyId])
-        toast.success('Added to favorites')
+        // ── ADD ───────────────────────────────────────────────────────────────
+        try {
+          await favoritesAPI.add(propertyId)
+          toast.success('Added to favorites!')
+          if (user?.user_type === 'tenant') {
+            invalidateTenantCache()
+          }
+        } catch (addErr: any) {
+          // Check all possible status locations — axios uses .response.status,
+          // fetch-based clients often use .status or .statusCode directly
+          const status = addErr?.response?.status ?? addErr?.status ?? addErr?.statusCode
+          if (status === 409) {
+            // Already saved on server — optimistic heart is correct, just keep it
+            console.log(`ℹ️ [FAVORITES] Already favorited on server (409) — keeping UI state`)
+            return
+          }
+          throw addErr
+        }
       }
-    } catch (err) {
-      console.error('❌ [FAVORITES] Toggle error:', err)
-      toast.error('Failed to update favorites')
+
+      // Background re-sync after any mutation (force=true bypasses 2s debounce)
+      // loadFavorites(true)
+
+    } catch (err: any) {
+      // ── REVERT optimistic update on real errors ────────────────────────────
+      if (isFavorite) {
+        setFavorites(prev => [...prev, propertyId]) // restore removed item
+      } else {
+        setFavorites(prev => prev.filter(id => id !== propertyId)) // un-add item
+      }
+
+      const errorMsg = err?.response?.data?.detail || err?.message
+        || `Failed to ${isFavorite ? 'remove from' : 'add to'} favorites`
+
+      console.error(`❌ [FAVORITES] ${isFavorite ? 'Remove' : 'Add'} failed:`, {
+        errorMsg,
+        status: err?.response?.status,
+        propertyId,
+      })
+      toast.error(errorMsg)
     } finally {
-      // Remove from pending set
       setPendingFavorites(prev => {
         const next = new Set(prev)
         next.delete(propertyId)
         return next
       })
     }
-  }, [user, favorites])
+  }, [user, favorites, invalidateTenantCache])
+
+
+
 
   // ============================================================================
   // EFFECTS
@@ -342,9 +525,16 @@ export default function PropertiesPage() {
   }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy, currentPage])
 
   // Load favorites when user changes
-  useEffect(() => {
-    loadFavorites()
-  }, [user, loadFavorites])
+  // useEffect(() => {
+  //   loadFavorites()
+  // }, [user, loadFavorites])
+
+  // Load favorites on page arrival — force=true skips debounce so hearts show immediately
+useEffect(() => {
+  if (user && !authLoading) {
+    loadFavorites(true)
+  }
+}, [user?.id, authLoading]) // user.id (not full object) prevents spurious re-runs
 
   // ============================================================================
   // RENDER - MARKETPLACE LAYOUT

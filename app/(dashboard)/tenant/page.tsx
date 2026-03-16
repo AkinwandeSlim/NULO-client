@@ -675,107 +675,215 @@ export default function TenantDashboard() {
         <div className="grid gap-8 lg:grid-cols-4">
           <div className="lg:col-span-3 space-y-8">
 
-            {/* Saved Properties */}
+            {/* Saved Properties — Premium Airbnb/Zillow style */}
             <section>
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-900 mb-2">Saved Properties</h2>
-                  <p className="text-gray-600">Properties you've saved for later</p>
+                  <h2 className="text-3xl font-bold text-slate-900 mb-2">Saved For Later</h2>
+                  <div className="flex items-center gap-4 text-sm text-slate-600">
+                    <span className="flex items-center gap-1">
+                      <Heart className="h-4 w-4 text-red-500" />
+                      {tenantData?.favorites?.length ?? 0} saved
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span className="flex items-center gap-1">
+                      <Eye className="h-4 w-4 text-blue-500" />
+                      {tenantData?.stats?.pendingViewings ?? 0} viewings
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-4 w-4 text-green-500" />
+                      {tenantData?.stats?.applicationsSubmitted ?? 0} applied
+                    </span>
+                  </div>
                 </div>
-                <Link href="/tenant/favorites">
-                  <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
-                    View All <ArrowRight className="ml-1 h-4 w-4" />
-                  </Button>
-                </Link>
+                <div className="flex items-center gap-2">
+                  {(tenantData?.favorites?.length ?? 0) > 0 && (
+                    <Link href="/tenant/favorites">
+                      <Button variant="outline" size="sm" className="border-slate-300 hover:bg-slate-100">
+                        View All <ArrowRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    </Link>
+                  )}
+                  <Link href="/properties">
+                    <Button size="sm" className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-md">
+                      <Search className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
               </div>
-              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
-                <CardContent className="p-6">
-                  {showSkeletons ? (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      {[1, 2].map(i => <div key={i} className="h-64 rounded-2xl bg-slate-100 animate-pulse" />)}
-                    </div>
-                  ) : (tenantData?.favorites?.length ?? 0) === 0 ? (
-                    <div className="text-center py-12">
-                      <div className="h-16 w-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Heart className="h-8 w-8 text-red-600" />
+
+              <div>
+                {showSkeletons ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="h-80 rounded-2xl bg-slate-100 animate-pulse" />
+                    ))}
+                  </div>
+                ) : (tenantData?.favorites?.length ?? 0) === 0 ? (
+                  /* Empty state — premium design */
+                  <Card className="border-slate-200 bg-gradient-to-br from-slate-50 via-red-50 to-slate-50 shadow-sm hover:shadow-md transition-shadow">
+                    <CardContent className="p-12">
+                      <div className="max-w-md mx-auto text-center">
+                        <div className="h-16 w-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                          <Heart className="h-8 w-8 text-red-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-900 mb-2">Start saving your favorites</h3>
+                        <p className="text-slate-600 mb-6">
+                          Browse properties and save the ones you love. Your saved list will appear here for easy access.
+                        </p>
+                        <Link href="/properties">
+                          <Button className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg">
+                            <Search className="mr-2 h-4 w-4" />
+                            Browse Properties
+                          </Button>
+                        </Link>
                       </div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-2">No saved properties yet</h3>
-                      <p className="text-slate-600 mb-6">Start browsing and save properties you are interested in</p>
-                      <Link href="/properties">
-                        <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg">
-                          <Search className="mr-2 h-4 w-4" />Browse Properties
-                        </Button>
-                      </Link>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                        {(tenantData?.favorites ?? []).slice(0, 4).map((fav) => (
-                          <Link key={fav.id} href={`/properties/${fav.id}`}
-                            onClick={() => trackActivity("property_viewed", { property_id: fav.id })}>
-                            <div className="group relative bg-white rounded-2xl overflow-hidden border-2 border-slate-200 hover:border-orange-300 hover:shadow-xl transition-all duration-300 cursor-pointer hover:scale-[1.02]">
-                              <div className="relative h-48 overflow-hidden">
-                                <img src={fav.images?.[0] || fav.property_image || DEFAULT_PROPERTY_IMAGE}
-                                  alt={fav.title || fav.property_title || "Property"}
-                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                                <div className="absolute top-3 right-3">
-                                  <div className="bg-white/95 backdrop-blur-sm p-2 rounded-full shadow-lg">
-                                    <Heart className="h-4 w-4 text-red-500 fill-red-500" />
-                                  </div>
-                                </div>
-                                {(fav.rating ?? 0) > 0 && (
+                    </CardContent>
+                  </Card>
+                ) : (
+                  /* Properties Grid - Left-aligned, responsive columns */
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {(tenantData?.favorites ?? []).slice(0, 6).map((fav: any) => {
+                      // Safe property data extraction
+                      const imageUrl = (fav?.images?.[0] as any)?.url || fav?.property_image || fav?.images?.[0] || DEFAULT_PROPERTY_IMAGE
+                      const title = String(fav?.title || fav?.property_title || 'Untitled Property')
+                      const address = String(fav?.location || fav?.property_address || fav?.property_city || 'Location not specified')
+                      const price = Number(fav?.price || fav?.monthly_rent || 0)
+                      const bedrooms = Number(fav?.beds || fav?.bedrooms || 0) || null
+                      const bathrooms = Number(fav?.baths || fav?.bathrooms || 0) || null
+                      const sqft = Number(fav?.sqft || fav?.square_feet || fav?.square_footage) || null
+                      const rating = Number(fav?.rating || 0)
+                      const isSaved = true
+
+                      return (
+                        <Link key={fav?.id} href={`/properties/${fav?.id}`}
+                          onClick={() => trackActivity("property_viewed", { property_id: fav?.id })}>
+                          <div className="group cursor-pointer">
+                            <Card className="border-slate-200 bg-white overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 h-full flex flex-col">
+                              {/* Image Container with Overlay */}
+                              <div className="relative h-48 bg-slate-200 overflow-hidden">
+                                <img
+                                  src={imageUrl}
+                                  alt={title}
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                  onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PROPERTY_IMAGE }}
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                
+                                {/* Rating Badge */}
+                                {rating > 0 && (
                                   <div className="absolute top-3 left-3">
-                                    <div className="bg-orange-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-                                      <Star className="h-3 w-3 fill-current" />{fav.rating}
-                                    </div>
+                                    <Badge className="bg-orange-500 text-white border-0 shadow-md">
+                                      <Star className="h-3 w-3 mr-1 fill-current" />
+                                      {rating.toFixed(1)}
+                                    </Badge>
                                   </div>
                                 )}
-                              </div>
-                              <div className="p-5">
-                                <p className="text-2xl font-bold text-orange-600 mb-3">
-                                  {formatPrice(fav.price ?? 0)}<span className="text-sm font-normal text-slate-500">/mo</span>
-                                </p>
-                                <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
-                                  {fav.title || fav.property_title}
-                                </h3>
-                                <p className="text-sm text-slate-600 flex items-center mb-4">
-                                  <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
-                                  <span className="line-clamp-1">{fav.location || fav.property_address || fav.property_city}</span>
-                                </p>
-                                <div className="flex items-center gap-4 text-sm text-slate-600 pt-4 border-t border-slate-100">
-                                  <div className="flex items-center gap-1.5">
-                                    <Bed className="h-4 w-4 text-orange-500" />
-                                    <span className="font-medium">{fav.beds || fav.bedrooms || 0}</span>
+                                
+                                {/* Save/Saved Badge */}
+                                <div className="absolute top-3 right-3">
+                                  <div className="bg-white/95 backdrop-blur-sm p-2 rounded-full shadow-lg hover:scale-110 transition-transform">
+                                    <Heart className="h-5 w-5 text-red-500 fill-red-500" />
                                   </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <Bath className="h-4 w-4 text-orange-500" />
-                                    <span className="font-medium">{fav.baths || fav.bathrooms || 0}</span>
-                                  </div>
-                                  {(fav.sqft || fav.square_feet) && (
-                                    <div className="flex items-center gap-1.5">
-                                      <Square className="h-4 w-4 text-orange-500" />
-                                      <span className="font-medium">{(fav.sqft || fav.square_feet)?.toLocaleString()} sqft</span>
+                                </div>
+                                
+                                {/* Stats Overlay (show on hover) */}
+                                <div className="absolute inset-0 flex items-end p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                  <div className="flex gap-3 w-full text-white text-sm">
+                                    <div className="flex items-center gap-1 bg-white/20 backdrop-blur-sm px-2 py-1 rounded">
+                                      <Eye className="h-4 w-4" />
+                                      {fav?.view_count || 0}
                                     </div>
-                                  )}
+                                    <div className="flex items-center gap-1 bg-white/20 backdrop-blur-sm px-2 py-1 rounded">
+                                      <MessageSquare className="h-4 w-4" />
+                                      {fav?.inquiry_count || 0}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </Link>
-                        ))}
-                      </div>
-                      {(tenantData?.favorites?.length ?? 0) > 4 && (
-                        <div className="mt-4">
-                          <Link href="/tenant/favorites">
-                            <Button variant="outline" size="sm" className="w-full border-orange-300 text-orange-600 hover:bg-orange-50">
-                              View all {tenantData?.favorites?.length} saved properties <ArrowRight className="ml-1 h-4 w-4" />
-                            </Button>
-                          </Link>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
+
+                              {/* Property Info */}
+                              <CardContent className="p-4 flex-1 flex flex-col">
+                                <h3 className="font-bold text-slate-900 mb-1 line-clamp-2 group-hover:text-orange-600 transition-colors">
+                                  {title}
+                                </h3>
+                                <p className="text-sm text-slate-600 mb-3 line-clamp-1">
+                                  <MapPin className="h-3 w-3 inline mr-1" />
+                                  {address}
+                                </p>
+
+                                {/* Property Details */}
+                                <div className="flex gap-3 text-xs text-slate-600 mb-4">
+                                  {bedrooms ? (
+                                    <span className="flex items-center gap-1">
+                                      <Bed className="h-4 w-4" />{bedrooms}
+                                    </span>
+                                  ) : null}
+                                  {bathrooms ? (
+                                    <span className="flex items-center gap-1">
+                                      <Bath className="h-4 w-4" />{bathrooms}
+                                    </span>
+                                  ) : null}
+                                  {sqft ? (
+                                    <span className="flex items-center gap-1">
+                                      <Square className="h-4 w-4" />{sqft.toLocaleString()}m²
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                {/* Price and Quick Actions */}
+                                <div className="space-y-3 mt-auto">
+                                  {price > 0 && (
+                                    <div className="flex items-baseline justify-between">
+                                      <span className="text-xs text-slate-500 font-medium">Monthly</span>
+                                      <span className="text-lg font-bold text-orange-600">
+                                        {formatPrice(price)}
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div className="flex gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-100"
+                                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); router.push(`/properties/${fav?.id}`) }}
+                                    >
+                                      View
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                                      onClick={(e) => { 
+                                        e.stopPropagation()
+                                        e.preventDefault()
+                                        trackActivity("property_apply_started", { property_id: fav?.id })
+                                        router.push(`/properties/${fav?.id}?apply=true`) 
+                                      }}
+                                    >
+                                      Apply
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {(tenantData?.favorites?.length ?? 0) > 6 && (
+                <div className="text-center mt-8">
+                  <Link href="/tenant/favorites">
+                    <Button variant="ghost" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
+                      View all {tenantData?.favorites?.length} saved properties <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+              )}
             </section>
 
             {/* Viewing Requests */}

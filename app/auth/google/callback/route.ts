@@ -133,23 +133,36 @@ export async function GET(request: NextRequest) {
   }
 
   // ── Parse state parameter ──────────────────────────────────────────────────
-  // state format: "{userType}:{nonce}"  e.g. "landlord:abc123"
-  let userTypeFromState = 'tenant' // Default fallback
+  // state format: "{userType}:{nonce}"  e.g. "landlord:abc123" or "signin:abc123"
+  // CRITICAL: "signin" is NOT a user type choice - it means "use DB type for returning users"
+  let userTypeFromState: string | null = null  // null = use DB type for returning users
+  let isSigninOnlyState = false
   let nonceFromState: string | undefined
 
   if (state && state.includes(':')) {
     const [extractedType, extractedNonce] = state.split(':')
     
-    // ✅ CRITICAL: Validate extracted type against known values
-    if (['tenant', 'landlord', 'admin', 'signin'].includes(extractedType)) {
-      userTypeFromState = extractedType === 'signin' ? 'tenant' : extractedType
+    // ✅ CRITICAL: Handle "signin" specially - it's NOT a user type
+    if (extractedType === 'signin') {
+      // Signin flow: Don't impose a type, let DB decide for returning users
+      isSigninOnlyState = true
+      userTypeFromState = null
+      nonceFromState = extractedNonce
+      console.log('[GOOGLE-CB] ✅ State parsed successfully (SIGNIN FLOW)')
+      console.log('[GOOGLE-CB] Extracted type: signin (no type imposed)')
+      console.log('[GOOGLE-CB] Will use DB user type for returning users')
+      console.log('[GOOGLE-CB] Extracted nonce:', nonceFromState)
+    } else if (['tenant', 'landlord', 'admin'].includes(extractedType)) {
+      // Signup or type-switch flow: Use the specified type
+      userTypeFromState = extractedType
       nonceFromState = extractedNonce
       console.log('[GOOGLE-CB] ✅ State parsed successfully')
       console.log('[GOOGLE-CB] Extracted user type:', extractedType)
-      console.log('[GOOGLE-CB] Resolved user type:', userTypeFromState)
+      console.log('[GOOGLE-CB] User is explicitly choosing this type')
       console.log('[GOOGLE-CB] Extracted nonce:', nonceFromState)
     } else {
       console.warn('[GOOGLE-CB] ⚠️ Unknown user type in state:', extractedType)
+      // Default to tenant for unknown types
       userTypeFromState = 'tenant'
     }
   } else {
@@ -293,20 +306,29 @@ export async function GET(request: NextRequest) {
     const urlUserType = userTypeFromState
     const metaUserType = null // Could extract from metadata if needed
 
-    // ✅ Check if user explicitly chose a type during signup
-    const userChoseTypeExplicitly = urlUserType && urlUserType !== 'signin'
+    // ✅ CRITICAL FIX: For signin-only flows, don't treat null/missing userType as a choice
+    // isSigninOnlyState means state was "signin:nonce" - use DB type for returning users
+    const userChoseTypeExplicitly = (
+      !isSigninOnlyState &&  // ← KEY: For signin flows, this is false
+      urlUserType && 
+      urlUserType !== 'signin'
+    )
     const hasExistingDifferentType = existingUser?.user_type && existingUser.user_type !== urlUserType
 
-    // 5-level fallback hierarchy
-    // BUT: If user chose type explicitly AND has different existing type, prioritize their choice
+    // ✅ CORRECTED: Type switching logic
     let finalUserType: string
     
     if (userChoseTypeExplicitly && hasExistingDifferentType) {
-      // User is switching types (e.g., tenant → landlord) - honor their choice!
-      finalUserType = urlUserType
+      // User EXPLICITLY chose a different type during signup/type-switch
+      // Example: Signing up as a different type, or clicking "I'm a landlord" button
+      finalUserType = urlUserType!
       console.log('[GOOGLE-CB] 🔄 User switching types:', `${dbUserType} → ${urlUserType}`)
+    } else if (isSigninOnlyState && isSigninFlow && dbUserType) {
+      // ✅ FIX: Signin flow with "signin" state - PRESERVE existing user type
+      finalUserType = dbUserType
+      console.log('[GOOGLE-CB] 📝 Signin flow - preserving DB user type:', dbUserType)
     } else {
-      // Standard fallback hierarchy
+      // Standard fallback hierarchy (for new signups without explicit choice)
       finalUserType =
         dbUserType ||           // 1. DB (most reliable for existing users)
         cookieUserType ||       // 2. Cookie (from signup flow)
@@ -316,6 +338,8 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('[GOOGLE-CB] ✅ Complete user type resolution:')
+    console.log('[GOOGLE-CB]   Is signin-only state:', isSigninOnlyState)
+    console.log('[GOOGLE-CB]   Is signin flow:', isSigninFlow)
     console.log('[GOOGLE-CB]   DB user_type:', dbUserType || '(none)')
     console.log('[GOOGLE-CB]   Cookie user_type:', cookieUserType || '(none)')
     console.log('[GOOGLE-CB]   URL/State user_type:', urlUserType || '(none)')
@@ -323,22 +347,18 @@ export async function GET(request: NextRequest) {
     console.log('[GOOGLE-CB]   Has existing different type:', hasExistingDifferentType)
     console.log('[GOOGLE-CB]   → Final user_type:', finalUserType)
 
-    // ✅ FIX: Proper "returning user" detection for sync purposes  
-    // Use signin flow status (onboarding_completed = true) as signal
+    // ✅ FIX: Only sync for actual new signups or explicit type-switching
+    // Don't sync for returning users just signing in with their existing type
     const shouldSyncUser = isSignupFlow || (userChoseTypeExplicitly && hasExistingDifferentType)
     
     console.log('[GOOGLE-CB] User classification:')
     console.log('[GOOGLE-CB]   Is signup flow:', isSignupFlow)
     console.log('[GOOGLE-CB]   Is signin flow:', isSigninFlow)
     console.log('[GOOGLE-CB]   Should sync with backend:', shouldSyncUser)
+    console.log('[GOOGLE-CB]   Reason:', isSignupFlow ? 'new signup' : userChoseTypeExplicitly && hasExistingDifferentType ? 'type switch' : 'returning signin')
 
-    // ✅ CRITICAL FIX: For signin flows, preserve existing type UNLESS user explicitly chose different type
-    // This supports type switching: tenant user clicking "I'm a landlord" should switch to landlord
-    // But returning landlords signing in should stay as landlords (not reverted to tenant by old DB value)
-    const resolvedUserType = 
-      (isSigninFlow && dbUserType && !userChoseTypeExplicitly) 
-        ? dbUserType 
-        : finalUserType
+    // ✅ SIMPLIFIED: Use finalUserType directly (already handles all cases above)
+    const resolvedUserType = finalUserType
 
     console.log('[GOOGLE-CB] Final resolved user_type:', resolvedUserType)
 
