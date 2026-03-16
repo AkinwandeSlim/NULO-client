@@ -53,27 +53,33 @@ export const favoritesAPI = {
     }
   },
 
-  /**
-   * Add a property to favorites
+/**
+   * Add a property to favorites.
+   * Returns alreadySaved: true if the server says it's a duplicate —
+   * this is treated as SUCCESS so the heart stays red.
    */
-  add: async (propertyId: string): Promise<{ success: boolean; message: string }> => {
-    const response = await apiClient.post('/api/v1/favorites/', {
-      property_id: propertyId
-    })
-    return response.data
+  add: async (propertyId: string): Promise<{ success: boolean; message: string; alreadySaved?: boolean }> => {
+    try {
+      const response = await apiClient.post('/api/v1/favorites/', { property_id: propertyId })
+      return response.data
+    } catch (error: any) {
+      const status = error?.response?.status
+      const detail: string = error?.response?.data?.detail || error?.response?.data?.message || ''
+      
+      // Backend returns 400 or 409 with "already saved/exists" message — treat as success
+      if (status === 409 || status === 400 || detail.toLowerCase().includes('already')) {
+        console.log(`ℹ️ [FAVORITES API] Already saved on server (${status}) — returning alreadySaved`)
+        return { success: true, message: detail, alreadySaved: true }
+      }
+      throw error
+    }
   },
 
-  /**
-   * Remove a property from favorites
-   */
   remove: async (propertyId: string): Promise<{ success: boolean; message: string }> => {
     const response = await apiClient.delete(`/api/v1/favorites/${propertyId}/`)
     return response.data
   },
 
-  /**
-   * Check if a property is favorited
-   */
   check: async (propertyId: string): Promise<{ is_favorite: boolean }> => {
     const response = await apiClient.get(`/api/v1/favorites/check/${propertyId}/`)
     return response.data

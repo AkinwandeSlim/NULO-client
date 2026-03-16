@@ -186,57 +186,40 @@ export default function PropertiesPage() {
     }
   }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy])
 
-  // const loadFavorites = useCallback(async () => {
-  //   if (!user || authLoading) return
-    
-  //   const now = Date.now()
-  //   if (now - lastFavoritesCheckRef.current < 2000) {
-  //     return
-  //   }
-
-  //   try {
-  //     setFavoritesLoading(true)
-  //     console.log('🤍 [FAVORITES] Loading...')
-
-  //     const data = await favoritesAPI.getAll()
-  //     const favoriteIds = data.favorites.map((fav: any) => fav.property_id)
-  //     setFavorites(favoriteIds)
-  //     lastFavoritesCheckRef.current = now
-
-  //     console.log(`✅ [FAVORITES] Loaded ${favoriteIds.length} favorites`)
-  //   } catch (err) {
-  //     console.warn('⚠️  [FAVORITES] Failed to load:', err)
-  //     setFavorites([])
-  //   } finally {
-  //     setFavoritesLoading(false)
-  //   }
-  // }, [user, authLoading])
-
+  const loadFavoritesInFlight = useRef(false)
 
   const loadFavorites = useCallback(async (force = false) => {
     if (!user || authLoading) return
 
+    // Prevent concurrent calls overwriting optimistic state with stale server data
+    if (loadFavoritesInFlight.current) {
+      console.log('🤍 [FAVORITES] Skipping — already in flight')
+      return
+    }
+
     const now = Date.now()
-    // Allow bypassing the debounce with force=true (used after mutations)
     if (!force && now - lastFavoritesCheckRef.current < 2000) {
       return
     }
 
+    loadFavoritesInFlight.current = true
     try {
       setFavoritesLoading(true)
       console.log('🤍 [FAVORITES] Loading...')
 
       const data = await favoritesAPI.getAll()
-      const favoriteIds = data.favorites.map((fav: any) => fav.property_id)
+      // Normalize ALL ids to strings so String(property.id) comparisons always match
+      const favoriteIds = data.favorites.map((fav: any) => String(fav.property_id))
       setFavorites(favoriteIds)
       lastFavoritesCheckRef.current = now
 
-      console.log(`✅ [FAVORITES] Loaded ${favoriteIds.length} favorites`)
+      console.log(`✅ [FAVORITES] Loaded ${favoriteIds.length} favorites`, favoriteIds)
     } catch (err) {
       console.warn('⚠️  [FAVORITES] Failed to load:', err)
-      // Don't wipe existing favorites on a background sync failure
+      // Never wipe existing favorites on a failed background sync
     } finally {
       setFavoritesLoading(false)
+      loadFavoritesInFlight.current = false
     }
   }, [user, authLoading])
 
@@ -270,186 +253,58 @@ export default function PropertiesPage() {
     router.push('/properties', { scroll: false })
   }, [router])
 
-  // const handleFavoriteClick = useCallback(async (propertyId: string) => {
-  //   // Step 0: Check if user is logged in
-  //   if (!user) {
-  //     console.log(`🔐 [FAVORITES] User not logged in, showing modal for property: ${propertyId}`)
-  //     setPendingFavoriteId(propertyId)
-  //     setShowSaveFavoriteModal(true)
-  //     return
-  //   }
-
-  //   const isFavorite = favorites.includes(propertyId)
-  //   console.log(`📍 [FAVORITES] Toggle favorite request:`, {
-  //     propertyId,
-  //     isFavorite,
-  //     userId: user.id,
-  //     userType: user.user_type
-  //   })
-
-  //   try {
-  //     // Add to pending set for UI feedback
-  //     setPendingFavorites(prev => new Set([...prev, propertyId]))
-      
-  //     if (isFavorite) {
-  //       // ── REMOVE FAVORITE ────────────────────────────────────────────────
-  //       console.log(`🗑️ [FAVORITES] Removing favorite: ${propertyId}`)
-        
-  //       try {
-  //         const removeResponse = await favoritesAPI.remove(propertyId)
-  //         console.log(`✅ [FAVORITES] Backend confirmed removal:`, removeResponse)
-          
-  //         // Only update UI AFTER server confirms
-  //         setFavorites(prev => prev.filter(id => id !== propertyId))
-  //         toast.success('Removed from favorites')
-          
-  //         // Invalidate tenant dashboard cache so it refetches updated favorites
-  //         if (user?.user_type === 'tenant') {
-  //           invalidateTenantCache()
-  //           console.log(`🔄 [FAVORITES] Invalidated tenant dashboard cache after removal`)
-  //         }
-          
-  //         // Immediately refetch to ensure sync
-  //         await loadFavorites()
-  //       } catch (err: any) {
-  //         const errorMsg = err?.response?.data?.detail || err?.message || 'Failed to remove from favorites'
-  //         console.error(`❌ [FAVORITES] Remove failed:`, {
-  //           errorMsg,
-  //           status: err?.response?.status,
-  //           fullError: err?.response?.data
-  //         })
-  //         toast.error(errorMsg)
-  //       }
-  //     } else {
-  //       // ── ADD FAVORITE ───────────────────────────────────────────────────
-  //       console.log(`💾 [FAVORITES] Backend call - Adding favorite: ${propertyId}`)
-        
-  //       try {
-  //         const addResponse = await favoritesAPI.add(propertyId)
-  //         console.log(`✅ [FAVORITES] Backend confirmed addition:`, addResponse)
-          
-  //         // Only update UI AFTER server confirms
-  //         setFavorites(prev => [...prev, propertyId])
-  //         toast.success('Added to favorites!')
-          
-  //         // Invalidate tenant dashboard cache so it refetches updated favorites
-  //         if (user?.user_type === 'tenant') {
-  //           invalidateTenantCache()
-  //           console.log(`🔄 [FAVORITES] Invalidated tenant dashboard cache after addition`)
-  //         }
-          
-  //         // Immediately refetch to ensure sync with database
-  //         console.log(`🔄 [FAVORITES] Refetching all favorites after addition...`)
-  //         await loadFavorites()
-  //         console.log(`✅ [FAVORITES] Refetch complete`)
-  //       } catch (err: any) {
-  //         const errorMsg = err?.response?.data?.detail || err?.message || 'Failed to add to favorites'
-  //         console.error(`❌ [FAVORITES] Add failed:`, {
-  //           errorMsg,
-  //           status: err?.response?.status,
-  //           propertyId,
-  //           userId: user.id,
-  //           fullError: err?.response?.data
-  //         })
-          
-  //         // Show error to user
-  //         toast.error(errorMsg)
-          
-  //         // Debug: Log if it's an auth issue
-  //         if (err?.response?.status === 401) {
-  //           console.error(`❌ [FAVORITES] Auth error - Token may be invalid or expired`)
-  //         } else if (err?.response?.status === 403) {
-  //           console.error(`❌ [FAVORITES] Permission denied - User might not be a tenant`)
-  //         }
-  //       }
-  //     }
-  //   } catch (err) {
-  //     console.error('❌ [FAVORITES] Unexpected error:', err)
-  //     toast.error('Unexpected error updating favorites')
-  //   } finally {
-  //     // Remove from pending set
-  //     setPendingFavorites(prev => {
-  //       const next = new Set(prev)
-  //       next.delete(propertyId)
-  //       return next
-  //     })
-  //   }
-  // }, [user, favorites, loadFavorites, invalidateTenantCache])
-
 
   const handleFavoriteClick = useCallback(async (propertyId: string) => {
     if (!user) {
-      console.log(`🔐 [FAVORITES] User not logged in, showing modal for property: ${propertyId}`)
       setPendingFavoriteId(propertyId)
       setShowSaveFavoriteModal(true)
       return
     }
 
-    const isFavorite = favorites.includes(propertyId)
-    console.log(`📍 [FAVORITES] Toggle favorite:`, { propertyId, isFavorite, userId: user.id })
+    // Normalize to string — matches the normalized favorites state
+    const pid = String(propertyId)
+    const isFavorite = favorites.includes(pid)
+    console.log(`📍 [FAVORITES] Toggle:`, { pid, isFavorite })
 
-    // ── OPTIMISTIC UPDATE: update the heart icon immediately ──────────────────
+    // Optimistic update
     if (isFavorite) {
-      setFavorites(prev => prev.filter(id => id !== propertyId))
+      setFavorites(prev => prev.filter(id => id !== pid))
     } else {
-      setFavorites(prev => [...prev, propertyId])
+      setFavorites(prev => [...prev, pid])
     }
-
-    setPendingFavorites(prev => new Set([...prev, propertyId]))
+    setPendingFavorites(prev => new Set([...prev, pid]))
 
     try {
       if (isFavorite) {
-        // ── REMOVE ────────────────────────────────────────────────────────────
-        await favoritesAPI.remove(propertyId)
+        await favoritesAPI.remove(pid)
         toast.success('Removed from favorites')
-        if (user?.user_type === 'tenant') {
-          invalidateTenantCache()
-        }
+        if (user?.user_type === 'tenant') invalidateTenantCache()
       } else {
-        // ── ADD ───────────────────────────────────────────────────────────────
-        try {
-          await favoritesAPI.add(propertyId)
+
+        const result = await favoritesAPI.add(pid)
+        if (result.alreadySaved) {
+          // Server already had it — heart is red, still confirm to the user
+          toast.success('Saved to favorites!')
+        } else {
           toast.success('Added to favorites!')
-          if (user?.user_type === 'tenant') {
-            invalidateTenantCache()
-          }
-        } catch (addErr: any) {
-          // Check all possible status locations — axios uses .response.status,
-          // fetch-based clients often use .status or .statusCode directly
-          const status = addErr?.response?.status ?? addErr?.status ?? addErr?.statusCode
-          if (status === 409) {
-            // Already saved on server — optimistic heart is correct, just keep it
-            console.log(`ℹ️ [FAVORITES] Already favorited on server (409) — keeping UI state`)
-            return
-          }
-          throw addErr
+          if (user?.user_type === 'tenant') invalidateTenantCache()
         }
       }
-
-      // Background re-sync after any mutation (force=true bypasses 2s debounce)
-      // loadFavorites(true)
-
     } catch (err: any) {
-      // ── REVERT optimistic update on real errors ────────────────────────────
+      // Real error — revert the optimistic update
       if (isFavorite) {
-        setFavorites(prev => [...prev, propertyId]) // restore removed item
+        setFavorites(prev => [...prev, pid])
       } else {
-        setFavorites(prev => prev.filter(id => id !== propertyId)) // un-add item
+        setFavorites(prev => prev.filter(id => id !== pid))
       }
-
       const errorMsg = err?.response?.data?.detail || err?.message
         || `Failed to ${isFavorite ? 'remove from' : 'add to'} favorites`
-
-      console.error(`❌ [FAVORITES] ${isFavorite ? 'Remove' : 'Add'} failed:`, {
-        errorMsg,
-        status: err?.response?.status,
-        propertyId,
-      })
+      console.error(`❌ [FAVORITES] Failed:`, { errorMsg, status: err?.response?.status, pid })
       toast.error(errorMsg)
     } finally {
       setPendingFavorites(prev => {
         const next = new Set(prev)
-        next.delete(propertyId)
+        next.delete(pid)
         return next
       })
     }
@@ -524,17 +379,13 @@ export default function PropertiesPage() {
     fetchProperties(currentPage)
   }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy, currentPage])
 
-  // Load favorites when user changes
-  // useEffect(() => {
-  //   loadFavorites()
-  // }, [user, loadFavorites])
-
-  // Load favorites on page arrival — force=true skips debounce so hearts show immediately
-useEffect(() => {
-  if (user && !authLoading) {
-    loadFavorites(true)
-  }
-}, [user?.id, authLoading]) // user.id (not full object) prevents spurious re-runs
+  // Load favorites on page arrival and when user changes
+  // force=true bypasses the 2s debounce so hearts are red immediately on load
+  useEffect(() => {
+    if (user && !authLoading) {
+      loadFavorites(true)
+    }
+  }, [user?.id, authLoading])
 
   // ============================================================================
   // RENDER - MARKETPLACE LAYOUT
@@ -709,8 +560,8 @@ useEffect(() => {
                             }}
                             className="absolute top-2 left-2 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center shadow-md hover:bg-white transition-colors"
                           >
-                            <svg className={`w-4 h-4 ${favorites.includes(property.id) ? 'fill-red-500 text-red-500' : 'text-slate-400'}`}
-                              viewBox="0 0 20 20" fill="currentColor">
+                            <svg className={`w-4 h-4 ${favorites.includes(String(property.id)) ? 'fill-red-500 text-red-500' : 'text-slate-400 fill-none stroke-current stroke-[1.5]'}`}
+                              viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd"/>
                             </svg>
                           </button>
@@ -918,7 +769,7 @@ useEffect(() => {
                   properties={properties}
                   onSelect={(property) => router.push(`/properties/${property.id}`)}
                   onFavorite={handleFavoriteClick}
-                  favorites={favorites}
+                  favorites={favorites.map(String)}
                   variant="compact"
                   isAuthLoading={authLoading}
                   isPendingFavorites={pendingFavorites}
