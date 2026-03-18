@@ -74,7 +74,7 @@ export async function proxy(request: NextRequest) {
   try {
     const result = await supabase
       .from('users')
-      .select('user_type, email_verified, first_time_visit')
+      .select('user_type, email_verified, first_time_visit, onboarding_completed, verification_status')
       .eq('id', session.user.id)
       .single();
     
@@ -84,25 +84,39 @@ export async function proxy(request: NextRequest) {
     // Handle AbortError gracefully
     if (profileError?.message?.includes('AbortError') || profileError?.message?.includes('signal is aborted')) {
       console.log('ℹ️ [MIDDLEWARE] Database lock timeout, using auth metadata fallback');
-      // Fallback to auth metadata
+      
+      // Only use the metadata value if it is one of the three known valid types
+      const metaType = session.user.user_metadata?.user_type
+      const safeType = (['admin', 'landlord', 'tenant'] as const).includes(metaType)
+        ? (metaType as 'admin' | 'landlord' | 'tenant')
+        : null
+
+      if (!safeType) {
+        console.warn(
+          '⚠️ [MIDDLEWARE] DB timeout + unrecognised user_type in metadata.',
+          'Allowing through — client auth will handle routing.'
+        )
+        return NextResponse.next()
+      }
+
+      console.log('ℹ️ [MIDDLEWARE] DB timeout, using metadata fallback. Type:', safeType)
       profile = {
-        user_type: session.user.user_metadata?.user_type || 'tenant',
+        user_type: safeType,
         email_verified: session.user.email_confirmed_at ? true : false,
-        first_time_visit: session.user.user_metadata?.first_time_visit !== false
+        first_time_visit: session.user.user_metadata?.first_time_visit !== false,
+        onboarding_completed: session.user.user_metadata?.onboarding_completed ?? false,
+        verification_status: session.user.user_metadata?.verification_status ?? 'pending',
       };
     }
   } catch (err: any) {
-    console.warn('⚠️ [MIDDLEWARE] Profile query failed:', err);
-    // Fallback to auth metadata
-    profile = {
-      user_type: session.user.user_metadata?.user_type || 'tenant',
-      email_verified: session.user.email_confirmed_at ? true : false,
-      first_time_visit: session.user.user_metadata?.first_time_visit !== false
-    };
+    console.warn('⚠️ [MIDDLEWARE] Profile query exception:', err.message);
+    // Same safe approach — allow through on exception rather than
+    // misidentifying a user or triggering a redirect loop
+    return NextResponse.next()
   }
 
-  if (!profile) {
-    console.log('❌ No profile found')
+  if (!profile || !profile.user_type) {
+    console.log('❌ No profile or user_type found')
     const url = request.nextUrl.clone()
     url.pathname = '/signin'
     return NextResponse.redirect(url)
@@ -145,28 +159,6 @@ export async function proxy(request: NextRequest) {
   // LANDLORD ROUTING
   // ========================================
   if (profile.user_type === 'landlord') {
-    // Get landlord profile for onboarding status
-    let landlordProfile = null
-    
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('onboarding_completed, verification_status, email_verified')
-        .eq('id', session.user.id)
-        .single()
-      
-      if (error) {
-        console.warn('⚠️ [MIDDLEWARE] Landlord profile query failed:', error.message)
-        // Fallback: assume incomplete if can't fetch
-        landlordProfile = { onboarding_completed: false }
-      } else {
-        landlordProfile = data
-      }
-    } catch (err: any) {
-      console.warn('⚠️ [MIDDLEWARE] Landlord profile exception:', err.message)
-      landlordProfile = { onboarding_completed: false }
-    }
-
     // ✅ Allow access to onboarding routes when authenticated
     if (pathname.startsWith('/onboarding/landlord')) {
       console.log('✅ Landlord onboarding route - allowing access')
@@ -174,18 +166,18 @@ export async function proxy(request: NextRequest) {
     }
 
     console.log('🏠 Landlord Status:', {
-      onboarding_completed: landlordProfile?.onboarding_completed,
-      verification_status: landlordProfile?.verification_status,
+      onboarding_completed: profile?.onboarding_completed,
+      verification_status: profile?.verification_status,
     })
 
     // ✅ RETURNING LANDLORD (completed onboarding) → Allow dashboard access
-    if (landlordProfile?.onboarding_completed === true) {
+    if (profile?.onboarding_completed === true) {
       console.log('✅ Landlord onboarding complete - allow dashboard access')
       return NextResponse.next()
     }
 
     // ❌ NEW LANDLORD (incomplete onboarding) → Force to onboarding
-    if (landlordProfile?.onboarding_completed === false) {
+    if (profile?.onboarding_completed === false) {
       if (!pathname.startsWith('/onboarding/landlord')) {
         console.log('🔀 Landlord incomplete onboarding → redirect to step-1')
         const url = request.nextUrl.clone()

@@ -262,10 +262,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Main auth state
   const [user, setUser] = useState<User | null>(null);
-  const [userProfile, setProfile] = useState<UserProfile>(null);
+  const [userProfile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [authInitialized, setAuthInitialized] = useState(false);
-  
+    
   // Performance: Token cache
   const tokenCache = useRef({
     accessToken: null as string | null,
@@ -295,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (mounted) {
             setUser(cachedData.user)
             setProfile(cachedData.profile)
-            // Don't mark as loaded yet - we'll validate in background
+            console.log('✅ [AUTH] Using cached user data')
           }
         }
 
@@ -361,18 +361,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(quickUser)
           setLoading(false)
           setAuthInitialized(true)
+          console.log('✅ [AUTH] Initial user set from session')
           
           // 🚀 PHASE 5: Fetch fresh data in background (non-blocking)
-          console.log('🔄 [AUTH] Fetching fresh user data in background...')
-          
           Promise.all([
             fetchUserFresh(session.user.id),
             fetchProfileFresh(session.user.id, quickUser.user_type)
           ]).then(([freshUser, freshProfile]) => {
             if (mounted) {
               if (freshUser) {
-                console.log('✅ [AUTH] Updated user with fresh data')
-                setUser(freshUser)
+                console.log(' [AUTH] Updated user with fresh data')
+                console.log(' [AUTH] Fresh data check:', {
+                  fresh_user_type: freshUser.user_type,
+                  fresh_verification: freshUser.verification_status,
+                  current_user_type: quickUser.user_type,
+                  current_verification: quickUser.verification_status
+                })
+                
+                // CRITICAL FIX: Don't overwrite correct session data with wrong database data
+                // Only update if database data is valid and different
+                if (freshUser.user_type && freshUser.user_type !== quickUser.user_type) {
+                  console.warn(' [AUTH] Database user_type differs from session - using session data')
+                  // Keep session user_type, but update other fields
+                  const correctedUser = {
+                    ...freshUser,
+                    user_type: quickUser.user_type, // Preserve session user_type
+                    verification_status: quickUser.verification_status // Preserve session verification
+                  };
+                  setUser(correctedUser)
+                  console.log('✅ [AUTH] Session data preserved over database')
+                } else {
+                  setUser(freshUser)
+                  console.log('✅ [AUTH] Database data matches session')
+                }
+                
                 // Cache the fresh data
                 cacheManager.saveUserCache({
                   user: freshUser,
@@ -386,12 +408,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 })
               }
               if (freshProfile) {
-                console.log('✅ [AUTH] Updated profile with fresh data')
+                console.log(' [AUTH] Updated profile with fresh data')
                 setProfile(freshProfile)
               }
             }
           }).catch(err => {
-            console.warn('⚠️ [AUTH] Background refresh failed:', err.message)
+            console.warn(' [AUTH] Background refresh failed:', err.message)
             // Keep using session data if background fetch fails
           })
         }
@@ -570,7 +592,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setProfile(null);
         cacheManager.clearCache();
-        router.push('/');
+                router.push('/');
       }
     } catch (error: any) {
       console.error('❌ [AUTH] Sign out error:', error);
@@ -1265,7 +1287,7 @@ const value: AuthContextType = {
   setProfile,
   loading,
   authInitialized, // ✅ NEW: Pass initialized flag
-  signUpAdmin,
+    signUpAdmin,
   signUpTenant,
   signUpLandlord,
   signUpTenantWithGoogle,

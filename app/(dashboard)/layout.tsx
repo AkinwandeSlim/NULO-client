@@ -219,9 +219,13 @@ export default function DashboardLayout({
   
   // Get sidebar sections based on user type
   const getSidebarSections = () => {
-    if (userType === 'admin') {
+    if (!user?.user_type) {
+      return [] // Return empty sections until user type is available
+    }
+    
+    if (user.user_type === 'admin') {
       return adminSidebarSections
-    } else if (userType === 'landlord') {
+    } else if (user.user_type === 'landlord') {
       return landlordSidebarSections
     } else {
       return tenantSidebarSections
@@ -286,8 +290,8 @@ export default function DashboardLayout({
   // Don't render if not authenticated
   if (!user) return null
 
-  // FIXED: Use user for user_type
-  const userType = user?.user_type || 'tenant'
+  // FIXED: Use user for user_type directly
+  const userType = user?.user_type
 
 
 
@@ -344,9 +348,11 @@ export default function DashboardLayout({
 
             {/* Dashboard Section Header */}
             <div className="mb-4">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2">
-                {userType === 'admin' ? 'Admin Control Panel' : userType === 'landlord' ? 'Property Management' : 'Rental Journey'}
-              </p>
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2">
+                {userType === 'admin' ? 'Admin Control Panel' : 
+                 userType === 'landlord' ? 'Property Management' : 
+                 'Rental Journey'}
+              </div>
             </div>
 
             {/* Navigation Links with Sections */}
@@ -435,7 +441,6 @@ export default function DashboardLayout({
                   </Button>
                 </Link>
               )}
-              
               
               {/* Add Property - Only for landlords */}
               {userType === 'landlord' && (
