@@ -84,6 +84,22 @@ export function Navbar() {
     return 'U'
   }, [user?.full_name, user?.email])
   
+  // ✅ FIXED: Stable avatar logic - always use initials as primary, avatar as fallback
+  const getAvatarDisplay = useMemo(() => {
+    // Always use initials as the primary display
+    const initials = userInitials
+    
+    // Only use avatar URL if it exists and is valid
+    const hasValidAvatar = user?.avatar_url && 
+      (user?.avatar_url.startsWith('http') || user?.avatar_url.startsWith('/'))
+    
+    return {
+      initials,
+      showAvatar: hasValidAvatar,
+      avatarUrl: hasValidAvatar ? user?.avatar_url : null
+    }
+  }, [userInitials, user?.avatar_url])
+  
   // ✅ OPTIMIZED: Get dashboard URL
   const dashboardUrl = useMemo(() => {
     if (userType === 'admin') return '/admin'
@@ -198,31 +214,36 @@ export function Navbar() {
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/landlord/properties', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <Building2 className="h-4 w-4" />Properties
+                        <Building2 className="h-4 w-4" />
+                        Properties
                       </Link>
                       <Link href="/landlord/viewings"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/landlord/viewings', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <Calendar className="h-4 w-4" />Viewings
+                        <Calendar className="h-4 w-4" />
+                        Viewings
                       </Link>
                       <Link href="/landlord/applications"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/landlord/applications', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <User className="h-4 w-4" />Applications
+                        <User className="h-4 w-4" />
+                        Applications
                       </Link>
                       <Link href="/landlord/messages"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/landlord/messages', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <MessageSquare className="h-4 w-4" />Messages
+                        <MessageSquare className="h-4 w-4" />
+                        Messages
                       </Link>
                       <Link href="/landlord/profile"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('profile') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <User className="h-4 w-4" />Profile
+                        <User className="h-4 w-4" />
+                        Profile
                       </Link>
                     </>
                   )}
@@ -233,31 +254,36 @@ export function Navbar() {
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/properties', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <Search className="h-4 w-4" />Browse
+                        <Search className="h-4 w-4" />
+                        Browse
                       </Link>
                       <Link href="/tenant/viewings"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/tenant/viewings', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <Calendar className="h-4 w-4" />Viewings
+                        <Calendar className="h-4 w-4" />
+                        Viewings
                       </Link>
                       <Link href="/tenant/applications"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/tenant/applications', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <User className="h-4 w-4" />Applications
+                        <User className="h-4 w-4" />
+                        Applications
                       </Link>
                       <Link href="/messages"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/messages', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <MessageSquare className="h-4 w-4" />Messages
+                        <MessageSquare className="h-4 w-4" />
+                        Messages
                       </Link>
                       <Link href="/tenant/profile"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('profile') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <User className="h-4 w-4" />Profile
+                        <User className="h-4 w-4" />
+                        Profile
                       </Link>
                     </>
                   )}
@@ -268,19 +294,22 @@ export function Navbar() {
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/admin/users', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <User className="h-4 w-4" />Users
+                        <User className="h-4 w-4" />
+                        Users
                       </Link>
                       <Link href="/admin/properties"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/admin/properties', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <Building2 className="h-4 w-4" />Properties
+                        <Building2 className="h-4 w-4" />
+                        Properties
                       </Link>
                       <Link href="/admin/profile"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('profile') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
                         }`}>
-                        <User className="h-4 w-4" />Profile
+                        <User className="h-4 w-4" />
+                        Profile
                       </Link>
                     </>
                   )}
@@ -387,14 +416,20 @@ export function Navbar() {
                   <DropdownMenuTrigger asChild>
                     <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
                       <Avatar className="h-8 w-8 border-2 border-slate-200">
-                        {user?.avatar_url ? (
-                          <AvatarImage src={user?.avatar_url} />
-                        ) : (
-                          <AvatarFallback className="bg-orange-500 text-white text-xs font-semibold">
-                            {user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase() || 
-                             user?.email?.split('@')[0]?.toUpperCase() || 'U'}
-                          </AvatarFallback>
-                        )}
+                        {getAvatarDisplay.showAvatar && getAvatarDisplay.avatarUrl ? (
+                          <AvatarImage 
+                            src={getAvatarDisplay.avatarUrl} 
+                            alt="Profile"
+                            onError={(e) => {
+                              // Fallback to initials if avatar fails to load
+                              const target = e.target as HTMLImageElement
+                              target.style.display = 'none'
+                            }}
+                          />
+                        ) : null}
+                        <AvatarFallback className="bg-orange-500 text-white text-xs font-semibold">
+                          {getAvatarDisplay.initials}
+                        </AvatarFallback>
                       </Avatar>
                       <div className="hidden lg:block text-left">
                         <p className="text-sm font-medium text-slate-900">
@@ -602,9 +637,19 @@ export function Navbar() {
                 <>
                   <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
                     <Avatar className="h-10 w-10 border-2 border-slate-200">
-                      <AvatarImage src={user?.avatar_url || undefined} />
+                      {getAvatarDisplay.showAvatar && getAvatarDisplay.avatarUrl ? (
+                        <AvatarImage 
+                          src={getAvatarDisplay.avatarUrl} 
+                          alt="Profile"
+                          onError={(e) => {
+                            // Fallback to initials if avatar fails to load
+                            const target = e.target as HTMLImageElement
+                            target.style.display = 'none'
+                          }}
+                        />
+                      ) : null}
                       <AvatarFallback className="bg-orange-500 text-white text-sm font-semibold">
-                        {userInitials}
+                        {getAvatarDisplay.initials}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
