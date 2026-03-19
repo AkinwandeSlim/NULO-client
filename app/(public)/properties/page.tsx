@@ -91,7 +91,10 @@ export default function PropertiesPage() {
 
   // State
   const [viewMode, setViewMode] = useState<ViewMode>('split')
-  const [searchQuery, setSearchQuery] = useState('')
+  // ✅ Lazy-initialize from URL params so the very first fetch is already correct.
+  // Without this, state defaults to '' / 'featured' / etc., causing a wrong
+  // unfiltered fetch before the URL-params effect can set the real values.
+  const [searchQuery, setSearchQuery] = useState(() => searchParams?.get('location') || '')
   const [properties, setProperties] = useState<any[]>([])
   const [selectedProperty, setSelectedProperty] = useState<any | null>(null)
   const [pagination, setPagination] = useState<any>(null)
@@ -100,12 +103,16 @@ export default function PropertiesPage() {
   const [error, setError] = useState<string | null>(null)
   const [renderState, setRenderState] = useState<'loading' | 'error' | 'empty' | 'loaded'>('loading')
 
-  // Filters
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])
-  const [selectedType, setSelectedType] = useState('all')
-  const [minBeds, setMinBeds] = useState(0)
-  const [minBaths, setMinBaths] = useState(0)
-  const [sortBy, setSortBy] = useState('featured')
+  // Filters — also lazy-initialized from URL params for the same reason
+  const [priceRange, setPriceRange] = useState<[number, number]>(() => {
+    const min = searchParams?.get('min_price')
+    const max = searchParams?.get('max_price')
+    return [min ? parseInt(min) : 0, max ? parseInt(max) : 10000000]
+  })
+  const [selectedType, setSelectedType] = useState(() => searchParams?.get('type') || 'all')
+  const [minBeds, setMinBeds] = useState(() => { const b = searchParams?.get('beds'); return b ? parseInt(b) : 0 })
+  const [minBaths, setMinBaths] = useState(() => { const b = searchParams?.get('baths'); return b ? parseInt(b) : 0 })
+  const [sortBy, setSortBy] = useState(() => searchParams?.get('sort') || 'featured')
 
   // Modals
   const [showFilterModal, setShowFilterModal] = useState(false)
@@ -120,6 +127,10 @@ export default function PropertiesPage() {
 
   // Refs
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // Tracks whether the URL-params effect is running for the first time.
+  // On first render, lazy useState already applied the URL params — we skip
+  // the effect to avoid a redundant state-set → re-render → double-fetch.
+  const isFirstUrlParamRender = useRef(true)
 
   // ============================================================================
   // API FUNCTIONS
@@ -337,8 +348,15 @@ export default function PropertiesPage() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Initialize from URL params
+  // Sync URL params → filter state when the URL changes (e.g. browser back/forward).
+  // We skip the very first run because lazy useState already seeded the correct
+  // values from searchParams — running again would trigger a second fetch for free.
   useEffect(() => {
+    if (isFirstUrlParamRender.current) {
+      isFirstUrlParamRender.current = false
+      return
+    }
+
     const location = searchParams?.get('location')
     const type = searchParams?.get('type')
     const beds = searchParams?.get('beds')
