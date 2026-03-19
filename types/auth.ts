@@ -142,6 +142,7 @@ export interface AuthContextType {
   setProfile: (profile: UserProfile) => void;
   loading: boolean;
   authInitialized: boolean; // ✅ NEW: True after first auth check completes
+  userTypeConfirmed: boolean; // True after DB has confirmed user type
     signUpAdmin: (fullName: string, email: string, password: string, adminCode: string) => Promise<any>;
   signUpTenant: (firstName: string, lastName: string, email: string, password: string) => Promise<any>;
   signUpLandlord: (firstName: string, lastName: string, email: string, password: string) => Promise<any>;
@@ -157,5 +158,6 @@ export interface AuthContextType {
   updateEmailVerification: () => Promise<void>;
   updatePhoneVerification: (phoneNumber: string) => Promise<void>;
   completeOnboarding: () => Promise<void>;
+  refreshUserData: () => Promise<void>;
 
 }

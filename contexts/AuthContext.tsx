@@ -265,6 +265,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [authInitialized, setAuthInitialized] = useState(false);
+  const [userTypeConfirmed, setUserTypeConfirmed] = useState(false);
     
   // Performance: Token cache
   const tokenCache = useRef({
@@ -332,6 +333,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // 🚀 PHASE 4: Build quick user from session metadata
         // Note: trust_score defaults to 50 in database schema (CHECK 0-100)
+        // Prefer cache (written from DB data) over stale JWT for role fields
+        const existingCache = cacheManager.getUserCache()?.user
         const quickUser: User = {
           id: session.user.id,
           email: session.user.email || '',
@@ -341,16 +344,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phone_number: session.user.user_metadata?.phone_number || null,
           password_hash: null,
           avatar_url: session.user.user_metadata?.avatar_url || null,
-          trust_score: session.user.user_metadata?.trust_score || 50, // DB default from schema
-          verification_status: 'pending',
-          user_type: (session.user.user_metadata?.user_type || 'tenant') as 'admin' | 'landlord' | 'tenant',
+          trust_score: existingCache?.trust_score || session.user.user_metadata?.trust_score || 50,
+          verification_status: (existingCache?.verification_status || session.user.user_metadata?.verification_status || 'pending') as User['verification_status'],
+          user_type: (existingCache?.user_type || session.user.user_metadata?.user_type || 'tenant') as 'admin' | 'landlord' | 'tenant',
           last_login_at: new Date().toISOString(),
           created_at: session.user.created_at,
           updated_at: new Date().toISOString(),
           deleted_at: null,
           phone_verified: false,
           location: null,
-          onboarding_completed: session.user.user_metadata?.onboarding_completed || false,
+          onboarding_completed: existingCache?.onboarding_completed ?? session.user.user_metadata?.onboarding_completed ?? false,
           email_verified: session.user.email_confirmed_at ? true : false,
           onboarding_step: session.user.user_metadata?.onboarding_step || 1,
           auth_provider: session.user.user_metadata?.auth_provider || 'email',
@@ -363,11 +366,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAuthInitialized(true)
           console.log('✅ [AUTH] Initial user set from session')
           
-          // 🚀 PHASE 5: Fetch fresh data in background (non-blocking)
+          // PHASE 5: Fetch fresh data in background (non-blocking)
           Promise.all([
             fetchUserFresh(session.user.id),
             fetchProfileFresh(session.user.id, quickUser.user_type)
-          ]).then(([freshUser, freshProfile]) => {
+          ]).then(async ([freshUser, freshProfile]) => {
             if (mounted) {
               if (freshUser) {
                 console.log(' [AUTH] Updated user with fresh data')
@@ -378,38 +381,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   current_verification: quickUser.verification_status
                 })
                 
-                // CRITICAL FIX: Don't overwrite correct session data with wrong database data
-                // Only update if database data is valid and different
-                if (freshUser.user_type && freshUser.user_type !== quickUser.user_type) {
-                  console.warn(' [AUTH] Database user_type differs from session - using session data')
-                  // Keep session user_type, but update other fields
-                  const correctedUser = {
-                    ...freshUser,
-                    user_type: quickUser.user_type, // Preserve session user_type
-                    verification_status: quickUser.verification_status // Preserve session verification
-                  };
-                  setUser(correctedUser)
-                  console.log('✅ [AUTH] Session data preserved over database')
-                } else {
-                  setUser(freshUser)
-                  console.log('✅ [AUTH] Database data matches session')
+                // DB is always source of truth — user_type and verification_status 
+                // have CHECK constraints so DB values are guaranteed valid.
+                // JWT may be stale because auth metadata sync fails with 403.
+                if (freshUser.user_type !== quickUser.user_type) {
+                  console.log('[AUTH] JWT user_type differs from DB — trusting DB:', {
+                    jwt: quickUser.user_type,
+                    db: freshUser.user_type,
+                  })
                 }
-                
-                // Cache the fresh data
+
+                const resolvedUser: User = {
+                  ...freshUser,
+                  // Only override with session for OAuth identity fields DB may not have:
+                  avatar_url:  freshUser.avatar_url  || quickUser.avatar_url,
+                  full_name:   freshUser.full_name   || quickUser.full_name,
+                  first_name:  freshUser.first_name  || quickUser.first_name,
+                  last_name:   freshUser.last_name   || quickUser.last_name,
+                  email:       freshUser.email       || quickUser.email,
+                }
+
+                // Re-fetch profile with correct type if user_type changed
+                // (e.g. was fetching tenant_profiles but user is now landlord)
+                const resolvedProfile = (freshUser.user_type !== quickUser.user_type)
+                  ? await fetchProfileFresh(session.user.id, freshUser.user_type)
+                  : freshProfile
+
+                setUser(resolvedUser)
+                if (resolvedProfile) setProfile(resolvedProfile)
+                setUserTypeConfirmed(true) // DB has confirmed user type
+
                 cacheManager.saveUserCache({
-                  user: freshUser,
-                  profile: freshProfile,
+                  user: resolvedUser,
+                  profile: resolvedProfile ?? freshProfile,
                   tokens: {
                     accessToken: tokenCache.current.accessToken!,
                     refreshToken: tokenCache.current.refreshToken!,
-                    expiresAt: tokenCache.current.expiresAt!
+                    expiresAt: tokenCache.current.expiresAt!,
                   },
-                  expiresIn: CACHE_TTL
+                  expiresIn: CACHE_TTL,
                 })
-              }
-              if (freshProfile) {
-                console.log(' [AUTH] Updated profile with fresh data')
-                setProfile(freshProfile)
               }
             }
           }).catch(err => {
@@ -419,7 +430,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
       } catch (error: any) {
-        console.error('❌ [AUTH] Init error:', error)
+        console.error(' [AUTH] Init error:', error)
         if (mounted) {
           setLoading(false)
           setAuthInitialized(true)
@@ -1279,6 +1290,41 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
     if (updatedUser) setUser(updatedUser);
   };
 
+  // ─── Force refresh user data (useful after admin actions) ─────────────────────
+  const refreshUserData = useCallback(async () => {
+    if (!user?.id) return;
+    
+    console.log('🔄 [AUTH] Force refreshing user data...');
+    
+    try {
+      const freshUser = await fetchUserFresh(user.id);
+      const freshProfile = await fetchProfileFresh(user.id, user.user_type);
+      
+      if (freshUser) {
+        console.log('✅ [AUTH] User data refreshed successfully');
+        setUser(freshUser);
+        
+        // Update cache with fresh data
+        cacheManager.saveUserCache({
+          user: freshUser,
+          profile: freshProfile,
+          tokens: {
+            accessToken: tokenCache.current.accessToken!,
+            refreshToken: tokenCache.current.refreshToken!,
+            expiresAt: tokenCache.current.expiresAt!
+          },
+          expiresIn: CACHE_TTL
+        });
+      }
+      
+      if (freshProfile) {
+        console.log('✅ [AUTH] Profile data refreshed successfully');
+        setProfile(freshProfile);
+      }
+    } catch (error) {
+      console.error('❌ [AUTH] Failed to refresh user data:', error);
+    }
+  }, [user?.id, user?.user_type]);
 
 const value: AuthContextType = {
   user,
@@ -1287,7 +1333,8 @@ const value: AuthContextType = {
   setProfile,
   loading,
   authInitialized, // ✅ NEW: Pass initialized flag
-    signUpAdmin,
+  userTypeConfirmed,
+  signUpAdmin,
   signUpTenant,
   signUpLandlord,
   signUpTenantWithGoogle,
@@ -1302,6 +1349,7 @@ const value: AuthContextType = {
   updateEmailVerification: wrappedUpdateEmailVerification,
   updatePhoneVerification: wrappedUpdatePhoneVerification,
   completeOnboarding: wrappedCompleteOnboarding,
+  refreshUserData,
 };
 
 return (
