@@ -34,6 +34,9 @@ interface ViewingCardProps {
   updatingId: string | null
   onApprove: (id: string) => void
   onReject: (id: string) => void
+  onReapprove: (id: string) => void
+  onMoveToPending: (id: string) => void
+  onComplete: (id: string) => void
 }
 
 function getStatusBadgeStyle(status: string) {
@@ -90,7 +93,7 @@ function formatViewingType(type: string) {
   return types[type] ?? type
 }
 
-function ViewingRequestCard({ request, updatingId, onApprove, onReject }: ViewingCardProps) {
+function ViewingRequestCard({ request, updatingId, onApprove, onReject, onReapprove, onMoveToPending, onComplete }: ViewingCardProps) {
   const property = request.property
   const tenant = request.tenant
   const isFuture = new Date(request.preferred_date) >= new Date()
@@ -263,16 +266,67 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject }: Viewin
                 </>
               )}
 
-              {request.status === 'confirmed' && isFuture && (
+              {request.status === 'cancelled' && (
                 <Button
-                  variant="outline"
                   size="sm"
-                  className="border-blue-300 text-blue-600 hover:bg-blue-50"
-                  onClick={() => toast.info('Messaging feature coming soon!')}
+                  variant="outline"
+                  className="border-green-300 text-green-600 hover:bg-green-50"
+                  onClick={() => onReapprove(request.id)}
+                  disabled={updatingId === request.id}
                 >
-                  <MessageSquare className="mr-2 h-4 w-4" />
-                  Message Tenant
+                  {updatingId === request.id ? (
+                    <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin mr-2" />
+                  ) : (
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                  )}
+                  Re-approve
                 </Button>
+              )}
+
+              {request.status === 'confirmed' && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-orange-300 text-orange-600 hover:bg-orange-50"
+                    onClick={() => onMoveToPending(request.id)}
+                    disabled={updatingId === request.id}
+                  >
+                    {updatingId === request.id ? (
+                      <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin mr-2" />
+                    ) : (
+                      <AlertCircle className="mr-2 h-4 w-4" />
+                    )}
+                    Move to Pending
+                  </Button>
+                  {!isFuture && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                      onClick={() => onComplete(request.id)}
+                      disabled={updatingId === request.id}
+                    >
+                      {updatingId === request.id ? (
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-2" />
+                      ) : (
+                        <CheckCircle className="mr-2 h-4 w-4" />
+                      )}
+                      Mark as Completed
+                    </Button>
+                  )}
+                  {isFuture && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                      onClick={() => toast.info('Messaging feature coming soon!')}
+                    >
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      Message Tenant
+                    </Button>
+                  )}
+                </>
               )}
 
               {request.status === 'confirmed' && (
@@ -325,7 +379,7 @@ export default function LandlordViewingsPage() {
 
   const handleUpdateStatus = async (
     requestId: string,
-    newStatus: 'confirmed' | 'cancelled',
+    newStatus: 'confirmed' | 'cancelled' | 'pending' | 'completed',
     notes?: string
   ) => {
     try {
@@ -337,8 +391,12 @@ export default function LandlordViewingsPage() {
       if (newStatus === 'confirmed') {
         try { await viewingRequestsAPI.sendSms(requestId, 'confirmation') } catch {}
         toast.success('Viewing confirmed — tenant has been notified!')
-      } else {
+      } else if (newStatus === 'cancelled') {
         toast.success('Viewing request declined')
+      } else if (newStatus === 'pending') {
+        toast.success('Viewing request moved back to pending')
+      } else if (newStatus === 'completed') {
+        toast.success('Viewing marked as completed')
       }
     } catch (error: any) {
       console.error('Failed to update request:', error)
@@ -352,6 +410,15 @@ export default function LandlordViewingsPage() {
     handleUpdateStatus(id, 'confirmed', 'Your viewing request has been approved.')
   const handleReject = (id: string) =>
     handleUpdateStatus(id, 'cancelled', 'Unfortunately, this time slot is not available.')
+
+  const handleReapprove = (id: string) =>
+    handleUpdateStatus(id, 'confirmed', 'Re-approving your viewing request.')
+
+  const handleMoveToPending = (id: string) =>
+    handleUpdateStatus(id, 'pending', 'Moving this request back to pending status.')
+
+  const handleComplete = (id: string) =>
+    handleUpdateStatus(id, 'completed', 'Viewing has been completed successfully.')
 
   const filteredRequests = viewingRequests.filter(r => {
     const matchesSearch =
@@ -473,8 +540,9 @@ export default function LandlordViewingsPage() {
 
       {/* Search & filter */}
       {viewingRequests.length > 0 && (
-        <div className="flex flex-col md:flex-row gap-4 mb-8">
-          <div className="flex-1 relative">
+        <div className="mb-8">
+          {/* Search bar */}
+          <div className="flex-1 relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
@@ -484,19 +552,53 @@ export default function LandlordViewingsPage() {
               className="w-full pl-10 pr-4 py-3 border-2 border-slate-200 rounded-xl focus:border-orange-500 focus:outline-none bg-white"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-slate-600" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-orange-500 focus:outline-none bg-white"
+
+          {/* Quick filter buttons */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            <Button
+              size="sm"
+              variant={statusFilter === 'all' ? 'default' : 'outline'}
+              className={statusFilter === 'all' ? 'bg-orange-600 hover:bg-orange-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}
+              onClick={() => setStatusFilter('all')}
             >
-              <option value="all">All</option>
-              <option value="pending">Needs Review</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
+              All ({viewingRequests.length})
+            </Button>
+            <Button
+              size="sm"
+              variant={statusFilter === 'pending' ? 'default' : 'outline'}
+              className={statusFilter === 'pending' ? 'bg-orange-600 hover:bg-orange-700' : 'border-orange-300 text-orange-700 hover:bg-orange-50'}
+              onClick={() => setStatusFilter('pending')}
+            >
+              <AlertCircle className="mr-1 h-3 w-3" />
+              Pending ({viewingRequests.filter(r => r.status === 'pending').length})
+            </Button>
+            <Button
+              size="sm"
+              variant={statusFilter === 'confirmed' ? 'default' : 'outline'}
+              className={statusFilter === 'confirmed' ? 'bg-green-600 hover:bg-green-700' : 'border-green-300 text-green-700 hover:bg-green-50'}
+              onClick={() => setStatusFilter('confirmed')}
+            >
+              <CheckCircle className="mr-1 h-3 w-3" />
+              Confirmed ({viewingRequests.filter(r => r.status === 'confirmed').length})
+            </Button>
+            <Button
+              size="sm"
+              variant={statusFilter === 'cancelled' ? 'default' : 'outline'}
+              className={statusFilter === 'cancelled' ? 'bg-slate-600 hover:bg-slate-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}
+              onClick={() => setStatusFilter('cancelled')}
+            >
+              <XCircle className="mr-1 h-3 w-3" />
+              Cancelled ({viewingRequests.filter(r => r.status === 'cancelled').length})
+            </Button>
+            <Button
+              size="sm"
+              variant={statusFilter === 'completed' ? 'default' : 'outline'}
+              className={statusFilter === 'completed' ? 'bg-blue-600 hover:bg-blue-700' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}
+              onClick={() => setStatusFilter('completed')}
+            >
+              <CheckCircle className="mr-1 h-3 w-3" />
+              Completed ({viewingRequests.filter(r => r.status === 'completed').length})
+            </Button>
           </div>
         </div>
       )}
@@ -560,6 +662,9 @@ export default function LandlordViewingsPage() {
                             updatingId={updatingId}
                             onApprove={handleApprove}
                             onReject={handleReject}
+                            onReapprove={handleReapprove}
+                            onMoveToPending={handleMoveToPending}
+                            onComplete={handleComplete}
                           />
                         ))}
                       </div>
@@ -580,6 +685,9 @@ export default function LandlordViewingsPage() {
                             updatingId={updatingId}
                             onApprove={handleApprove}
                             onReject={handleReject}
+                            onReapprove={handleReapprove}
+                            onMoveToPending={handleMoveToPending}
+                            onComplete={handleComplete}
                           />
                         ))}
                       </div>
@@ -600,6 +708,9 @@ export default function LandlordViewingsPage() {
                             updatingId={updatingId}
                             onApprove={handleApprove}
                             onReject={handleReject}
+                            onReapprove={handleReapprove}
+                            onMoveToPending={handleMoveToPending}
+                            onComplete={handleComplete}
                           />
                         ))}
                       </div>

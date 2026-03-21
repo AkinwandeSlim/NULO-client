@@ -141,20 +141,33 @@ export default function PropertyCard({
               </div>
             </div>
 
-            {/* Size if available */}
-            {property.sqft && (
-              <div 
-                className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-md hover:bg-purple-50 transition-colors group relative"
-                title={`${property.sqft} sq ft`}
-              >
-                <Square className="w-3.5 h-3.5 text-purple-500" />
-                <span className="font-semibold text-slate-700 text-[10px]">{Math.round(property.sqft / 100) * 100}<span className="text-[8px] ml-0.5">sqft</span></span>
-                {/* Tooltip on hover */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                  {property.sqft.toLocaleString()} sq ft
-                </div>
+            {/* View count - Always show if available */}
+          {(property.view_count || 0) >= 0 && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-md hover:bg-blue-50 transition-colors group relative"
+                 title={`${property.view_count || 0} view${(property.view_count || 0) !== 1 ? 's' : ''}`}>
+              <Eye className="w-3.5 h-3.5 text-blue-500" />
+              <span className="font-semibold text-slate-700 text-xs">{property.view_count || 0}</span>
+              {/* Tooltip on hover */}
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                {property.view_count || 0} view{(property.view_count || 0) !== 1 ? 's' : ''}
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Size if available */}
+          {property.sqft && (
+            <div 
+              className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-md hover:bg-purple-50 transition-colors group relative"
+              title={`${property.sqft} sq ft`}
+            >
+              <Square className="w-3.5 h-3.5 text-purple-500" />
+              <span className="font-semibold text-slate-700 text-[10px]">{Math.round(property.sqft / 100) * 100}<span className="text-[8px] ml-0.5">sqft</span></span>
+              {/* Tooltip on hover */}
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                {property.sqft.toLocaleString()} sq ft
+              </div>
+            </div>
+          )}
           </div>
 
           {/* Footer with favorite */}

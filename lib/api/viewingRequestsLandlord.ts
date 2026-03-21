@@ -57,7 +57,7 @@ export interface CreateViewingRequestData {
 }
 
 export interface LandlordReviewData {
-  status: 'confirmed' | 'cancelled';
+  status: 'confirmed' | 'cancelled' | 'pending' | 'completed';
   landlord_notes?: string;
   confirmed_date?: string;
   confirmed_time?: string;
