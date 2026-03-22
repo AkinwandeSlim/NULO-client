@@ -1142,11 +1142,17 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         // For landlords, always go to dashboard unless email not verified
         redirectPath = userData.email_verified ? '/landlord/overview' : '/signup/landlord/confirmation';
       } else if (userData.user_type === 'tenant') {
-        // For tenants, use callback URL if available (they might be coming from a property page)
-        if (callbackUrl && callbackUrl.startsWith('/properties')) {
+        // For tenants: 
+        // - If coming from a specific property page, return there (new user browsing)
+        // - Otherwise, go to tenant dashboard (returning user)
+        if (callbackUrl && callbackUrl.startsWith('/properties/') && callbackUrl !== '/properties') {
+          // Specific property page (not just /properties search)
           redirectPath = userData.email_verified ? callbackUrl : '/signup/tenant/confirmation';
+          console.log('🏠 [AUTH] Tenant: Returning to specific property page:', callbackUrl);
         } else {
-          redirectPath = userData.email_verified ? '/properties' : '/signup/tenant/confirmation';
+          // All verified tenants go to dashboard (new and returning)
+          redirectPath = userData.email_verified ? '/tenant' : '/signup/tenant/confirmation';
+          console.log('🏠 [AUTH] Tenant: Going to dashboard:', redirectPath);
         }
       }
 

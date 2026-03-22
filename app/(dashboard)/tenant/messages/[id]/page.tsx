@@ -941,7 +941,7 @@ export default function TenantDashboard() {
                           <div key={application.id} className="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-orange-300 hover:shadow-md transition-all duration-300">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <h4 className="font-semibold text-slate-900 truncate">{application.property?.title || "Property"}</h4>
+                                <h4 className="font-semibold text-slate-900 truncate">{application.property_title || "Property"}</h4>
                                 {application.status === "approved" && (
                                   <Badge className="bg-green-100 text-green-800 border-green-200 font-semibold">
                                     <CheckCircle className="h-3 w-3 mr-1" />Approved
@@ -959,10 +959,10 @@ export default function TenantDashboard() {
                                 )}
                               </div>
                               <p className="text-sm text-slate-700 font-medium mb-1 truncate">
-                                {application.property?.location || "Location not specified"}
+                                {application.property_location || "Location not specified"}
                               </p>
-                              {application.property?.price && (
-                                <p className="text-sm text-orange-600 font-semibold">{formatPrice(application.property.price)}/mo</p>
+                              {application.property_price && (
+                                <p className="text-sm text-orange-600 font-semibold">{formatPrice(application.property_price)}/mo</p>
                               )}
                               <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 flex-wrap">
                                 <span>Applied: {formatDate(application.created_at)}</span>

@@ -64,6 +64,18 @@ export interface TenantViewingRequest {
   updated_at: string
 }
 
+export interface TenantApplication {
+  id: string
+  property_id: string
+  property_title: string
+  property_location: string
+  property_price: number
+  status: 'pending' | 'approved' | 'rejected'
+  move_in_date: string
+  created_at: string
+  viewed_by_landlord: boolean
+}
+
 export interface TenantConversation {
   id: string
   property_id: string
@@ -125,6 +137,7 @@ export interface TenantStats {
   totalFavorites: number
   pendingViewings: number
   confirmedViewings: number
+  completedViewings: number
   propertiesContacted: number
   totalConversations: number
   unreadMessages: number
@@ -147,7 +160,7 @@ export interface TenantDashboardData {
   favorites: TenantFavorite[]
   viewingRequests: TenantViewingRequest[]
   conversations: TenantConversation[]
-  applications: Application[]
+  applications: TenantApplication[]
   agreements: TenantAgreement[]
   engagementMetrics: TenantEngagementMetrics | null
   isComplete?: boolean

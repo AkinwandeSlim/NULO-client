@@ -466,7 +466,22 @@ export async function GET(request: NextRequest) {
         redirectTo = '/onboarding/landlord/step-1?oauth=1'
       }
     } else if (resolvedUserType === 'tenant') {
-      redirectTo = customRedirect || '/properties'
+      // Tenants: 
+      // - If coming from a specific property page, return there (new user browsing)
+      // - Otherwise, go to tenant dashboard (returning user)
+      if (customRedirect && customRedirect.startsWith('/properties/') && customRedirect !== '/properties') {
+        // Specific property page (not just /properties search)
+        redirectTo = customRedirect
+        console.log('[GOOGLE-CB] Tenant: Returning to specific property page:', customRedirect)
+      } else if (isSigninFlow) {
+        // Returning tenant → dashboard
+        redirectTo = '/tenant'
+        console.log('[GOOGLE-CB] Tenant: Returning user, going to dashboard')
+      } else {
+        // New tenant → properties or onboarding
+        redirectTo = customRedirect || '/properties'
+        console.log('[GOOGLE-CB] Tenant: New user, going to properties:', redirectTo)
+      }
     }
 
     console.log('[GOOGLE-CB] Redirecting to:', redirectTo)

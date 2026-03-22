@@ -409,9 +409,9 @@ export default function TenantDashboard() {
                       <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Viewings</p>
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Total Viewings</p>
                       <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">
-                        {(tenantData?.stats?.pendingViewings ?? 0) + (tenantData?.stats?.confirmedViewings ?? 0)}
+                        {(tenantData?.stats?.pendingViewings ?? 0) + (tenantData?.stats?.confirmedViewings ?? 0) + (tenantData?.stats?.completedViewings ?? 0)}
                       </p>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {(tenantData?.stats?.pendingViewings ?? 0) > 0 && (
@@ -424,7 +424,12 @@ export default function TenantDashboard() {
                             {tenantData?.stats.confirmedViewings} confirmed
                           </span>
                         )}
-                        {(tenantData?.stats?.pendingViewings ?? 0) === 0 && (tenantData?.stats?.confirmedViewings ?? 0) === 0 && (
+                        {(tenantData?.stats?.completedViewings ?? 0) > 0 && (
+                          <span className="text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-block">
+                            {tenantData?.stats.completedViewings} completed
+                          </span>
+                        )}
+                        {(tenantData?.stats?.pendingViewings ?? 0) === 0 && (tenantData?.stats?.confirmedViewings ?? 0) === 0 && (tenantData?.stats?.completedViewings ?? 0) === 0 && (
                           <span className="text-xs text-slate-400">none scheduled</span>
                         )}
                       </div>
@@ -635,7 +640,8 @@ export default function TenantDashboard() {
                     {[
                       { icon: Heart, count: tenantData?.stats?.totalFavorites ?? 0, label: "Saved", activeBg: "bg-red-100 text-red-700" },
                       { icon: Building2, count: tenantData?.stats?.propertiesContacted ?? 0, label: "Contacted", activeBg: "bg-purple-100 text-purple-700" },
-                      { icon: CheckCircle, count: tenantData?.stats?.confirmedViewings ?? 0, label: "Viewings", activeBg: "bg-green-100 text-green-700" },
+                      { icon: CheckCircle, count: tenantData?.stats?.confirmedViewings ?? 0, label: "Confirmed", activeBg: "bg-green-100 text-green-700" },
+                      { icon: Clock, count: tenantData?.stats?.completedViewings ?? 0, label: "Completed", activeBg: "bg-blue-100 text-blue-700" },
                       { icon: FileText, count: tenantData?.stats?.applicationsSubmitted ?? 0, label: "Applications", activeBg: "bg-blue-100 text-blue-700" },
                     ].map(({ icon: Icon, count, label, activeBg }) => (
                       <div key={label} className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${count > 0 ? activeBg : "bg-slate-100 text-slate-400"}`}>
@@ -656,14 +662,12 @@ export default function TenantDashboard() {
                     <p className="text-xs text-slate-600">Properties Saved</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-lg font-semibold text-slate-900">
-                      {(tenantData?.stats?.pendingViewings ?? 0) + (tenantData?.stats?.confirmedViewings ?? 0)}
-                    </p>
-                    <p className="text-xs text-slate-600">Active Viewings</p>
+                    <p className="text-lg font-semibold text-slate-900">{(tenantData?.stats?.confirmedViewings ?? 0) + (tenantData?.stats?.completedViewings ?? 0)}</p>
+                    <p className="text-xs text-slate-600">Viewings Done</p>
                   </div>
                   <div className="text-center">
                     <p className="text-lg font-semibold text-slate-900">{tenantData?.stats?.applicationsSubmitted ?? 0}</p>
-                    <p className="text-xs text-slate-600">Applications Sent</p>
+                    <p className="text-xs text-slate-600">Applications</p>
                   </div>
                 </div>
               </div>
@@ -891,7 +895,7 @@ export default function TenantDashboard() {
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-2xl font-bold text-slate-900 mb-2">My Viewings</h2>
-                  <p className="text-gray-600">Upcoming and pending property viewings</p>
+                  <p className="text-gray-600">Track your viewing requests, confirmations, and completed viewings</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Link href="/tenant/viewings">
@@ -915,8 +919,8 @@ export default function TenantDashboard() {
                       <div className="h-12 w-12 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Calendar className="h-6 w-6 text-orange-600" />
                       </div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-2">No viewings scheduled</h3>
-                      <p className="text-slate-600">Pending and confirmed requests will appear here</p>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">No viewings yet</h3>
+                      <p className="text-slate-600">Your viewing requests, confirmations, and completed viewings will appear here</p>
                     </div>
                   ) : (
                     <>
@@ -931,6 +935,10 @@ export default function TenantDashboard() {
                                 {request.status === "confirmed" ? (
                                   <Badge className="bg-green-100 text-green-800 border-green-200 font-semibold">
                                     <CheckCircle className="h-3 w-3 mr-1" />Confirmed
+                                  </Badge>
+                                ) : request.status === "completed" ? (
+                                  <Badge className="bg-blue-100 text-blue-800 border-blue-200 font-semibold">
+                                    <Clock className="h-3 w-3 mr-1" />Completed
                                   </Badge>
                                 ) : (
                                   <Badge className="bg-orange-100 text-orange-800 border-orange-200 font-semibold">
@@ -953,6 +961,12 @@ export default function TenantDashboard() {
                                   Responded in {Math.max(0, Math.round((new Date(request.updated_at).getTime() - new Date(request.created_at).getTime()) / (1000 * 60 * 60)))}h
                                 </p>
                               )}
+                              {request.status === "completed" && (
+                                <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  Viewing completed on {formatDate(request.preferred_date)}
+                                </p>
+                              )}
                             </div>
                             <div className="flex flex-col items-end gap-2 ml-3 flex-shrink-0">
                               <Link href={`/properties/${request.property?.id || request.property_id}`}>
@@ -964,6 +978,13 @@ export default function TenantDashboard() {
                                 <Link href="/messages">
                                   <Button variant="outline" size="sm" className="border-green-300 text-green-600 hover:bg-green-50 text-xs gap-1.5">
                                     <MessageSquare className="h-3.5 w-3.5" />Message
+                                  </Button>
+                                </Link>
+                              )}
+                              {request.status === "completed" && (
+                                <Link href={`/properties/${request.property?.id || request.property_id}?apply=true`}>
+                                  <Button variant="outline" size="sm" className="border-blue-300 text-blue-600 hover:bg-blue-50 text-xs gap-1.5">
+                                    <FileText className="h-3.5 w-3.5" />Apply Now
                                   </Button>
                                 </Link>
                               )}
@@ -1030,7 +1051,7 @@ export default function TenantDashboard() {
                           <div key={application.id} className="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-green-300 hover:shadow-md transition-all duration-300">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <h4 className="font-semibold text-slate-900 truncate">{application.property?.title || "Property"}</h4>
+                                <h4 className="font-semibold text-slate-900 truncate">{application.property_title || "Property"}</h4>
                                 {application.status === "approved" && (
                                   <Badge className="bg-green-100 text-green-800 border-green-200 font-semibold">
                                     <CheckCircle className="h-3 w-3 mr-1" />Approved
@@ -1048,10 +1069,10 @@ export default function TenantDashboard() {
                                 )}
                               </div>
                               <p className="text-sm text-slate-700 font-medium mb-1 truncate">
-                                {application.property?.location || "Location not specified"}
+                                {application.property_location || "Location not specified"}
                               </p>
-                              {application.property?.price && (
-                                <p className="text-sm text-orange-600 font-semibold">{formatPrice(application.property.price)}/mo</p>
+                              {application.property_price && (
+                                <p className="text-sm text-orange-600 font-semibold">{formatPrice(application.property_price)}/mo</p>
                               )}
                               <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 flex-wrap">
                                 <span>Applied: {formatDate(application.created_at)}</span>
@@ -1441,10 +1462,12 @@ export default function TenantDashboard() {
                   tenantData?.viewingRequests?.forEach((v: any) => {
                     items.push({
                       id: v.id, icon: Calendar,
-                      iconBg: v.status === "confirmed" ? "bg-green-100" : "bg-blue-100",
-                      iconColor: v.status === "confirmed" ? "text-green-600" : "text-blue-600",
+                      iconBg: v.status === "confirmed" ? "bg-green-100" : v.status === "completed" ? "bg-blue-100" : "bg-orange-100",
+                      iconColor: v.status === "confirmed" ? "text-green-600" : v.status === "completed" ? "text-blue-600" : "text-orange-600",
                       title: v.status === "confirmed"
                         ? `Viewing confirmed - ${v.property?.title || v.property_title || "Property"}`
+                        : v.status === "completed"
+                        ? `Viewing completed - ${v.property?.title || v.property_title || "Property"}`
                         : `Viewing requested - ${v.property?.title || v.property_title || "Property"}`,
                       date: v.created_at,
                     })

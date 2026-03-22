@@ -473,8 +473,22 @@ export async function GET(request: NextRequest) {
         redirectTo = '/onboarding/landlord/step-1'
       }
     } else if (finalUserType === 'tenant') {
-      // Tenants: use the saved property page or fall back to /properties
-      redirectTo = customRedirectTo || '/properties'
+      // Tenants: 
+      // - If coming from a specific property page, return there (new user browsing)
+      // - Otherwise, go to tenant dashboard (returning user)
+      if (customRedirectTo && customRedirectTo.startsWith('/properties/') && customRedirectTo !== '/properties') {
+        // Specific property page (not just /properties search)
+        redirectTo = customRedirectTo
+        console.log('🏠 [CALLBACK] Tenant: Returning to specific property page:', customRedirectTo)
+      } else if (isReturningUser) {
+        // Returning tenant → dashboard (regardless of onboarding status)
+        redirectTo = '/tenant'
+        console.log('🏠 [CALLBACK] Tenant: Returning user, going to dashboard')
+      } else {
+        // New tenant → properties or onboarding
+        redirectTo = customRedirectTo || '/properties'
+        console.log('🏠 [CALLBACK] Tenant: New user, going to properties:', redirectTo)
+      }
     }
 
     // ✅ Append verify/oauth param for any landlord going to onboarding

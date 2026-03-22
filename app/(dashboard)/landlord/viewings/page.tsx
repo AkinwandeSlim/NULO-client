@@ -432,23 +432,43 @@ export default function LandlordViewingsPage() {
   })
 
   const groupedRequests = {
-    pending:  filteredRequests.filter(r => r.status === 'pending'),
-    upcoming: filteredRequests.filter(r =>
-      r.status === 'confirmed' && new Date(r.preferred_date) >= new Date()
-    ),
-    past: filteredRequests.filter(r =>
-      r.status === 'completed' ||
-      r.status === 'cancelled' ||
-      (r.status === 'confirmed' && new Date(r.preferred_date) < new Date())
-    ),
+    pending: filteredRequests.filter(r => r.status === 'pending'),
+    upcoming: filteredRequests.filter(r => {
+      const isConfirmed = r.status === 'confirmed'
+      const preferredDate = new Date(r.preferred_date)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
+      preferredDate.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
+      const isUpcoming = preferredDate >= today
+      return isConfirmed && isUpcoming
+    }),
+    past: filteredRequests.filter(r => {
+      const preferredDate = new Date(r.preferred_date)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
+      preferredDate.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
+      const isPast = preferredDate < today
+      
+      return (
+        r.status === 'completed' ||
+        r.status === 'cancelled' ||
+        (r.status === 'confirmed' && isPast)
+      )
+    }),
   }
 
   const stats = {
     total:    viewingRequests.length,
     pending:  viewingRequests.filter(r => r.status === 'pending').length,
-    upcoming: viewingRequests.filter(r =>
-      r.status === 'confirmed' && new Date(r.preferred_date) >= new Date()
-    ).length,
+    upcoming: viewingRequests.filter(r => {
+      const isConfirmed = r.status === 'confirmed'
+      const preferredDate = new Date(r.preferred_date)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
+      preferredDate.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
+      const isUpcoming = preferredDate >= today
+      return isConfirmed && isUpcoming
+    }).length,
     completed: viewingRequests.filter(r => r.status === 'completed').length,
   }
 
@@ -497,8 +517,8 @@ export default function LandlordViewingsPage() {
         </div>
       </div>
 
-      {/* Stats cards — 3-grid matching tenant */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      {/* Stats cards — 4-grid for complete overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -533,6 +553,20 @@ export default function LandlordViewingsPage() {
                 <p className="text-2xl font-bold text-green-600">{stats.upcoming}</p>
               </div>
               <CheckCircle className="w-8 h-8 text-green-400" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Completed Viewings</p>
+                <p className="text-2xl font-bold text-blue-600">{stats.completed}</p>
+              </div>
+              <div className={`w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center ${stats.completed > 0 ? 'animate-pulse' : ''}`}>
+                <Clock className="h-4 w-4 text-blue-600" />
+              </div>
             </div>
           </CardContent>
         </Card>

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Menu, X, Home, Building2, LayoutGrid, User, LogOut, Search, ChevronDown, Bell, Settings, MessageSquare, Heart, Calendar, Info, BookOpen, Phone } from "lucide-react"
+import { Menu, X, Home, Building2, LayoutGrid, User, LogOut, Search, ChevronDown, Bell, Settings, MessageSquare, Heart, Calendar, Info, BookOpen, Phone, FileText } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -231,6 +231,13 @@ export function Navbar() {
                         <User className="h-4 w-4" />
                         Applications
                       </Link>
+                      <Link href="/landlord/agreements"
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+                          isActive('/landlord/agreements', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                        }`}>
+                        <FileText className="h-4 w-4" />
+                        Agreements
+                      </Link>
                       <Link href="/landlord/messages"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/landlord/messages', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
@@ -270,6 +277,13 @@ export function Navbar() {
                         }`}>
                         <User className="h-4 w-4" />
                         Applications
+                      </Link>
+                      <Link href="/tenant/agreements"
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+                          isActive('/tenant/agreements', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                        }`}>
+                        <FileText className="h-4 w-4" />
+                        Agreements
                       </Link>
                       <Link href="/messages"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
@@ -489,12 +503,24 @@ export function Navbar() {
                             Favorites
                           </Link>
                         </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/tenant/messages" className="cursor-pointer">
-                          <MessageSquare className="h-4 w-4 mr-2" />
-                          Messages
-                        </Link>
-                      </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/tenant/applications" className="cursor-pointer">
+                            <User className="h-4 w-4 mr-2" />
+                            Applications
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/tenant/agreements" className="cursor-pointer">
+                            <FileText className="h-4 w-4 mr-2" />
+                            Agreements
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/tenant/messages" className="cursor-pointer">
+                            <MessageSquare className="h-4 w-4 mr-2" />
+                            Messages
+                          </Link>
+                        </DropdownMenuItem>
                       </>
                     )}
                     {userType === 'landlord' && (
@@ -511,13 +537,24 @@ export function Navbar() {
                             Viewings
                           </Link>
                         </DropdownMenuItem>
-                        
+                        <DropdownMenuItem asChild>
+                          <Link href="/landlord/applications" className="cursor-pointer">
+                            <User className="h-4 w-4 mr-2" />
+                            Applications
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/landlord/agreements" className="cursor-pointer">
+                            <FileText className="h-4 w-4 mr-2" />
+                            Agreements
+                          </Link>
+                        </DropdownMenuItem>
                         <DropdownMenuItem asChild>
                           <Link href="/landlord/messages" className="cursor-pointer">
                             <MessageSquare className="h-4 w-4 mr-2" />
                             Messages
                           </Link>
-                      </DropdownMenuItem>
+                        </DropdownMenuItem>
                       </>
                     )}
 
