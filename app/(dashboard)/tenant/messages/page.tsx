@@ -66,6 +66,11 @@ export default function TenantMessagesPage() {
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date())
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
   
+  // Conversaton context (signing, payment, etc.)
+  const [conversationContext, setConversationContext] = useState<string | null>(() => {
+    return searchParams?.get("context") ?? null
+  })
+  
   // Rental context for banner
   const contextCache = useRef<Map<string, RentalContextData>>(new Map())
   const [rentalContext, setRentalContext] = useState<RentalContextData | null>(null)
@@ -321,7 +326,16 @@ export default function TenantMessagesPage() {
   }, [conversationDetail?.property_id, fetchRentalContext])
   
   // Create conversation from landlord and property parameters
-  const handleCreateConversationFromParams = useCallback(async (landlordId: string, propertyId: string) => {
+  const getContextualInitialMessage = useCallback((context: string | null): string => {
+    switch (context) {
+      case "agreement_signing":
+        return "Hi! I've completed my part of the lease agreement signing. Could you please review and sign it at your earliest convenience? Let me know if you have any questions."
+      default:
+        return "Hi! I'm interested in your property. Could you tell me more about it?"
+    }
+  }, [])
+
+  const handleCreateConversationFromParams = useCallback(async (landlordId: string, propertyId: string, context: string | null) => {
     if (!user?.id || isCreatingConversation) return
     
     setIsCreatingConversation(true)
@@ -335,11 +349,11 @@ export default function TenantMessagesPage() {
         router.replace(`/tenant/messages?conversation=${existingConversation.id}`)
         setSelectedConversationId(existingConversation.id)
       } else {
-        // Create a new conversation with automated message
+        // Create a new conversation with contextual initial message
         const result = await messagesAPI.createConversation({
           property_id: propertyId,
           landlord_id: landlordId,
-          initial_message: "Hi! I'm interested in your property. Could you tell me more about it?"
+          initial_message: getContextualInitialMessage(context)
         })
         
         // Navigate to the new conversation
@@ -352,7 +366,7 @@ export default function TenantMessagesPage() {
     } finally {
       setIsCreatingConversation(false)
     }
-  }, [user?.id, router])
+  }, [user?.id, router, isCreatingConversation, getContextualInitialMessage])
   
   // Handle tenant and property URL parameters for auto-creating conversations
   useEffect(() => {
@@ -361,10 +375,14 @@ export default function TenantMessagesPage() {
     const landlordId = searchParams.get('landlord')
     const propertyId = searchParams.get('property')
     const conversationId = searchParams.get('conversation')
+    const context = searchParams.get('context')
+    
+    // Update conversation context
+    setConversationContext(context)
     
     // Only proceed if we have landlord and property but no conversation
     if (landlordId && propertyId && !conversationId && !isCreatingConversation) {
-      handleCreateConversationFromParams(landlordId, propertyId)
+      handleCreateConversationFromParams(landlordId, propertyId, context)
     }
   }, [searchParams, isCreatingConversation, handleCreateConversationFromParams])
   
@@ -624,6 +642,20 @@ export default function TenantMessagesPage() {
               </div>
             )}
             
+            {/* Context indicator for agreement signing */}
+            {conversationContext && (
+              <div className="px-4 py-2 border-b border-slate-100 bg-blue-50 flex-shrink-0">
+                <div className="flex items-center gap-2 text-xs font-medium"
+                  style={{
+                    color: conversationContext === 'agreement_signing' ? '#1e40af' : '#0f766e',
+                  }}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  {conversationContext === 'agreement_signing' ? 'Agreement Signing': 'Conversation'}
+                </div>
+              </div>
+            )}
+            
             {/* Property Preview */}
             {selectedConversation?.property && (
               <PropertyPreview
@@ -742,6 +774,21 @@ export default function TenantMessagesPage() {
                 <p className="text-xs text-slate-500 mt-2 text-center">
                   Press Enter to send • Shift + Enter for new line
                 </p>
+                
+                {/* Context-aware helper text */}
+                {conversationContext && (
+                  <p className="text-[10px] mt-2 px-2 py-1.5 rounded-lg text-blue-900 bg-blue-50"
+                    style={{
+                      backgroundColor: conversationContext === 'agreement_signing' ? '#dbeafe' : '#ccfbf1',
+                      color: conversationContext === 'agreement_signing' ? '#1e3a8a' : '#134e4a',
+                    }}
+                  >
+                    <span className="font-semibold">Tip:</span>{" "}
+                    {conversationContext === 'agreement_signing' 
+                      ? "Let landlord know you've signed. Be professional and request their signature soon."
+                      : "Keep messages clear and professional."}
+                  </p>
+                )}
               </div>
             )}
           </>

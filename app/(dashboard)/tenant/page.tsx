@@ -18,7 +18,7 @@ import {
   Target, Award, Users, FileText,
   X, FileCheck, DollarSign,
   AlertTriangle, CheckCheck, Loader2,
-  RefreshCw, Wallet, CalendarClock, Plus
+  RefreshCw, Wallet, CalendarClock, Plus, Mail, CheckCircle2
 } from "lucide-react"
 import Link from "next/link"
 import { applicationsAPI } from "@/lib/api/applications"
@@ -57,6 +57,8 @@ export default function TenantDashboard() {
   const [mounted, setMounted] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [allDataLoading, setAllDataLoading] = useState(true)
+  const [recentPayments, setRecentPayments] = useState<any[]>([])
+  const [paymentsLoading, setPaymentsLoading] = useState(true)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -80,6 +82,64 @@ export default function TenantDashboard() {
         setAllDataLoading(false)
       })
   }, [mounted, user?.id, user?.user_type, fetchTenantDashboard])
+
+  // Fetch tenant payments for banner notifications
+  useEffect(() => {
+    if (!user?.id || user.user_type !== 'tenant') return
+
+    const fetchPayments = async () => {
+      try {
+        setPaymentsLoading(true)
+        // Import paymentsAPI dynamically to avoid circular imports
+        const { paymentsAPI } = await import("@/lib/api/payments")
+        const response = await paymentsAPI.getMyPayments()
+        
+        if (response.success && response.payments) {
+          setRecentPayments(response.payments)
+        }
+      } catch (error) {
+        console.error('❌ Payments fetch failed:', error)
+        // Don't show error to user - payment banner is not critical
+        setRecentPayments([]) // Set empty array to prevent banner from showing
+      } finally {
+        setPaymentsLoading(false)
+      }
+    }
+
+    fetchPayments()
+  }, [user?.id])
+
+  // Real-time payment polling: Check for new payments every 30 seconds (reduced from 5 to avoid spam)
+  // This ensures "Payment Confirmed" banner appears quickly without page refresh
+  useEffect(() => {
+    if (!user?.id || paymentsLoading) return
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const { paymentsAPI } = await import("@/lib/api/payments")
+        const response = await paymentsAPI.getMyPayments()
+        
+        if (response.success && response.payments) {
+          // Check if we have new payments (compare with current state)
+          const currentPaymentIds = new Set(recentPayments.map(p => p.id))
+          const newPayments = response.payments.filter((p: any) => !currentPaymentIds.has(p.id))
+          
+          if (newPayments.length > 0) {
+            console.log('[TENANT] New payment detected via polling - updating banner')
+            setRecentPayments(response.payments)
+            
+            // Invalidate cache to refresh other dashboard data
+            invalidateTenantCache?.()
+          }
+        }
+      } catch (error) {
+        console.error('[TENANT] Payment polling error:', error)
+        // Silently continue polling - don't break the interval
+      }
+    }, 30000) // Poll every 30 seconds (reduced from 5 to avoid API spam)
+
+    return () => clearInterval(pollInterval)
+  }, [user?.id, paymentsLoading, recentPayments, invalidateTenantCache])
 
   // Show loading spinner if context is loading or local loading state
   const isLoading = loading || allDataLoading
@@ -181,6 +241,38 @@ export default function TenantDashboard() {
     
     return { state: "paid" as const, rentAmount, daysUntilDue, completedPayments, totalPayments }
   }, [tenantData?.agreements, tenantData?.stats?.totalPayments, tenantData?.stats?.completedPayments])
+
+  // ─── Tenant Banner System ─────────────────────────────────────────────────────
+  // Calculate recent payment confirmation banner (similar to landlord but tenant-focused)
+  const tenantBanner = useMemo(() => {
+    // Don't show banner if payments are loading or if there was an error (empty array)
+    if (paymentsLoading || !recentPayments.length) return null
+
+    // Get the most recent payment from the last 24 hours
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const recentPayment = recentPayments
+      .filter(p => new Date(p.created_at) > oneDayAgo)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+
+    if (!recentPayment) return null
+
+    const isRent = recentPayment.payment_type === 'rent'
+    const isDeposit = recentPayment.payment_type === 'security_deposit'
+    
+    // Get property and landlord info from payment or agreement data
+    const propertyTitle = recentPayment.property_title || recentPayment.property?.title || 'Property'
+    const landlordName = recentPayment.landlord_name || recentPayment.landlord?.full_name || 'Your Landlord'
+
+    return {
+      type: isRent ? 'rent_confirmed' : isDeposit ? 'deposit_confirmed' : 'payment_confirmed',
+      payment: recentPayment,
+      propertyTitle,
+      landlordName,
+      amount: recentPayment.amount,
+      isRent,
+      isDeposit
+    }
+  }, [recentPayments, paymentsLoading])
 
   const formatPrice = (price: number) =>
     new Intl.NumberFormat("en-NG", {
@@ -318,6 +410,80 @@ export default function TenantDashboard() {
             </div>
           </div>
         </div>
+
+        {/* ─── Tenant Payment Confirmation Banner ─────────────────────────────────────── */}
+        {tenantBanner && (
+          <div className="mb-8 rounded-xl border border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 p-6 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 className="h-6 w-6 text-green-600" />
+              </div>
+              
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <h3 className="font-bold text-green-900">
+                    {tenantBanner.isRent ? 'Rent Payment Confirmed' : 
+                     tenantBanner.isDeposit ? 'Security Deposit Confirmed' : 'Payment Confirmed'}
+                  </h3>
+                  <Badge className="bg-green-600 text-white border-0">
+                    {formatPrice(tenantBanner.amount)}
+                  </Badge>
+                </div>
+
+                <p className="text-green-800 text-sm mb-1">
+                  Your payment for <span className="font-semibold">{tenantBanner.propertyTitle}</span> has been confirmed.
+                  {tenantBanner.isRent && ' Your tenancy agreement is now active!'}
+                </p>
+
+                {/* Next-step checklist for tenant */}
+                <div className="mt-3 mb-4 space-y-1.5">
+                  <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-2">Your next steps</p>
+                  
+                  <div className="flex items-center gap-2 text-sm text-green-800">
+                    <div className="h-5 w-5 rounded-full border-2 border-green-400 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-bold text-green-600">1</span>
+                    </div>
+                    <span>Message <span className="font-semibold">{tenantBanner.landlordName}</span> to confirm move-in arrangements</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm text-green-800">
+                    <div className="h-5 w-5 rounded-full border-2 border-green-400 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-bold text-green-600">2</span>
+                    </div>
+                    <span>Review your signed agreement for move-in date and property details</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm text-green-800">
+                    <div className="h-5 w-5 rounded-full border-2 border-green-400 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-bold text-green-600">3</span>
+                    </div>
+                    <span>Prepare for move-in — plan packing and logistics</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {tenantBanner.payment.landlord_id && (
+                    <Link href={`/tenant/messages?landlord=${tenantBanner.payment.landlord_id}`}>
+                      <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
+                        <Mail className="h-4 w-4 mr-2" />Message {tenantBanner.landlordName.split(' ')[0]}
+                      </Button>
+                    </Link>
+                  )}
+                  <Link href="/tenant/agreements">
+                    <Button size="sm" variant="outline" className="border-green-400 text-green-700 hover:bg-green-100">
+                      <FileText className="h-4 w-4 mr-2" />View Agreement
+                    </Button>
+                  </Link>
+                  <Link href={`/tenant/payments/${tenantBanner.payment.id}`}>
+                    <Button size="sm" variant="outline" className="border-green-400 text-green-700 hover:bg-green-100">
+                      <DollarSign className="h-4 w-4 mr-2" />Payment Details
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+          )}
 
         {/* Payment Success Banner - Next Steps */}
         {/* Only shown within 48h of the agreement becoming ACTIVE/SIGNED — same window as landlord dashboard.

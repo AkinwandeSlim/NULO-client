@@ -34,6 +34,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/AuthContext"
 import { applicationsAPI, type Application } from "@/lib/api/applications"
+import { agreementsAPI } from "@/lib/api/agreements"
 import { toast } from "sonner"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
@@ -174,10 +175,32 @@ export default function LandlordApplicationDetailPage() {
 
     setIsApproving(true)
     try {
+      // 1. Approve the application
       const updated = await applicationsAPI.approve(application.id)
       setApplication(updated)
       setShowApproveConfirm(false)
-      toast.success(`Application approved for ${application.user?.full_name || 'tenant'}`)
+      
+      // 2. Fetch the linked agreement
+      try {
+        const agreementResponse = await agreementsAPI.getByApplication(application.id)
+        
+        if (agreementResponse.success && agreementResponse.agreement?.id) {
+          // Redirect to agreement page with success message
+          toast.success(`Application approved for ${application.user?.full_name || 'tenant'}. Redirecting to agreement...`)
+          
+          // Small delay to let user see the toast
+          setTimeout(() => {
+            router.push(`/landlord/agreements/${agreementResponse.agreement!.id}`)
+          }, 1200)
+        } else {
+          // Agreement not ready yet, show standard success message
+          toast.success(`Application approved for ${application.user?.full_name || 'tenant'}`)
+        }
+      } catch (agreementError) {
+        // Agreement fetch failed, but approval succeeded - show success message
+        console.warn("Could not fetch linked agreement:", agreementError)
+        toast.success(`Application approved for ${application.user?.full_name || 'tenant'}`)
+      }
     } catch (error: any) {
       console.error("Failed to approve application:", error)
       toast.error(error.response?.data?.detail || "Failed to approve application")
@@ -290,11 +313,20 @@ export default function LandlordApplicationDetailPage() {
         {application.status === 'approved' && (
           <div className="flex items-start gap-3 p-4 mb-6 bg-green-50 border border-green-200 rounded-xl">
             <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1">
               <p className="font-semibold text-green-900">Application Approved!</p>
               <p className="text-sm text-green-700 mt-0.5">
-                You have approved this application. Contact the tenant to discuss next steps.
+                You have approved this application. An agreement has been generated and is ready for review and signature.
               </p>
+              <Link href="/landlord/agreements" className="inline-block mt-3">
+                <Button 
+                  size="sm" 
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  View Agreement
+                </Button>
+              </Link>
             </div>
           </div>
         )}

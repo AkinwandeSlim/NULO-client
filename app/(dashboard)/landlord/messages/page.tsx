@@ -83,6 +83,11 @@ export default function LandlordMessagesPage() {
   // ─── Rental context ──────────────────────────────────────────────────────
   const contextCache = useRef<Map<string, RentalContextData>>(new Map())
   const [rentalContext, setRentalContext] = useState<RentalContextData | null>(null)
+  
+  // ─── Message context (signing, payment, etc) ────────────────────────────────
+  const [conversationContext, setConversationContext] = useState<string | null>(() => {
+    return searchParams?.get("context") ?? null
+  })
 
   // ─── Refs ────────────────────────────────────────────────────────────────
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -199,7 +204,14 @@ export default function LandlordMessagesPage() {
       const context: RentalContextData = { application, agreement, isLoading: false }
       contextCache.current.set(propertyId, context)
       setRentalContext(context)
-    } catch {
+    } catch (error: any) {
+      // Log the actual error for debugging
+      console.error('[Messages] Failed to fetch rental context:', {
+        error: error?.message || error?.toString(),
+        statusCode: error?.response?.status,
+        data: error?.response?.data
+      })
+      // Still set context but with empty data so UI doesn't break
       setRentalContext({ application: null, agreement: null, isLoading: false })
     }
   }, [])
@@ -322,10 +334,22 @@ export default function LandlordMessagesPage() {
     }
   }, [fetchConversations, selectedConversationId, fetchMessages])
 
+  // ─── Get context-specific initial message ────────────────────────────────
+  const getContextualInitialMessage = useCallback((context: string | null): string => {
+    switch (context) {
+      case "agreement_signing":
+        return "Hi! I wanted to follow up on your lease agreement. Have you had a chance to review and sign the document? Please let me know if you have any questions or need clarification on any terms."
+      case "agreement_payment":
+        return "Hi! Thank you for signing the agreement. We're now ready to proceed with the lease setup. Please initiate the payment at your earliest convenience so we can finalize everything."
+      default:
+        return "Hi! I'm interested in discussing this property with you. How can I help you today?"
+    }
+  }, [])
+
   // ─── Create conversation from URL params ─────────────────────────────────
 
   const handleCreateConversationFromParams = useCallback(
-    async (tenantId: string, propertyId: string) => {
+    async (tenantId: string, propertyId: string, context: string | null) => {
       if (!user?.id || isCreatingConversation) return
       setIsCreatingConversation(true)
       try {
@@ -340,8 +364,7 @@ export default function LandlordMessagesPage() {
             property_id: propertyId,
             landlord_id: user.id,
             tenant_id: tenantId,
-            initial_message:
-              "Hi! I'm interested in discussing this property with you. How can I help you today?",
+            initial_message: getContextualInitialMessage(context),
           }
           const result = await messagesAPI.createConversation(payload)
           router.replace(`/landlord/messages?conversation=${result.conversation_id}`)
@@ -355,7 +378,7 @@ export default function LandlordMessagesPage() {
         setIsCreatingConversation(false)
       }
     },
-    [user?.id, isCreatingConversation, router]
+    [user?.id, isCreatingConversation, router, getContextualInitialMessage]
   )
 
   // ─── Keyboard handler ────────────────────────────────────────────────────
@@ -412,8 +435,13 @@ export default function LandlordMessagesPage() {
     const tenantId = searchParams.get("tenant")
     const propertyId = searchParams.get("property")
     const conversationId = searchParams.get("conversation")
+    const context = searchParams.get("context")
+    
+    // Update conversation context for UI indicators
+    setConversationContext(context)
+    
     if (tenantId && propertyId && !conversationId && !isCreatingConversation) {
-      handleCreateConversationFromParams(tenantId, propertyId)
+      handleCreateConversationFromParams(tenantId, propertyId, context)
     }
   }, [searchParams, isCreatingConversation, handleCreateConversationFromParams])
 
@@ -721,17 +749,32 @@ export default function LandlordMessagesPage() {
                       )}
                     </div>
 
-                    {selectedConversation?.property?.title && (
-                      <div className="flex items-center gap-1.5 mt-0.5 text-xs text-slate-500 truncate">
-                        <Building2 className="h-3 w-3 text-orange-400 flex-shrink-0" />
-                        <span className="truncate">
-                          {selectedConversation.property.title}
-                          {selectedConversation.property.location && (
-                            <span className="text-slate-400"> · {selectedConversation.property.location}</span>
-                          )}
-                        </span>
-                      </div>
-                    )}
+                    <div className="flex flex-col gap-1.5 mt-0.5">
+                      {selectedConversation?.property?.title && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate">
+                          <Building2 className="h-3 w-3 text-orange-400 flex-shrink-0" />
+                          <span className="truncate">
+                            {selectedConversation.property.title}
+                            {selectedConversation.property.location && (
+                              <span className="text-slate-400"> · {selectedConversation.property.location}</span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* Context indicator for agreement signing/payment */}
+                      {conversationContext && (
+                        <div className="flex items-center gap-1.5 text-[10px] font-medium px-2 py-1 rounded-full w-fit"
+                          style={{
+                            backgroundColor: conversationContext === 'agreement_signing' ? '#fef3c7' : '#dcfce7',
+                            color: conversationContext === 'agreement_signing' ? '#b45309' : '#166534',
+                          }}
+                        >
+                          <MessageSquare className="h-2.5 w-2.5" />
+                          {conversationContext === 'agreement_signing' ? 'Agreement Signing' : 'Payment Follow-up'}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Header action buttons */}
@@ -933,10 +976,27 @@ export default function LandlordMessagesPage() {
                       )}
                     </Button>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1.5">
-                    <span className="font-medium">Enter</span> to send ·{" "}
-                    <span className="font-medium">Shift+Enter</span> for new line
-                  </p>
+                  <div className="mt-1.5 space-y-1.5">
+                    <p className="text-[11px] text-slate-400">
+                      <span className="font-medium">Enter</span> to send ·{" "}
+                      <span className="font-medium">Shift+Enter</span> for new line
+                    </p>
+                    
+                    {/* Context-aware helper text */}
+                    {conversationContext && (
+                      <p className="text-[10px] px-2 py-1.5 rounded-lg"
+                        style={{
+                          backgroundColor: conversationContext === 'agreement_signing' ? '#fef3c7' : '#dcfce7',
+                          color: conversationContext === 'agreement_signing' ? '#7c2d12' : '#15803d',
+                        }}
+                      >
+                        <span className="font-semibold">Tip:</span>{" "}
+                        {conversationContext === 'agreement_signing' 
+                          ? "Follow up about lease agreement signing. Keep it professional and friendly."
+                          : "Follow up about payment. Provide payment instructions or deadlines if applicable."}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

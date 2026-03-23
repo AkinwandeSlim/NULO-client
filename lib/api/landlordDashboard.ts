@@ -21,6 +21,7 @@ export interface LandlordDashboardData {
   receivedApplications?: LandlordReceivedApplication[]
   agreements?: LandlordAgreement[]
   engagementMetrics?: EngagementMetrics
+  receivedPayments?: any[] // Cached payments for real-time stat updates
 }
 
 export interface LandlordProfile {

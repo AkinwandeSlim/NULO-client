@@ -662,16 +662,30 @@ export default function TenantAgreementDetailPage() {
             {/* You've signed — waiting for landlord to countersign */}
             {effectiveStatus === "PENDING_LANDLORD" && (
               <Card className="border-amber-200 bg-amber-50/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
-                <CardContent className="pt-5">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                    <Clock className="h-4 w-4" />
+                    Your Signature Received
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div className="flex items-start gap-3">
-                    <Clock className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                    <CheckCircle2 className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-semibold text-amber-800 text-sm">Waiting for Landlord</p>
-                      <p className="text-xs text-amber-600 mt-0.5">
-                        You've signed. The landlord has been notified and will countersign shortly.
+                      <p className="font-semibold text-amber-800 text-sm">Awaiting Landlord Signature</p>
+                      <p className="text-xs text-amber-600 mt-2">
+                        You've completed your part. The landlord has been notified and will countersign shortly.
                       </p>
                     </div>
                   </div>
+                  
+                  {/* Quick action to message landlord about signing */}
+                  <Link href={`/tenant/messages?property=${agreement.property_id}&landlord=${agreement.landlord_id}&context=agreement_signing`} className="block">
+                    <Button variant="outline" className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 text-sm">
+                      <Mail className="mr-2 h-4 w-4" />
+                      Follow Up About Signing
+                    </Button>
+                  </Link>
                 </CardContent>
               </Card>
             )}
@@ -791,6 +805,10 @@ export default function TenantAgreementDetailPage() {
 
             {/* Navigation */}
             <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
+              <CardHeader className="bg-gradient-to-r from-orange-100 to-orange-50 border-b border-orange-100">
+                <CardTitle className="text-orange-900 text-base">Quick Actions</CardTitle>
+              </CardHeader>              
+
               <CardContent className="pt-5 space-y-2">
                 <Link href={`/tenant/applications/${agreement.application_id}`} className="block">
                   <Button variant="outline" className="w-full text-slate-700 border-orange-200 hover:bg-orange-50 hover:border-orange-300 transition-colors">
@@ -798,7 +816,7 @@ export default function TenantAgreementDetailPage() {
                     View Application
                   </Button>
                 </Link>
-                <Link href={`/tenant/messages?landlord=${agreement.landlord_id}`} className="block">
+                <Link href={`/tenant/messages?property=${agreement.property_id}&landlord=${agreement.landlord_id}`} className="block">
                   <Button variant="ghost" className="w-full text-slate-600 hover:bg-orange-50 hover:text-orange-700 transition-colors">
                     <Mail className="mr-2 h-4 w-4" />
                     Message Landlord

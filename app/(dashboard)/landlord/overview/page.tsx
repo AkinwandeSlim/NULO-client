@@ -239,6 +239,17 @@ export default function LandlordDashboard() {
 
   }, [agreements])
 
+  // Calculate total payments collected — updates in real-time as payments come in
+  const totalPaymentsCollected = useMemo(() => {
+
+    return receivedPayments
+
+      .filter((p: any) => p.status === 'released')
+
+      .reduce((sum: number, p: any) => sum + (p.amount || 0), 0)
+
+  }, [receivedPayments])
+
 
 
   const handleNotificationClick = useCallback(async (notification: Notification) => {
@@ -587,45 +598,65 @@ export default function LandlordDashboard() {
 
 
 
-  // Fetch received payments
-
+  // Fetch received payments — check cache first, then fetch fresh data
+  // Then poll every 10s while rendered to catch new payments in real-time
   useEffect(() => {
-
     if (!user?.id) return
 
-    
-
     const fetchPayments = async () => {
-
       try {
+        // 💾 CHECK CACHE FIRST: Use cached data if available + recent
+        if (landlordData?.receivedPayments && landlordData.receivedPayments.length > 0) {
+          console.log('📦 [OVERVIEW] Using cached received payments')
+          setReceivedPayments(landlordData.receivedPayments as any[])
+          setPaymentsLoading(false)
+          return
+        }
 
-        console.log('🔄 [OVERVIEW] Fetching received payments...')
-
+        // 🔄 FALLBACK: Fetch fresh data
+        console.log('🔄 [OVERVIEW] Fetching received payments from API...')
         setPaymentsLoading(true)
-
         const data = await paymentsAPI.getReceivedPayments()
-
         setReceivedPayments(data.payments || [])
-
       } catch (error) {
-
         console.error('❌ Failed to fetch payments:', error)
-
         setReceivedPayments([])
-
       } finally {
-
         setPaymentsLoading(false)
-
       }
-
     }
 
-    
-
     fetchPayments()
+  }, [user?.id, landlordData?.receivedPayments])
 
-  }, [user?.id])
+  // Real-time payment polling: Check for new payments every 5 seconds
+  // This ensures the "Rent Payment Confirmed" banner appears quickly without page refresh
+  useEffect(() => {
+    if (!user?.id || paymentsLoading) return
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const data = await paymentsAPI.getReceivedPayments()
+        const freshPayments = data.payments || []
+        
+        // Check if there are new recently-released payments
+        const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000
+        const hasNewPayment = freshPayments.some((p: any) =>
+          p.status === 'released' && new Date(p.released_at ?? p.created_at).getTime() > fortyEightHoursAgo
+        )
+        
+        // Only update if there's new data (prevents unnecessary re-renders)
+        if (hasNewPayment || freshPayments.length !== receivedPayments.length) {
+          console.log('💰 [OVERVIEW] New payments detected, updating...')
+          setReceivedPayments(freshPayments)
+        }
+      } catch (error) {
+        console.warn('⚠️ Payment polling failed, will retry', error)
+      }
+    }, 5000) // Poll every 5 seconds for faster detection
+
+    return () => clearInterval(pollInterval)
+  }, [user?.id, paymentsLoading, receivedPayments.length])
 
 
 
@@ -1121,119 +1152,10 @@ export default function LandlordDashboard() {
 
     }
 
-
-
-    // ── State 5: ACTIVE agreement — coordinate move-in (no very recent payment,
-
-    //    but tenant is active and landlord may still need to action things)   ────
-
-    // Show if there's an ACTIVE agreement whose status changed in the last 7 days
-
-    // and the landlord hasn't sent a message to this tenant recently.
-
-    // We use `agreement.updated_at` as a proxy for "recently activated".
-
-    if (!agreementsLoading && agreements.length > 0) {
-
-      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
-
-      const newlyActiveAgreement = agreements.find((a: any) =>
-
-        a.status === 'ACTIVE' && new Date(a.updated_at ?? a.created_at).getTime() > sevenDaysAgo
-
-      )
-
-
-
-      if (newlyActiveAgreement) {
-
-        const tenantName = newlyActiveAgreement.tenant?.full_name || 'Your tenant'
-
-        const propertyTitle = newlyActiveAgreement.property?.title || 'your property'
-
-        const startDate = newlyActiveAgreement.start_date
-
-          ? new Date(newlyActiveAgreement.start_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })
-
-          : null
-
-
-
-        return (
-
-          <Card className="mb-8 border-emerald-200 bg-emerald-50">
-
-            <CardContent className="p-5">
-
-              <div className="flex items-start gap-4">
-
-                <div className="h-10 w-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
-
-                  <Building2 className="h-5 w-5 text-emerald-600" />
-
-                </div>
-
-                <div className="flex-1 min-w-0">
-
-                  <h3 className="font-bold text-emerald-900 mb-1">
-
-                    New Active Tenancy — Coordinate Move-In
-
-                  </h3>
-
-                  <p className="text-emerald-800 text-sm mb-3">
-
-                    <span className="font-semibold">{tenantName}</span> is now your active tenant at{' '}
-
-                    <span className="font-semibold">{propertyTitle}</span>.
-
-                    {startDate && <> Move-in date: <span className="font-semibold">{startDate}</span>.</>}
-
-                  </p>
-
-                  <div className="flex items-center gap-2 flex-wrap">
-
-                    {newlyActiveAgreement.tenant_id && (
-
-                      <Link href={`/landlord/messages?tenant=${newlyActiveAgreement.tenant_id}`}>
-
-                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
-
-                          <Mail className="h-4 w-4 mr-2" />Welcome Tenant
-
-                        </Button>
-
-                      </Link>
-
-                    )}
-
-                    <Link href={`/landlord/agreements/${newlyActiveAgreement.id}`}>
-
-                      <Button size="sm" variant="outline" className="border-emerald-400 text-emerald-700 hover:bg-emerald-100">
-
-                        <FileCheck className="h-4 w-4 mr-2" />View Agreement
-
-                      </Button>
-
-                    </Link>
-
-                  </div>
-
-                </div>
-
-                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 flex-shrink-0">Move-In</Badge>
-
-              </div>
-
-            </CardContent>
-
-          </Card>
-
-        )
-
-      }
-
-    }
+    // ── State 5: CONSOLIDATED into "Rent Payment Confirmed" banner above ────
+    // Previously: "New Active Tenancy" banner for ACTIVE agreements
+    // Now: Payment confirmation banner handles move-in coordination (more important workflow)
+    // This reduces UI clutter and focuses on the revenue event that triggers move-in actions
 
 
 

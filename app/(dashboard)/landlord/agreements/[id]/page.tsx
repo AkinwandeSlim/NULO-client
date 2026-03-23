@@ -668,23 +668,6 @@ export default function LandlordAgreementDetailPage() {
                   SIGNED / ACTIVE:  both signed, agreement complete
             ─────────────────────────────────────────────────────────────────── */}
 
-            {/* Waiting for tenant — agreement just generated, no one has signed */}
-            {effectiveStatus === "PENDING_TENANT" && (
-              <Card className="border-orange-200 bg-orange-50/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
-                <CardContent className="pt-5">
-                  <div className="flex items-start gap-3">
-                    <Clock className="h-5 w-5 text-orange-500 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-orange-800 text-sm">Waiting for Tenant</p>
-                      <p className="text-xs text-orange-600 mt-0.5">
-                        The agreement has been sent to the tenant. Once they sign, you'll be notified to countersign.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
             {/* Tenant has signed — landlord's turn (shown even if DB status is stale) */}
             {effectiveStatus === "PENDING_LANDLORD" && !canSign && (
               <Card className="border-amber-200 bg-amber-50/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
@@ -702,21 +685,47 @@ export default function LandlordAgreementDetailPage() {
               </Card>
             )}
 
+            {/* Waiting for tenant — agreement just generated, no one has signed */}
+            {effectiveStatus === "PENDING_TENANT" && (
+              <Card className="border-orange-200 bg-orange-50/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
+                <CardContent className="pt-5 pb-5 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <Clock className="h-5 w-5 text-orange-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-orange-800 text-sm">Awaiting Tenant Signature</p>
+                      <p className="text-xs text-orange-600 mt-0.5">
+                        Agreement sent to tenant. Send a reminder to expedite signing.
+                      </p>
+                    </div>
+                  </div>
+                  {/* Quick action: Message tenant about signing */}
+                  <Link href={`/landlord/messages?property=${agreement.property_id}&tenant=${agreement.tenant_id}&context=agreement_signing`} className="block">
+                    <Button variant="outline" className="w-full border-orange-300 text-orange-700 hover:bg-orange-50 text-sm">
+                      <Mail className="mr-2 h-4 w-4" />
+                      Remind Tenant to Sign
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Both signed — awaiting tenant payment */}
             {(effectiveStatus === "SIGNED" || effectiveStatus === "ACTIVE") && (
               <Card className="border-green-200 bg-green-50/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
-                <CardContent className="pt-5 pb-5 space-y-4">
-                  <div className="flex items-start gap-3">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold text-green-700">Quick Actions</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-start gap-3 pb-3 border-b border-green-200">
                     <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="font-semibold text-green-800 text-sm">Agreement Fully Signed</p>
                       <p className="text-xs text-green-600 mt-0.5">
-                        Both parties have signed. The tenant has been prompted to proceed to payment.
+                        Both parties have signed. Awaiting tenant payment.
                       </p>
                     </div>
                   </div>
-                  {/* Payment is initiated by the tenant — landlord sees awaiting status.
-                      TODO: replace with real payment status once /landlord/payments is built */}
+                  {/* Payment status */}
                   <div className="flex items-center gap-2 px-3 py-2.5 bg-white rounded-lg border border-green-200">
                     <Clock className="h-4 w-4 text-amber-500 flex-shrink-0" />
                     <div className="flex-1">
@@ -726,11 +735,11 @@ export default function LandlordAgreementDetailPage() {
                       </p>
                     </div>
                   </div>
-                  {/* Quick shortcut to chase the tenant via message */}
-                  <Link href={`/landlord/messages?tenant=${agreement.tenant_id}`} className="block">
+                  {/* Message tenant about payment */}
+                  <Link href={`/landlord/messages?property=${agreement.property_id}&tenant=${agreement.tenant_id}&context=agreement_payment`} className="block">
                     <Button variant="outline" className="w-full border-green-300 text-green-700 hover:bg-green-50 text-sm">
                       <Mail className="mr-2 h-4 w-4" />
-                      Message Tenant About Payment
+                      Message About Payment
                     </Button>
                   </Link>
                 </CardContent>
@@ -740,6 +749,7 @@ export default function LandlordAgreementDetailPage() {
             {/* ── PDF Actions ───────────────────────────────────────────────
                 FIX: Correctly gate PDF actions on status === 'SIGNED' and document_url.
                 Show "Generate PDF" first, then "Download PDF" once URL exists.
+                ALSO: Detect old fake URLs (from https://storage.nuloafrica.com) and force regeneration.
             ─────────────────────────────────────────────────────────────────── */}
             {(effectiveStatus === "SIGNED" || effectiveStatus === "ACTIVE") && (
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
@@ -747,8 +757,9 @@ export default function LandlordAgreementDetailPage() {
                   <CardTitle className="text-sm font-semibold text-slate-700">Agreement Document</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {agreement.document_url ? (
-                    // document_url exists — show download link
+                  {/* Check if URL is real (Supabase CDN) vs old fake placeholder */}
+                  {agreement.document_url && agreement.document_url.includes("supabase.co") ? (
+                    // Real Supabase URL — show download link
                     <a href={agreement.document_url} target="_blank" rel="noopener noreferrer">
                       <Button variant="outline" className="w-full border-green-300 text-green-700 hover:bg-green-50">
                         <Download className="mr-2 h-4 w-4" />
@@ -756,7 +767,7 @@ export default function LandlordAgreementDetailPage() {
                       </Button>
                     </a>
                   ) : (
-                    // Signed but no PDF yet — show generate button
+                    // Old fake URL or no URL — show generate button
                     <Button
                       onClick={handleGeneratePdf}
                       disabled={isGeneratingPdf}
@@ -771,7 +782,7 @@ export default function LandlordAgreementDetailPage() {
                       ) : (
                         <>
                           <FilePlus2 className="mr-2 h-4 w-4" />
-                          Generate PDF
+                          {agreement.document_url ? "Regenerate PDF" : "Generate PDF"}
                         </>
                       )}
                     </Button>
@@ -782,6 +793,9 @@ export default function LandlordAgreementDetailPage() {
 
             {/* Navigation actions */}
             <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
+              <CardHeader className="bg-gradient-to-r from-orange-100 to-orange-50 border-b border-orange-100">
+                <CardTitle className="text-orange-900 text-base">Quick Actions</CardTitle>
+              </CardHeader>
               <CardContent className="pt-5 space-y-2">
                 <Link href={`/landlord/applications/${agreement.application_id}`} className="block">
                   <Button variant="outline" className="w-full text-slate-700 border-orange-200 hover:bg-orange-50 hover:border-orange-300 transition-colors">
