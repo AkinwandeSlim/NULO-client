@@ -78,7 +78,7 @@ export const viewingRequestsAPI = {
   getAll: async (statusFilter?: string): Promise<ViewingRequestsResponse> => {
     const params = statusFilter ? { status_filter: statusFilter } : {};
     const response = await apiClient.get<ViewingRequestsResponse>(
-      '/api/v1/viewing-requests',
+      '/api/v1/viewing-requests/',
       { params }
     );
     return response.data;

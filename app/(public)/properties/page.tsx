@@ -615,8 +615,8 @@ export default function PropertiesPage() {
                               >
                                 <Bed className="w-3 h-3 text-orange-500" />
                                 <span className="font-semibold text-slate-700">{property.beds}</span>
-                                {/* Tooltip */}
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                                {/* Tooltip - positioned to avoid covering location */}
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-lg">
                                   {property.beds} Bedroom{property.beds !== 1 ? 's' : ''}
                                 </div>
                               </div>
@@ -628,8 +628,8 @@ export default function PropertiesPage() {
                               >
                                 <Bath className="w-3 h-3 text-blue-500" />
                                 <span className="font-semibold text-slate-700">{property.baths}</span>
-                                {/* Tooltip */}
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                                {/* Tooltip - positioned to avoid covering location */}
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-lg">
                                   {property.baths} Bathroom{property.baths !== 1 ? 's' : ''}
                                 </div>
                               </div>

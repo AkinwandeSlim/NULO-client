@@ -14,6 +14,7 @@ import Link from "next/link"
 import { paymentsAPI, type Transaction } from "@/lib/api/payments"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
 import { toast } from "sonner"
+import { formatNGN, calculateAgreementBreakdown, getSecurityDeposit } from "@/lib/utils/rentalCalculations"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -24,9 +25,6 @@ const DEFAULT_PROPERTY_IMAGE = "https://images.unsplash.com/photo-1560448204-e02
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-const formatNGN = (amount: number) =>
-  `₦${Number(amount).toLocaleString("en-NG")}`
 
 const formatDate = (dateStr: string | null | undefined) => {
   if (!dateStr) return "—"
@@ -126,10 +124,8 @@ export default function TenantPaymentNewPage() {
 
   // ── Calculate payment breakdown ─────────────────────────────────────────────
 
-  const annualRent = agreement ? agreement.rent_amount * 12 : 0
-  const totalDue = agreement
-    ? annualRent + agreement.deposit_amount + agreement.platform_fee + (agreement.service_charge ?? 0)
-    : 0
+  const breakdown = calculateAgreementBreakdown(agreement || {})
+  const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
 
   // ── Initiate payment ────────────────────────────────────────────────────────
 
@@ -279,7 +275,7 @@ export default function TenantPaymentNewPage() {
             <div className="space-y-4">
               <div className="flex justify-between items-center py-3 border-b border-slate-100">
                 <span className="text-slate-600">Monthly Rent</span>
-                <span className="font-semibold text-slate-900">{formatNGN(agreement.rent_amount)}</span>
+                <span className="font-semibold text-slate-900">{formatNGN(monthlyRent)}</span>
               </div>
               <div className="flex justify-between items-center py-3 border-b border-slate-100">
                 <span className="text-slate-600">Annual Rent (12 × Monthly)</span>
@@ -287,16 +283,16 @@ export default function TenantPaymentNewPage() {
               </div>
               <div className="flex justify-between items-center py-3 border-b border-slate-100">
                 <span className="text-slate-600">Security Deposit</span>
-                <span className="font-semibold text-slate-900">{formatNGN(agreement.deposit_amount)}</span>
+                <span className="font-semibold text-slate-900">{formatNGN(cautionFee)}</span>
               </div>
               <div className="flex justify-between items-center py-3 border-b border-slate-100">
                 <span className="text-slate-600">Platform Fee</span>
-                <span className="font-semibold text-slate-900">{formatNGN(agreement.platform_fee)}</span>
+                <span className="font-semibold text-slate-900">{formatNGN(platformFee)}</span>
               </div>
-              {agreement.service_charge && (
+              {serviceCharge > 0 && (
                 <div className="flex justify-between items-center py-3 border-b border-slate-100">
                   <span className="text-slate-600">Service Charge</span>
-                  <span className="font-semibold text-slate-900">{formatNGN(agreement.service_charge)}</span>
+                  <span className="font-semibold text-slate-900">{formatNGN(serviceCharge)}</span>
                 </div>
               )}
               <div className="flex justify-between items-center py-4 border-t-2 border-slate-300">

@@ -466,20 +466,53 @@ export async function GET(request: NextRequest) {
         redirectTo = '/onboarding/landlord/step-1?oauth=1'
       }
     } else if (resolvedUserType === 'tenant') {
-      // Tenants: 
-      // - If coming from a specific property page, return there (new user browsing)
-      // - Otherwise, go to tenant dashboard (returning user)
+      // Tenants: Smart redirection based on user context and activity
       if (customRedirect && customRedirect.startsWith('/properties/') && customRedirect !== '/properties') {
-        // Specific property page (not just /properties search)
+        // User was viewing a specific property page - return there
         redirectTo = customRedirect
         console.log('[GOOGLE-CB] Tenant: Returning to specific property page:', customRedirect)
       } else if (isSigninFlow) {
-        // Returning tenant → dashboard
-        redirectTo = '/tenant'
-        console.log('[GOOGLE-CB] Tenant: Returning user, going to dashboard')
+        // Returning tenant - check if they have applications/viewings
+        console.log('[GOOGLE-CB] Tenant: Returning user, checking activity...')
+        
+        try {
+          // Import and check APIs for tenant activity
+          const [applicationsAPI, viewingRequestsAPI] = await Promise.all([
+            import('@/lib/api/applications').then(mod => mod.applicationsAPI),
+            import('@/lib/api/viewingRequestsTenant').then(mod => mod.viewingRequestsAPI)
+          ]);
+
+          // Check for applications and viewing requests in parallel
+          const [applicationsResponse, viewingsResponse] = await Promise.allSettled([
+            applicationsAPI.getMyApplicationsFast(),
+            viewingRequestsAPI.getMyRequests()
+          ]);
+
+          const hasApplications = applicationsResponse.status === 'fulfilled' && 
+                                applicationsResponse.value.success && 
+                                applicationsResponse.value.applications.length > 0;
+          
+          const hasViewings = viewingsResponse.status === 'fulfilled' && 
+                             viewingsResponse.value.success && 
+                             viewingsResponse.value.data.length > 0;
+
+          if (hasApplications || hasViewings) {
+            redirectTo = '/tenant';
+            console.log('[GOOGLE-CB] Tenant: Returning user with activity, going to dashboard', {
+              hasApplications,
+              hasViewings
+            });
+          } else {
+            redirectTo = '/properties';
+            console.log('[GOOGLE-CB] Tenant: Returning user but no activity, going to properties');
+          }
+        } catch (error) {
+          console.warn('[GOOGLE-CB] Failed to check tenant activity, defaulting to properties:', error);
+          redirectTo = '/properties';
+        }
       } else {
-        // New tenant → properties or onboarding
-        redirectTo = customRedirect || '/properties'
+        // New tenant - go to properties page to browse
+        redirectTo = '/properties'
         console.log('[GOOGLE-CB] Tenant: New user, going to properties:', redirectTo)
       }
     }

@@ -124,20 +124,19 @@ const landlordSidebarSections: SidebarSection[] = [
   {
     section: "Property Management",
     icon: Building2,
-    collapsible: true,
     items: [
-      { href: "/landlord/properties", label: "My Properties", icon: Building2, isParent: true },
-      { href: "/landlord/viewings", label: "Viewing Requests", icon: Eye, indent: true },
-      { href: "/landlord/applications", label: "Applications", icon: FileText, indent: true },
-      { href: "/landlord/agreements", label: "Agreements", icon: BookOpen, indent: true },
-      { href: "/landlord/maintenance", label: "Maintenance", icon: SettingsIcon, indent: true },
+      { href: "/landlord/properties", label: "My Properties", icon: Building2 },
+      { href: "/landlord/viewings", label: "Viewing Requests", icon: Eye },
+      { href: "/landlord/applications", label: "Applications", icon: FileText },
+      { href: "/landlord/agreements", label: "Agreements", icon: BookOpen },
+      { href: "/landlord/maintenance", label: "Maintenance", icon: SettingsIcon },
     ]
   },
   {
     section: "Financial Management",
     icon: FileCheck,
     items: [
-      { href: "/landlord/transactions", label: "Transaction History", icon: BookOpen },
+      { href: "/landlord/payments", label: "Transaction History", icon: BookOpen },
       { href: "/landlord/invoices", label: "Invoices Issued", icon: FileText },
       { href: "/landlord/reports", label: "Payment Reports", icon: FileCheck },
     ]
@@ -312,12 +311,22 @@ export default function DashboardLayout({
     // Exact match for other pages
     if (pathname === path) return true
     
+    // Special case: /tenant/payments should ONLY match /tenant/payments and /tenant/payments (exact)
+    // NOT /tenant/payments/new (Make Payment) - those have their own routes
+    if (path === '/tenant/payments') {
+      return pathname === '/tenant/payments'
+    }
+    
+    // Special case: /tenant/payments/new should ONLY match that exact path and query strings
+    if (path === '/tenant/payments/new') {
+      return pathname === '/tenant/payments/new'
+    }
+    
     // Check if this is a nested route under this path
     // Only match if the next character is a slash (prevents false positives)
     if (pathname.startsWith(path + '/')) return true
     
-    // Special cases: Billing pages
-    if (path === '/tenant/payments' && (pathname === '/tenant/payments' || pathname.startsWith('/tenant/payments/'))) return true
+    // Special cases: Other billing pages
     if (path === '/tenant/invoices' && pathname.startsWith('/tenant/invoices')) return true
     if (path === '/landlord/transactions' && pathname.startsWith('/landlord/transactions')) return true
     if (path === '/landlord/invoices' && pathname.startsWith('/landlord/invoices')) return true

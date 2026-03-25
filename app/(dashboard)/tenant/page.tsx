@@ -59,6 +59,16 @@ export default function TenantDashboard() {
   const [allDataLoading, setAllDataLoading] = useState(true)
   const [recentPayments, setRecentPayments] = useState<any[]>([])
   const [paymentsLoading, setPaymentsLoading] = useState(true)
+  const [dismissedApprovalBanner, setDismissedApprovalBanner] = useState<string[]>([])
+  
+  // Track dismissed payment ready banners by agreement ID
+  const [dismissedPaymentBanners, setDismissedPaymentBanners] = useState<string[]>([])
+  
+  // Track dismissed viewing confirmed banners by viewing ID
+  const [dismissedViewingBanners, setDismissedViewingBanners] = useState<string[]>([])
+  
+  // Track dismissed message banners by notification ID
+  const [dismissedMessageBanners, setDismissedMessageBanners] = useState<string[]>([])
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -114,6 +124,11 @@ export default function TenantDashboard() {
   useEffect(() => {
     if (!user?.id || paymentsLoading) return
 
+    // Only start polling if initial fetch was successful
+    if (recentPayments.length === 0 && !paymentsLoading) {
+      return // Don't poll if we couldn't fetch payments initially
+    }
+
     const pollInterval = setInterval(async () => {
       try {
         const { paymentsAPI } = await import("@/lib/api/payments")
@@ -134,7 +149,8 @@ export default function TenantDashboard() {
         }
       } catch (error) {
         console.error('[TENANT] Payment polling error:', error)
-        // Silently continue polling - don't break the interval
+        // If we get consecutive errors, stop polling to avoid spam
+        // Don't break interval - let it retry but reduce frequency if needed
       }
     }, 30000) // Poll every 30 seconds (reduced from 5 to avoid API spam)
 
@@ -523,6 +539,462 @@ export default function TenantDashboard() {
             </CardContent>
           </Card>
         )}
+
+        {/* Application Approval Banner */}
+        {(() => {
+          // Check for pending agreements that need signing
+          const pendingAgreements = tenantData?.agreements?.filter((agreement: any) => {
+            const isPending = agreement.status === "PENDING_TENANT" || 
+                             (agreement.status === "PENDING" && !agreement.tenant_signed_at)
+            return isPending && !dismissedApprovalBanner.includes(agreement.id)
+          }) || []
+          
+          // Show banner if there are pending agreements
+          if (pendingAgreements.length > 0) {
+            const latestAgreement = pendingAgreements[0]
+            // Find the related application by property_id (not application_id)
+            const application = tenantData?.applications?.find((app: any) => app.property_id === latestAgreement.property_id)
+            
+            return (
+              <Card className="mb-8 border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 shadow-sm">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-bold text-green-900 mb-1">
+                        🎉 Application Approved! Ready to Move Forward?
+                      </h3>
+                      <p className="text-green-700 text-sm mb-3">
+                        Your rental application for '{application?.property_title || latestAgreement.property_title || 'Property'}' has been approved! The next step is to review and sign your rental agreement to secure your new home.
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <Link href="/tenant/agreements">
+                          <Button 
+                            className="bg-green-600 hover:bg-green-700 text-white shadow-md"
+                            onClick={() => {
+                              setDismissedApprovalBanner(prev => [...prev, latestAgreement.id])
+                            }}
+                          >
+                            <FileCheck className="mr-2 h-4 w-4" />
+                            Sign Rental Agreement
+                          </Button>
+                        </Link>
+                        <Link href="/tenant/applications">
+                          <Button 
+                            variant="outline" 
+                            className="border-green-300 text-green-700 hover:bg-green-50"
+                            onClick={() => {
+                              setDismissedApprovalBanner(prev => [...prev, latestAgreement.id])
+                            }}
+                          >
+                            View Application Details
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setDismissedApprovalBanner(prev => [...prev, latestAgreement.id])
+                      }}
+                      className="hidden sm:block text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                    <div className="hidden sm:block">
+                      <div className="text-4xl">🏠</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          }
+          return null
+        })()}
+
+        {/* Payment Ready Banner - Landlord has signed, time to pay */}
+        {(() => {
+          console.log('🔍 [PAYMENT BANNER DEBUG] Tenant data:', tenantData)
+          console.log('🔍 [PAYMENT BANNER DEBUG] Agreements:', tenantData?.agreements)
+          console.log('🔍 [PAYMENT BANNER DEBUG] Dismissed payment banners:', dismissedPaymentBanners)
+          
+          // Check for agreements where landlord has signed but tenant hasn't paid yet
+          const readyToPayAgreements = tenantData?.agreements?.filter((agreement: any) => {
+            // Use status instead of signature fields since TenantAgreement doesn't have them
+            const isSigned = agreement.status === "SIGNED" || agreement.status === "ACTIVE"
+            const needsPayment = isSigned && !agreement.payment_pending
+            
+            console.log('🔍 [PAYMENT BANNER DEBUG] Agreement:', agreement.id)
+            console.log('  - status:', agreement.status)
+            console.log('  - payment_pending:', agreement.payment_pending)
+            console.log('  - isSigned:', isSigned)
+            console.log('  - needsPayment:', needsPayment)
+            console.log('  - isDismissed:', dismissedPaymentBanners.includes(agreement.id))
+            
+            return needsPayment && !dismissedPaymentBanners.includes(agreement.id)
+          }) || []
+          
+          console.log('🔍 [PAYMENT BANNER DEBUG] Ready to pay agreements:', readyToPayAgreements.length)
+          
+          // Show banner if there are agreements ready for payment
+          if (readyToPayAgreements.length > 0) {
+            console.log('🎯 [PAYMENT BANNER DEBUG] SHOULD SHOW PAYMENT BANNER! Found agreements:', readyToPayAgreements.length)
+            const latestAgreement = readyToPayAgreements[0]
+            const application = tenantData?.applications?.find((app: any) => app.property_id === latestAgreement.property_id)
+            
+            console.log('🔍 [PAYMENT BANNER DEBUG] Latest agreement:', latestAgreement)
+            console.log('🔍 [PAYMENT BANNER DEBUG] Related application:', application)
+            console.log('🔍 [PAYMENT BANNER DEBUG] Agreement status:', latestAgreement.status)
+            
+            return (
+              <Card className="mb-8 border-purple-200 bg-gradient-to-r from-purple-50 to-violet-50 shadow-sm">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <DollarSign className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-bold text-purple-900 mb-1">
+                        💰 Agreement Signed! Time to Secure Your Rental
+                      </h3>
+                      <p className="text-purple-700 text-sm mb-3">
+                        Both parties have signed the agreement for '{application?.property_title || latestAgreement.property_title || 'Property'}! Make your payment to secure your rental and activate your tenancy.
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <Link href={`/tenant/payments/new?agreement_id=${latestAgreement.id}`}>
+                          <Button 
+                            className="bg-purple-600 hover:bg-purple-700 text-white shadow-md"
+                            onClick={() => {
+                              setDismissedPaymentBanners(prev => [...prev, latestAgreement.id])
+                            }}
+                          >
+                            <DollarSign className="mr-2 h-4 w-4" />
+                            Make Payment
+                          </Button>
+                        </Link>
+                        <Link href="/tenant/agreements">
+                          <Button 
+                            variant="outline" 
+                            className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                            onClick={() => {
+                              setDismissedPaymentBanners(prev => [...prev, latestAgreement.id])
+                            }}
+                          >
+                            View Agreement
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setDismissedPaymentBanners(prev => [...prev, latestAgreement.id])
+                      }}
+                      className="hidden sm:block text-purple-400 hover:text-purple-600 transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                    <div className="hidden sm:block">
+                      <div className="text-4xl">💳</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          } else {
+            console.log('❌ [PAYMENT BANNER DEBUG] NOT showing payment banner. Ready to pay agreements:', readyToPayAgreements.length)
+          }
+          return null
+        })()}
+
+        {/* Viewing Confirmed Banner - High Priority */}
+        {(() => {
+          console.log('🔍 [VIEWING BANNER DEBUG] Tenant data:', tenantData)
+          console.log('🔍 [VIEWING BANNER DEBUG] Viewing requests:', tenantData?.viewingRequests)
+          console.log('🔍 [VIEWING BANNER DEBUG] Dismissed viewing banners:', dismissedViewingBanners)
+          
+          // Check for confirmed viewings that haven't been acknowledged
+          const confirmedViewings = tenantData?.viewingRequests?.filter((viewing: any) => {
+            const isConfirmed = viewing.status === 'confirmed'
+            const isNotDismissed = !dismissedViewingBanners.includes(viewing.id)
+            
+            console.log('🔍 [VIEWING BANNER DEBUG] Viewing:', viewing.id)
+            console.log('  - status:', viewing.status)
+            console.log('  - confirmed_date:', viewing.confirmed_date)
+            console.log('  - property_title:', viewing.property_title)
+            console.log('  - isConfirmed:', isConfirmed)
+            console.log('  - isNotDismissed:', isNotDismissed)
+            
+            return isConfirmed && isNotDismissed
+          }) || []
+          
+          console.log('🔍 [VIEWING BANNER DEBUG] Confirmed viewings:', confirmedViewings.length)
+          
+          // Show banner if there are confirmed viewings
+          if (confirmedViewings.length > 0) {
+            console.log('🎯 [VIEWING BANNER DEBUG] SHOULD SHOW VIEWING BANNER! Found confirmed viewings:', confirmedViewings.length)
+            const latestViewing = confirmedViewings[0]
+            
+            console.log('🔍 [VIEWING BANNER DEBUG] Latest viewing:', latestViewing)
+            
+            return (
+              <Card className="mb-8 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-sm">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Calendar className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-bold text-blue-900 mb-1">
+                        🗓️ Viewing Confirmed! Get Ready
+                      </h3>
+                      <p className="text-blue-700 text-sm mb-3">
+                        Your viewing for '{latestViewing.property_title || 'Property'}' has been confirmed for {latestViewing.confirmed_date ? new Date(latestViewing.confirmed_date).toLocaleDateString('en-US', { 
+                          weekday: 'long', 
+                          month: 'short', 
+                          day: 'numeric' 
+                        }) : 'your scheduled date'} at {latestViewing.confirmed_time || latestViewing.time_slot}. Prepare any questions you have about the property!
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <Link href="/tenant/viewings">
+                          <Button 
+                            className="bg-blue-600 hover:bg-blue-700 text-white shadow-md"
+                            onClick={() => {
+                              setDismissedViewingBanners(prev => [...prev, latestViewing.id])
+                            }}
+                          >
+                            <Calendar className="mr-2 h-4 w-4" />
+                            View Details
+                          </Button>
+                        </Link>
+                        <Link href={`/tenant/messages?property=${latestViewing.property_id}&landlord=${latestViewing.landlord_id}&context=viewing_confirmed`}>
+                          <Button 
+                            variant="outline" 
+                            className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                            onClick={() => {
+                              setDismissedViewingBanners(prev => [...prev, latestViewing.id])
+                            }}
+                          >
+                            <MessageSquare className="mr-2 h-4 w-4" />
+                            Message Landlord
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setDismissedViewingBanners(prev => [...prev, latestViewing.id])
+                      }}
+                      className="hidden sm:block text-blue-400 hover:text-blue-600 transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                    <div className="hidden sm:block">
+                      <div className="text-4xl">👁️</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          } else {
+            console.log('❌ [VIEWING BANNER DEBUG] NOT showing viewing banner. Confirmed viewings:', confirmedViewings.length)
+          }
+          return null
+        })()}
+
+        {/* New Message Banner - Medium Priority */}
+        {(() => {
+          console.log('🔍 [MESSAGE BANNER DEBUG] Notifications:', notifications)
+          console.log('🔍 [MESSAGE BANNER DEBUG] Dismissed message banners:', dismissedMessageBanners)
+          
+          // Check for unread message notifications
+          const unreadMessages = notifications?.filter((notification: any) => {
+            const isMessage = notification.type === 'message'
+            const isUnread = !notification.read
+            const isNotDismissed = !dismissedMessageBanners.includes(notification.id)
+            
+            console.log('🔍 [MESSAGE BANNER DEBUG] Notification:', notification.id)
+            console.log('  - type:', notification.type)
+            console.log('  - read:', notification.read)
+            console.log('  - title:', notification.title)
+            console.log('  - isMessage:', isMessage)
+            console.log('  - isUnread:', isUnread)
+            console.log('  - isNotDismissed:', isNotDismissed)
+            
+            return isMessage && isUnread && isNotDismissed
+          }) || []
+          
+          console.log('🔍 [MESSAGE BANNER DEBUG] Unread messages:', unreadMessages.length)
+          
+          // Show banner if there are unread messages
+          if (unreadMessages.length > 0) {
+            console.log('🎯 [MESSAGE BANNER DEBUG] SHOULD SHOW MESSAGE BANNER! Found unread messages:', unreadMessages.length)
+            const latestMessage = unreadMessages[0]
+            
+            console.log('🔍 [MESSAGE BANNER DEBUG] Latest message:', latestMessage)
+            
+            return (
+              <Card className="mb-8 border-teal-200 bg-gradient-to-r from-teal-50 to-cyan-50 shadow-sm">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-teal-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <MessageSquare className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-bold text-teal-900 mb-1">
+                        💬 New Message from Landlord
+                      </h3>
+                      <p className="text-teal-700 text-sm mb-3">
+                        {latestMessage.message || 'You have a new message regarding your rental inquiry.'}
+                      </p>
+                      <div className="flex items-center gap-3">
+                        {latestMessage.link ? (
+                          <Link href={latestMessage.link}>
+                            <Button 
+                              className="bg-teal-600 hover:bg-teal-700 text-white shadow-md"
+                              onClick={() => {
+                                setDismissedMessageBanners(prev => [...prev, latestMessage.id])
+                              }}
+                            >
+                              <MessageSquare className="mr-2 h-4 w-4" />
+                              Read Message
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Link href="/tenant/messages">
+                            <Button 
+                              className="bg-teal-600 hover:bg-teal-700 text-white shadow-md"
+                              onClick={() => {
+                                setDismissedMessageBanners(prev => [...prev, latestMessage.id])
+                              }}
+                            >
+                              <MessageSquare className="mr-2 h-4 w-4" />
+                              View Messages
+                            </Button>
+                          </Link>
+                        )}
+                        <Button 
+                          variant="outline" 
+                          className="border-teal-300 text-teal-700 hover:bg-teal-50"
+                          onClick={() => {
+                            setDismissedMessageBanners(prev => [...prev, latestMessage.id])
+                          }}
+                        >
+                          Mark as Read
+                        </Button>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setDismissedMessageBanners(prev => [...prev, latestMessage.id])
+                      }}
+                      className="hidden sm:block text-teal-400 hover:text-teal-600 transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                    <div className="hidden sm:block">
+                      <div className="text-4xl">💬</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          } else {
+            console.log('❌ [MESSAGE BANNER DEBUG] NOT showing message banner. Unread messages:', unreadMessages.length)
+          }
+          return null
+        })()}
+
+        {/* Upcoming Viewing Banner - Medium Priority */}
+        {(() => {
+          console.log('🔍 [UPCOMING VIEWING BANNER DEBUG] Viewing requests:', tenantData?.viewingRequests)
+          
+          // Check for viewings scheduled within next 24 hours
+          const upcomingViewings = tenantData?.viewingRequests?.filter((viewing: any) => {
+            if (viewing.status !== 'confirmed') return false
+            
+            const viewingDate = new Date(viewing.confirmed_date || viewing.preferred_date).getTime()
+            const now = Date.now()
+            const twentyFourHours = now + (24 * 60 * 60 * 1000)
+            const isWithin24Hours = viewingDate > now && viewingDate < twentyFourHours
+            const isNotDismissed = !dismissedViewingBanners.includes(`upcoming-${viewing.id}`)
+            
+            console.log('🔍 [UPCOMING VIEWING BANNER DEBUG] Viewing:', viewing.id)
+            console.log('  - status:', viewing.status)
+            console.log('  - confirmed_date:', viewing.confirmed_date)
+            console.log('  - viewingDate:', new Date(viewingDate))
+            console.log('  - isWithin24Hours:', isWithin24Hours)
+            console.log('  - isNotDismissed:', isNotDismissed)
+            
+            return isWithin24Hours && isNotDismissed
+          }) || []
+          
+          console.log('🔍 [UPCOMING VIEWING BANNER DEBUG] Upcoming viewings:', upcomingViewings.length)
+          
+          // Show banner if there are upcoming viewings
+          if (upcomingViewings.length > 0) {
+            console.log('🎯 [UPCOMING VIEWING BANNER DEBUG] SHOULD SHOW UPCOMING VIEWING BANNER!')
+            const nearestViewing = upcomingViewings[0]
+            const viewingTime = new Date(nearestViewing.confirmed_date || nearestViewing.preferred_date)
+            const hoursUntil = Math.round((viewingTime.getTime() - Date.now()) / (60 * 60 * 1000))
+            
+            return (
+              <Card className="mb-8 border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 shadow-sm">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Clock className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-bold text-orange-900 mb-1">
+                        ⏰ Viewing Soon! ({hoursUntil}h)
+                      </h3>
+                      <p className="text-orange-700 text-sm mb-3">
+                        Your viewing for '{nearestViewing.property_title || 'Property'}' is scheduled for tomorrow at {nearestViewing.confirmed_time || nearestViewing.time_slot}. Don't forget to prepare your questions!
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <Link href="/tenant/viewings">
+                          <Button 
+                            className="bg-orange-600 hover:bg-orange-700 text-white shadow-md"
+                            onClick={() => {
+                              setDismissedViewingBanners(prev => [...prev, `upcoming-${nearestViewing.id}`])
+                            }}
+                          >
+                            <Calendar className="mr-2 h-4 w-4" />
+                            View Details
+                          </Button>
+                        </Link>
+                        <Button 
+                          variant="outline" 
+                          className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                          onClick={() => {
+                            setDismissedViewingBanners(prev => [...prev, `upcoming-${nearestViewing.id}`])
+                          }}
+                        >
+                          Got it
+                        </Button>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setDismissedViewingBanners(prev => [...prev, `upcoming-${nearestViewing.id}`])
+                      }}
+                      className="hidden sm:block text-orange-400 hover:text-orange-600 transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                    <div className="hidden sm:block">
+                      <div className="text-4xl">⏰</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          } else {
+            console.log('❌ [UPCOMING VIEWING BANNER DEBUG] NOT showing upcoming viewing banner. Upcoming viewings:', upcomingViewings.length)
+          }
+          return null
+        })()}
 
         {/* Stat Cards */}
         <div className="mb-12">

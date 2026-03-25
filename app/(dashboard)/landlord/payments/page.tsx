@@ -13,7 +13,9 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { paymentsAPI, type Transaction } from "@/lib/api/payments"
+import { getPropertyById } from "@/lib/api/propertyVerification"
 import { toast } from "sonner"
+import { formatNGN, calculateRentalBreakdown, parsePaymentBreakdown } from "@/lib/utils/rentalCalculations"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -24,9 +26,6 @@ const DEFAULT_AVATAR = "https://api.dicebear.com/7.x/avataaars/svg?seed="
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-const formatNGN = (amount: number) =>
-  `₦${Number(amount).toLocaleString("en-NG")}`
 
 const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleDateString("en-NG", {
@@ -108,6 +107,200 @@ const getStatusBadge = (status: Transaction["status"]) => {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Payment Breakdown Component
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PaymentBreakdownProps {
+  transaction: Transaction
+  property?: Transaction['property']
+}
+
+function PaymentBreakdown({ transaction, property }: PaymentBreakdownProps) {
+  const [propertyDetails, setPropertyDetails] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  
+  // Fetch property details to get actual price
+  useEffect(() => {
+    const fetchPropertyDetails = async () => {
+      if (transaction.property_id && !(property as any)?.price) {
+        setIsLoading(true)
+        try {
+          const details = await getPropertyById(transaction.property_id)
+          setPropertyDetails(details)
+        } catch (error) {
+          console.warn('Failed to fetch property details:', error)
+        } finally {
+          setIsLoading(false)
+        }
+      }
+    }
+    
+    fetchPropertyDetails()
+  }, [transaction.property_id, (property as any)?.price])
+  
+  // Use centralized breakdown from notes first, then property price
+  const breakdown = parsePaymentBreakdown(transaction)
+  const monthlyRent = breakdown?.monthly_rent || (property as any)?.price || propertyDetails?.price || 0
+  const annualRent = breakdown?.annual_rent || (monthlyRent * 12)
+  const cautionFee = breakdown?.security_deposit || (monthlyRent * 2)
+  const platformFee = breakdown?.platform_fee || 0
+          const totalPaid = transaction.amount
+  const isRentPayment = transaction.transaction_type === "rent_payment"
+  const isSecurityDeposit = transaction.transaction_type === "security_deposit"
+  const isGuarantee = transaction.transaction_type === "guarantee_contribution"
+  
+  if (isLoading) {
+    return (
+      <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+        <div className="flex items-center justify-center py-2">
+          <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+          <span className="text-xs text-slate-500 ml-2">Loading property details...</span>
+        </div>
+      </div>
+    )
+  }
+  
+  if (isRentPayment && breakdown) {
+    // Show detailed breakdown from notes
+    return (
+      <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+        <p className="text-xs font-semibold text-slate-600 mb-2">PAYMENT BREAKDOWN</p>
+        <div className="space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Monthly Rent:</span>
+            <span className="font-semibold">{formatNGN(monthlyRent)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Annual Rent (×12):</span>
+            <span className="font-semibold text-green-700">{formatNGN(annualRent)}</span>
+          </div>
+          {cautionFee > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-600">Caution Fee:</span>
+              <span className="font-semibold text-blue-700">{formatNGN(cautionFee)}</span>
+            </div>
+          )}
+          {platformFee > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-600">Platform Fee:</span>
+              <span className="font-semibold text-purple-700">{formatNGN(platformFee)}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-sm font-semibold pt-2 border-t border-slate-300">
+            <span className="text-slate-900">Total Paid:</span>
+            <span className="text-green-700">{formatNGN(totalPaid)}</span>
+          </div>
+          <div className="text-xs text-slate-500 mt-2">
+            Complete move-in payment
+          </div>
+        </div>
+      </div>
+    )
+  }
+  
+  if (isRentPayment) {
+    // Annual rent payment - show breakdown
+    return (
+      <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+        <p className="text-xs font-semibold text-slate-600 mb-2">PAYMENT BREAKDOWN</p>
+        <div className="space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Monthly Rent:</span>
+            <span className="font-semibold">{formatNGN(monthlyRent)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Annual Rent (×12):</span>
+            <span className="font-semibold text-green-700">{formatNGN(annualRent)}</span>
+          </div>
+          <div className="flex justify-between text-sm font-semibold pt-2 border-t border-slate-300">
+            <span className="text-slate-900">Total Paid:</span>
+            <span className="text-green-700">{formatNGN(totalPaid)}</span>
+          </div>
+          <div className="text-xs text-slate-500 mt-2">
+            {monthlyRent > 0 ? (
+              totalPaid === annualRent ? 
+                "Annual rent payment (12 months)" : 
+                totalPaid > annualRent ? 
+                  `Annual rent + caution fee (${Math.round((totalPaid - annualRent) / monthlyRent)} additional months)` :
+                  `${Math.round(totalPaid / monthlyRent)} months of rent`
+            ) : 'Monthly rent not available'}
+          </div>
+        </div>
+      </div>
+    )
+  }
+  
+  if (isSecurityDeposit) {
+    // Security deposit payment (Caution Fee)
+    return (
+      <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+        <p className="text-xs font-semibold text-blue-600 mb-2">CAUTION FEE BREAKDOWN</p>
+        <div className="space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Monthly Rent:</span>
+            <span className="font-semibold">{formatNGN(monthlyRent)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Caution Fee:</span>
+            <span className="font-semibold text-blue-700">2 Months Rent</span>
+          </div>
+          <div className="flex justify-between text-sm font-semibold pt-2 border-t border-slate-300">
+            <span className="text-slate-900">Deposit Amount:</span>
+            <span className="text-blue-700">{formatNGN(totalPaid)}</span>
+          </div>
+          <div className="text-xs text-blue-600 mt-2">
+            Held in escrow until lease completion
+          </div>
+        </div>
+      </div>
+    )
+  }
+  
+  if (isGuarantee) {
+    // Guarantee contribution
+    return (
+      <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+        <p className="text-xs font-semibold text-purple-600 mb-2">PLATFORM FEE BREAKDOWN</p>
+        <div className="space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Monthly Rent:</span>
+            <span className="font-semibold">{formatNGN(monthlyRent)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Platform Fee:</span>
+            <span className="font-semibold text-purple-700">{formatNGN(totalPaid)}</span>
+          </div>
+          <div className="flex justify-between text-sm font-semibold pt-2 border-t border-slate-300">
+            <span className="text-slate-900">Fee Amount:</span>
+            <span className="text-purple-700">{formatNGN(totalPaid)}</span>
+          </div>
+          <div className="text-xs text-purple-600 mt-2">
+            One-time service fee for rental guarantee
+          </div>
+        </div>
+      </div>
+    )
+  }
+  
+  // Other payment types
+  return (
+    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+      <p className="text-xs font-semibold text-slate-600 mb-2">PAYMENT DETAILS</p>
+      <div className="space-y-1">
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-600">Amount Paid:</span>
+          <span className="font-semibold">{formatNGN(totalPaid)}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-600">Type:</span>
+          <span className="font-semibold">{transaction.transaction_type?.replace("_", " ") || "Other"}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TransactionCard Component (Rule 22)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -164,6 +357,11 @@ function TransactionCard({ transaction, onViewDetails, onMessageTenant }: Transa
                transaction.transaction_type.replace("_", " ")}
             </p>
           </div>
+        </div>
+
+        {/* Payment Breakdown */}
+        <div className="mb-4">
+          <PaymentBreakdown transaction={transaction} property={transaction.property} />
         </div>
 
         <div className="flex items-center justify-between pt-3 border-t border-slate-100">
@@ -257,22 +455,60 @@ export default function LandlordPaymentsPage() {
 
   // ── Calculate stats ─────────────────────────────────────────────────────────
 
+  // Debug: Log transactions to understand the data structure
+  console.log('🔍 [PAYMENTS] All transactions:', transactions.map(t => ({
+    id: t.id,
+    amount: t.amount,
+    type: t.transaction_type,
+    status: t.status,
+    property_id: t.property_id,
+    breakdown: parsePaymentBreakdown(t)
+  })))
+
+  // Calculate totals by parsing breakdown from notes
+  let totalRentAmount = 0
+  let totalSecurityDeposits = 0
+  let totalPlatformFees = 0
+
+  transactions.forEach(t => {
+    if (t.status === "released") {
+      const breakdown = parsePaymentBreakdown(t)
+      if (breakdown) {
+        // Use breakdown amounts if available
+        totalRentAmount += breakdown.annual_rent || 0
+        totalSecurityDeposits += breakdown.security_deposit || 0
+        totalPlatformFees += breakdown.platform_fee || 0
+      } else {
+        // Fallback to transaction type filtering
+        if (t.transaction_type === "rent_payment") {
+          totalRentAmount += t.amount
+        } else if (t.transaction_type === "security_deposit") {
+          totalSecurityDeposits += t.amount
+        } else if (t.transaction_type === "guarantee_contribution") {
+          totalPlatformFees += t.amount
+        }
+      }
+    }
+  })
+
   const stats = {
     total: transactions.length,
     received: transactions.filter(t => t.status === "released").length,
     processing: transactions.filter(t => t.status === "pending" || t.status === "held").length,
     failed: transactions.filter(t => t.status === "failed").length,
-    // Separate rent and security deposits
-    totalRentAmount: transactions
-      .filter(t => t.status === "released" && t.transaction_type === "rent_payment")
-      .reduce((sum, t) => sum + t.amount, 0),
-    totalSecurityDeposits: transactions
-      .filter(t => t.status === "released" && t.transaction_type === "security_deposit")
-      .reduce((sum, t) => sum + t.amount, 0),
-    totalAmount: transactions
-      .filter(t => t.status === "released")
-      .reduce((sum, t) => sum + t.amount, 0)
+    totalRentAmount,
+    totalSecurityDeposits,
+    totalGuaranteeFees: totalPlatformFees,
+    totalAmount: totalRentAmount + totalSecurityDeposits + totalPlatformFees
   }
+
+  // Debug: Log calculated stats
+  console.log('🔍 [PAYMENTS] Calculated stats:', {
+    rentAmount: stats.totalRentAmount,
+    securityDeposits: stats.totalSecurityDeposits,
+    platformFees: stats.totalGuaranteeFees,
+    total: stats.totalAmount
+  })
 
   // ─────────────────────────────────────────────────────────────────────────
   // Loading
@@ -338,7 +574,7 @@ export default function LandlordPaymentsPage() {
                 <div>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rent Collected</p>
                   <p className="text-2xl font-bold text-green-700 mt-1">{formatNGN(stats.totalRentAmount)}</p>
-                  <p className="text-xs text-green-600 mt-1">Annual rent payments</p>
+                  <p className="text-xs text-green-600 mt-1">Annual rent payments (12 months)</p>
                 </div>
                 <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                   <Banknote className="w-6 h-6 text-green-600" />
@@ -351,9 +587,9 @@ export default function LandlordPaymentsPage() {
             <CardContent className="pt-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Security Deposits</p>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Caution Fees</p>
                   <p className="text-2xl font-bold text-blue-700 mt-1">{formatNGN(stats.totalSecurityDeposits)}</p>
-                  <p className="text-xs text-blue-600 mt-1">Held in escrow</p>
+                  <p className="text-xs text-blue-600 mt-1">Security deposits (2 months rent)</p>
                 </div>
                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                   <Banknote className="w-6 h-6 text-blue-600" />
@@ -366,9 +602,9 @@ export default function LandlordPaymentsPage() {
             <CardContent className="pt-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Received</p>
-                  <p className="text-2xl font-bold text-purple-700 mt-1">{formatNGN(stats.totalAmount)}</p>
-                  <p className="text-xs text-purple-600 mt-1">All payments received</p>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Guarantee Fees</p>
+                  <p className="text-2xl font-bold text-purple-700 mt-1">{formatNGN(stats.totalGuaranteeFees)}</p>
+                  <p className="text-xs text-purple-600 mt-1">Service fees collected</p>
                 </div>
                 <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
                   <Banknote className="w-6 h-6 text-purple-600" />

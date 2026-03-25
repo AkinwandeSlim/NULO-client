@@ -177,13 +177,25 @@ export async function proxy(request: NextRequest) {
     }
 
     // ❌ NEW LANDLORD (incomplete onboarding) → Force to onboarding
+    // CRITICAL: Use explicit check for FALSE, not falsy. Prevents redirect loop on stale data.
+    // Undefined (from timeout) should NOT trigger redirect, only explicit false should.
     if (profile?.onboarding_completed === false) {
+      console.log('🔀 Landlord incomplete onboarding (onboarding_completed=false) → redirect to step-1')
       if (!pathname.startsWith('/onboarding/landlord')) {
-        console.log('🔀 Landlord incomplete onboarding → redirect to step-1')
+        console.log('🔀 Redirecting to /onboarding/landlord/step-1')
         const url = request.nextUrl.clone()
         url.pathname = '/onboarding/landlord/step-1'
         return NextResponse.redirect(url)
       }
+      // Already on onboarding route, allow through
+      return NextResponse.next()
+    }
+
+    // ⚠️ UNCERTAIN STATE (onboarding_completed is undefined from timeout)
+    // Allow access - don't redirect on uncertain data. Client-side auth will handle routing.
+    if (profile?.onboarding_completed === undefined) {
+      console.log('⚠️ [MIDDLEWARE] onboarding_completed is undefined (likely DB timeout) - allowing through')
+      return NextResponse.next()
     }
 
     return NextResponse.next()

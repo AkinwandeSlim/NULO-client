@@ -35,18 +35,14 @@ import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/AuthContext"
 import { applicationsAPI, type Application } from "@/lib/api/applications"
 import { agreementsAPI } from "@/lib/api/agreements"
+import { propertiesAPI } from "@/lib/api/properties"
+import { formatNGN, calculateRentalBreakdown } from "@/lib/utils/rentalCalculations"
 import { toast } from "sonner"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed='
 
 // ============ HELPER FUNCTIONS ============
-
-const formatNGN = (amount: number) =>
-  new Intl.NumberFormat("en-NG", {
-    style: "currency", currency: "NGN",
-    minimumFractionDigits: 0, maximumFractionDigits: 0
-  }).format(amount)
 
 const formatEmploymentStatus = (status: string) => ({
   'employed': 'Employed',
@@ -387,7 +383,7 @@ export default function LandlordApplicationDetailPage() {
                     </div>
                     {property.price && (
                       <div className="absolute -bottom-2 -right-2 bg-orange-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow">
-                        ₦{property.price.toLocaleString()}/mo
+                        {formatNGN(property.price)}/mo
                       </div>
                     )}
                   </div>
@@ -642,7 +638,7 @@ export default function LandlordApplicationDetailPage() {
                       <h4 className="font-semibold text-slate-900 text-sm truncate">{property?.title}</h4>
                       <p className="text-xs text-slate-500 mb-2">{property?.location}</p>
                       <p className="text-lg font-bold text-orange-600">
-                        {property?.price ? `₦${property.price.toLocaleString()}/month` : 'Price TBD'}
+                        {property?.price ? `${formatNGN(property.price)}/month` : 'Price TBD'}
                       </p>
                     </div>
                   </div>
@@ -657,6 +653,49 @@ export default function LandlordApplicationDetailPage() {
                     </Button>
                   </Link>
                 </div>
+
+                {/* Rental Breakdown */}
+                {property?.price && (
+                  <div className="bg-blue-50 rounded-xl p-4 mb-4">
+                    <p className="text-blue-600 font-semibold text-sm mb-2">Rental Breakdown</p>
+                    {(() => {
+                      const breakdown = calculateRentalBreakdown(property)
+                      const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
+                      return (
+                        <div className="space-y-1 text-xs">
+                          <div className="flex justify-between">
+                            <span>Monthly Rent:</span>
+                            <span className="font-semibold">{formatNGN(monthlyRent)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Annual Rent (12 months):</span>
+                            <span className="font-semibold">{formatNGN(annualRent)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Security Deposit (2 months):</span>
+                            <span className="font-semibold text-blue-700">{formatNGN(cautionFee)}</span>
+                          </div>
+                          {platformFee > 0 && (
+                            <div className="flex justify-between">
+                              <span>Platform Fee:</span>
+                              <span className="font-semibold">{formatNGN(platformFee)}</span>
+                            </div>
+                          )}
+                          {serviceCharge > 0 && (
+                            <div className="flex justify-between">
+                              <span>Service Charge:</span>
+                              <span className="font-semibold">{formatNGN(serviceCharge)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between pt-1 border-t border-slate-300 font-bold">
+                            <span>Total Move-in Cost:</span>
+                            <span className="text-orange-700">{formatNGN(totalDue)}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
 
                 {/* Application Status */}
                 <div className="pb-6 border-b border-slate-100">

@@ -92,7 +92,7 @@ export const viewingRequestsAPI = {
   getAll: async (statusFilter?: string) => {
     try {
       const params = statusFilter ? { status_filter: statusFilter } : {}
-      const response = await apiClient.get('/api/v1/viewing-requests', { params })
+      const response = await apiClient.get('/api/v1/viewing-requests/', { params })
       return { success: true, data: response.data }
     } catch (error: any) {
       return { success: false, error: error.response?.data?.detail || 'Failed to get viewing requests' }

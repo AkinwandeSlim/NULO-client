@@ -744,7 +744,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { data, error: null, needsEmailConfirmation: true };
       }
       
-      return { data, error: null };
+      // Determine redirect path - prioritize user type dashboard over callback URL
+      let redirectPath = '/';
+      
+      if (data.user.user_type === 'admin') {
+        redirectPath = '/admin';
+      } else if (data.user.user_type === 'landlord') {
+        // For landlords, always go to dashboard unless email not verified
+        redirectPath = data.user.email_verified ? '/landlord/overview' : '/signup/landlord/confirmation';
+      } else if (data.user.user_type === 'tenant') {
+        // For tenants: Smart redirection based on user context
+        const callbackUrl = typeof window !== 'undefined' ? localStorage.getItem('signup_callback_url') : null;
+        if (callbackUrl && callbackUrl.startsWith('/properties/') && callbackUrl !== '/properties') {
+          // User was viewing a specific property page - return there
+          redirectPath = data.user.email_verified ? callbackUrl : '/signup/tenant/confirmation';
+          console.log('🏠 [AUTH] Tenant: Returning to specific property page:', callbackUrl);
+        } else if (data.user.email_verified) {
+          // Check if tenant has applications/viewings to determine if they're returning
+          // For now, default to properties for new users, dashboard for returning users
+          // TODO: Add API call to check if user has applications/viewings
+          redirectPath = '/properties'; // Default to properties for all verified tenants
+          console.log('🏠 [AUTH] Tenant: Verified user, going to properties:', redirectPath);
+        } else {
+          // Email not verified - go to confirmation
+          redirectPath = '/signup/tenant/confirmation';
+          console.log('🏠 [AUTH] Tenant: Email not verified, going to confirmation');
+        }
+      }
+
+      console.log('🔀 [AUTH] Redirecting to:', redirectPath);
+      
+      // Clear callback URL from storage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('signup_callback_url');
+      }
+      
+      // Redirect immediately - no delay needed
+      router.push(redirectPath);
+      
+      return { user: data.user, redirectPath };
     } catch (error: any) {
       console.error('❌ [AUTH] Admin signup error:', error);
       toast.error(error.message || 'Failed to create admin account');
@@ -1142,17 +1180,48 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         // For landlords, always go to dashboard unless email not verified
         redirectPath = userData.email_verified ? '/landlord/overview' : '/signup/landlord/confirmation';
       } else if (userData.user_type === 'tenant') {
-        // For tenants: 
-        // - If coming from a specific property page, return there (new user browsing)
-        // - Otherwise, go to tenant dashboard (returning user)
+        // For tenants: Smart redirection based on user activity
         if (callbackUrl && callbackUrl.startsWith('/properties/') && callbackUrl !== '/properties') {
-          // Specific property page (not just /properties search)
+          // User was viewing a specific property page - return there
           redirectPath = userData.email_verified ? callbackUrl : '/signup/tenant/confirmation';
           console.log('🏠 [AUTH] Tenant: Returning to specific property page:', callbackUrl);
+        } else if (userData.email_verified) {
+          // Check if tenant has applications/viewings to determine if they're returning
+          console.log('🏠 [AUTH] Tenant: Checking user activity for redirection...');
+          
+          try {
+            // Check for applications and viewing requests in parallel
+            const [applicationsResponse, viewingsResponse] = await Promise.allSettled([
+              import('@/lib/api/applications').then(({ applicationsAPI }) => applicationsAPI.getMyApplicationsFast()),
+              import('@/lib/api/viewingRequestsTenant').then(({ viewingRequestsAPI }) => viewingRequestsAPI.getMyRequests())
+            ]);
+
+            const hasApplications = applicationsResponse.status === 'fulfilled' && 
+                                  applicationsResponse.value.success && 
+                                  applicationsResponse.value.applications.length > 0;
+            
+            const hasViewings = viewingsResponse.status === 'fulfilled' && 
+                               viewingsResponse.value.success && 
+                               viewingsResponse.value.data.length > 0;
+
+            if (hasApplications || hasViewings) {
+              redirectPath = '/tenant';
+              console.log('🏠 [AUTH] Tenant: Returning user with activity, going to dashboard', {
+                hasApplications,
+                hasViewings
+              });
+            } else {
+              redirectPath = '/properties';
+              console.log('🏠 [AUTH] Tenant: New user (no activity), going to properties');
+            }
+          } catch (error) {
+            console.warn('⚠️ [AUTH] Failed to check tenant activity, defaulting to properties:', error);
+            redirectPath = '/properties';
+          }
         } else {
-          // All verified tenants go to dashboard (new and returning)
-          redirectPath = userData.email_verified ? '/tenant' : '/signup/tenant/confirmation';
-          console.log('🏠 [AUTH] Tenant: Going to dashboard:', redirectPath);
+          // Email not verified - go to confirmation
+          redirectPath = '/signup/tenant/confirmation';
+          console.log('🏠 [AUTH] Tenant: Email not verified, going to confirmation');
         }
       }
 
@@ -1174,7 +1243,6 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
     }
   };
 
-// ...
   const signInWithGoogle = async (redirectUrl?: string) => {
     try {
       console.log('[AUTH] Starting Google sign in (custom OAuth)...')
@@ -1197,8 +1265,6 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
       return { error }
     }
   };
-
-
 
   // Reset password
   const resetPassword = async (email: string) => {

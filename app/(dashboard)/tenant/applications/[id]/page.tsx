@@ -17,16 +17,11 @@ import Link from "next/link"
 import { applicationsAPI, type Application } from "@/lib/api/applications"
 import { agreementsAPI } from "@/lib/api/agreements"
 import { toast } from "sonner"
+import { formatNGN, calculateRentalBreakdown } from "@/lib/utils/rentalCalculations"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 
 // ============ HELPER FUNCTIONS ============
-
-const formatNGN = (amount: number) =>
-  new Intl.NumberFormat("en-NG", {
-    style: "currency", currency: "NGN",
-    minimumFractionDigits: 0, maximumFractionDigits: 0
-  }).format(amount)
 
 const formatEmploymentStatus = (status: string) => ({
   'employed': 'Employed',
@@ -396,7 +391,7 @@ export default function TenantApplicationDetailPage() {
                   </div>
                   {application.property?.price && (
                     <div className="absolute -bottom-2 -right-2 bg-orange-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow">
-                      ₦{application.property.price.toLocaleString()}/mo
+                      {formatNGN(application.property.price)}/mo
                     </div>
                   )}
                 </div>

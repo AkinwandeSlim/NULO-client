@@ -130,6 +130,12 @@ export default function LandlordDashboard() {
 
   const [paymentsLoading, setPaymentsLoading] = useState(true)
 
+  // Track dismissed payment confirmation banners by payment ID
+  const [dismissedPaymentBanners, setDismissedPaymentBanners] = useState<string[]>([])
+  
+  // Track dismissed viewing request banners
+  const [dismissedViewingBanner, setDismissedViewingBanner] = useState(false)
+
 
 
   // Handle dashboard refresh
@@ -987,14 +993,11 @@ export default function LandlordDashboard() {
       const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000
 
       const recentPayment = receivedPayments.find((p: any) =>
-
         p.status === 'released' && new Date(p.released_at ?? p.created_at).getTime() > fortyEightHoursAgo
-
       )
 
-
-
-      if (recentPayment) {
+      // Only show banner if payment exists and hasn't been dismissed
+      if (recentPayment && !dismissedPaymentBanners.includes(recentPayment.id)) {
 
         const tenantName = recentPayment.tenant?.full_name || 'your tenant'
 
@@ -1138,7 +1141,18 @@ export default function LandlordDashboard() {
 
                 </div>
 
-                <Badge className="bg-green-100 text-green-800 border-green-300 flex-shrink-0">New</Badge>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => {
+                      setDismissedPaymentBanners(prev => [...prev, recentPayment.id])
+                    }}
+                    className="text-green-600 hover:text-green-800 transition-colors"
+                    title="Dismiss this notification"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <Badge className="bg-green-100 text-green-800 border-green-300">New</Badge>
+                </div>
 
               </div>
 
@@ -1161,7 +1175,7 @@ export default function LandlordDashboard() {
 
     // ── State 6: Pending viewing requests ─────────────────────────────────────
 
-    if (viewingRequestsList.filter((v: any) => v.status === 'pending').length > 0) {
+    if (!dismissedViewingBanner && viewingRequestsList.filter((v: any) => v.status === 'pending').length > 0) {
 
       const pendingViewings = viewingRequestsList.filter((v: any) => v.status === 'pending').length
 
@@ -1201,7 +1215,18 @@ export default function LandlordDashboard() {
 
               </div>
 
-              <Badge className="bg-blue-100 text-blue-800">{pendingViewings} Pending</Badge>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    setDismissedViewingBanner(true)
+                  }}
+                  className="text-blue-600 hover:text-blue-800 transition-colors"
+                  title="Dismiss this notification"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <Badge className="bg-blue-100 text-blue-800">{pendingViewings} Pending</Badge>
+              </div>
 
             </div>
 

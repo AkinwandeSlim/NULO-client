@@ -17,6 +17,7 @@ import {
 import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
 import { toast } from "sonner"
+import { formatNGN, calculateAgreementBreakdown } from "@/lib/utils/rentalCalculations"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -28,13 +29,6 @@ const DEFAULT_AVATAR = "https://api.dicebear.com/7.x/avataaars/svg?seed="
 // ─────────────────────────────────────────────────────────────────────────────
 // Rule 22: All helpers and sub-components defined at module level
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Format a number as Nigerian Naira.
- * Always show ₦ — never DollarSign icon or USD formatting.
- */
-const formatNGN = (amount: number) =>
-  `₦${Number(amount).toLocaleString("en-NG")}`
 
 /**
  * Format an ISO date string for display.
@@ -289,13 +283,8 @@ export default function LandlordAgreementDetailPage() {
     !agreement?.landlord_signed_at
 
   // ── Financial totals — Nigeria: rent is annual upfront ────────────────────
-  const annualRent = agreement ? agreement.rent_amount * 12 : 0
-  const totalDue = agreement
-    ? annualRent +
-      agreement.deposit_amount +
-      agreement.platform_fee +
-      (agreement.service_charge ?? 0)
-    : 0
+  const breakdown = calculateAgreementBreakdown(agreement || {})
+  const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
 
   // ── Signing progress ───────────────────────────────────────────────────────
   const signaturesCount =

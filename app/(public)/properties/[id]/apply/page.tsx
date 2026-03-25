@@ -16,6 +16,7 @@ import { createClient } from "@/utils/supabase/client"
 import Link from "next/link"
 import { applicationsAPI, CreateApplicationData } from "@/lib/api/applications"
 import { getErrorMessage } from "@/lib/api/client"
+import { formatNGN, calculateRentalBreakdown } from "@/lib/utils/rentalCalculations"
 
 // Import step components
 import PersonalInfoStep from "@/components/application/PersonalInfoStep"
@@ -264,24 +265,27 @@ export default function ApplicationPage() {
         return formData[fields[index]] !== null
       })
 
-      const referencesData = {
+      // Build references as JSONB object (database schema: references jsonb)
+      const referencesData: Record<string, any> = {
         reference1: {
           name: formData.reference1Name,
           phone: formData.reference1Phone,
           relationship: formData.reference1Relationship,
         },
-        ...(formData.reference2Name ? {
-          reference2: {
-            name: formData.reference2Name,
-            phone: formData.reference2Phone,
-            relationship: formData.reference2Relationship,
-          }
-        } : {}),
+      }
+      
+      // Add reference2 if provided
+      if (formData.reference2Name) {
+        referencesData.reference2 = {
+          name: formData.reference2Name,
+          phone: formData.reference2Phone,
+          relationship: formData.reference2Relationship,
+        }
       }
 
-      console.log('References Data Structure:', referencesData)
-      console.log('Type of references:', typeof referencesData)
-      console.log('Is references an array?', Array.isArray(referencesData))
+      console.log('✅ [APP] References Data:', referencesData)
+      console.log('✅ [APP] References Type:', typeof referencesData)
+      console.log('✅ [APP] Is Array?', Array.isArray(referencesData))
 
       const applicationData: CreateApplicationData = {
         property_id:          propertyId,
@@ -721,9 +725,52 @@ export default function ApplicationPage() {
                   {property?.price > 0 && (
                     <div className="bg-orange-50 rounded-xl p-3 mb-3 text-center">
                       <p className="text-orange-600 font-bold text-xl leading-none">
-                        {formatPrice(property.price)}
+                        {formatNGN(property.price)}
                       </p>
                       <p className="text-orange-400 text-xs mt-0.5">/month</p>
+                    </div>
+                  )}
+
+                  {/* Rental breakdown */}
+                  {property?.price > 0 && (
+                    <div className="bg-blue-50 rounded-xl p-3 mb-3">
+                      <p className="text-blue-600 font-semibold text-sm mb-2">Move-in Cost Breakdown</p>
+                      {(() => {
+                        const breakdown = calculateRentalBreakdown(property)
+                        const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
+                        return (
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between">
+                              <span>Monthly Rent:</span>
+                              <span className="font-semibold">{formatNGN(monthlyRent)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Annual Rent (12 months):</span>
+                              <span className="font-semibold">{formatNGN(annualRent)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Security Deposit (2 months):</span>
+                              <span className="font-semibold text-blue-700">{formatNGN(cautionFee)}</span>
+                            </div>
+                            {platformFee > 0 && (
+                              <div className="flex justify-between">
+                                <span>Platform Fee:</span>
+                                <span className="font-semibold">{formatNGN(platformFee)}</span>
+                              </div>
+                            )}
+                            {serviceCharge > 0 && (
+                              <div className="flex justify-between">
+                                <span>Service Charge:</span>
+                                <span className="font-semibold">{formatNGN(serviceCharge)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between pt-1 border-t border-slate-300 font-bold">
+                              <span>Total Due:</span>
+                              <span className="text-orange-700">{formatNGN(totalDue)}</span>
+                            </div>
+                          </div>
+                        )
+                      })()}
                     </div>
                   )}
 

@@ -17,6 +17,7 @@ import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
 import { paymentsAPI, type Transaction } from "@/lib/api/payments"
 import { toast } from "sonner"
+import { formatNGN, calculateAgreementBreakdown } from "@/lib/utils/rentalCalculations"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -28,12 +29,6 @@ const DEFAULT_AVATAR = "https://api.dicebear.com/7.x/avataaars/svg?seed="
 // ─────────────────────────────────────────────────────────────────────────────
 // Rule 22: All helpers and sub-components at module level
 // ─────────────────────────────────────────────────────────────────────────────
-
-// FIX: ₦ directly — not Intl currency wrapper that appends "NGN"
-const formatNGN = (amount: number) =>
-  `₦${Number(amount).toLocaleString("en-NG")}`
-
-// FIX: en-NG locale throughout
 const formatDate = (dateStr: string | null | undefined) => {
   if (!dateStr) return "—"
   return new Date(dateStr).toLocaleDateString("en-NG", {
@@ -299,10 +294,8 @@ export default function TenantAgreementDetailPage() {
     effectiveStatus === "PENDING_TENANT" &&
     !agreement?.tenant_signed_at
 
-  const annualRent = agreement ? agreement.rent_amount * 12 : 0
-  const totalDue = agreement
-    ? annualRent + agreement.deposit_amount + agreement.platform_fee + (agreement.service_charge ?? 0)
-    : 0
+  const breakdown = calculateAgreementBreakdown(agreement || {})
+  const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
   const signaturesCount =
     (agreement?.tenant_signed_at ? 1 : 0) + (agreement?.landlord_signed_at ? 1 : 0)
 
@@ -490,13 +483,13 @@ export default function TenantAgreementDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                  <FinancialRow label="Monthly Rent" amount={agreement.rent_amount} />
+                  <FinancialRow label="Monthly Rent" amount={monthlyRent} />
                   <FinancialRow label="Annual Rent (×12)" amount={annualRent} highlight />
-                  <FinancialRow label="Caution Fee (Security Deposit)" amount={agreement.deposit_amount} />
-                  <FinancialRow label="Platform Fee" amount={agreement.platform_fee} />
+                  <FinancialRow label="Caution Fee (Security Deposit)" amount={cautionFee} />
+                  <FinancialRow label="Platform Fee" amount={platformFee} />
                   {/* service_charge is nullable — only render if set */}
-                  {agreement.service_charge != null && (
-                    <FinancialRow label="Service Charge" amount={agreement.service_charge} />
+                  {serviceCharge > 0 && (
+                    <FinancialRow label="Service Charge" amount={serviceCharge} />
                   )}
                   <FinancialRow label="Total Due on Move-in" amount={totalDue} isTotal />
                 </div>
@@ -686,6 +679,25 @@ export default function TenantAgreementDetailPage() {
                       Follow Up About Signing
                     </Button>
                   </Link>
+                  
+                  {/* Fallback: Direct contact info if messaging fails */}
+                  <div className="text-center">
+                    <p className="text-xs text-amber-600 mb-2">If messaging doesn't work, you can:</p>
+                    <div className="flex items-center justify-center gap-4 text-xs text-amber-700">
+                      {agreement.landlord?.phone_number && (
+                        <div className="flex items-center gap-1">
+                          <Phone className="h-3 w-3" />
+                          <span>{agreement.landlord.phone_number}</span>
+                        </div>
+                      )}
+                      {agreement.landlord?.email && (
+                        <div className="flex items-center gap-1">
+                          <Mail className="h-3 w-3" />
+                          <span className="truncate max-w-[150px]">{agreement.landlord.email}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             )}

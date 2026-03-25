@@ -342,13 +342,35 @@ export default function TenantMessagesPage() {
     
     try {
       // First, check if there's an existing conversation for this property
+      console.log('🔍 [MESSAGES] Looking for existing conversation...')
       const existingConversation = await messagesAPI.findConversation(propertyId, landlordId)
       
       if (existingConversation) {
+        console.log('✅ [MESSAGES] Found existing conversation:', existingConversation.id)
         // Navigate to existing conversation
         router.replace(`/tenant/messages?conversation=${existingConversation.id}`)
         setSelectedConversationId(existingConversation.id)
+        
+        // Always send the contextual message, even for existing conversations
+        if (context) {
+          const contextualMessage = getContextualInitialMessage(context)
+          console.log('🔍 [MESSAGES] Sending contextual message to existing conversation:', contextualMessage)
+          
+          try {
+            await messagesAPI.sendMessage(
+              existingConversation.id,  // conversation_id
+              contextualMessage         // content
+            )
+            toast.success('Message sent to landlord')
+          } catch (sendError) {
+            console.error('❌ [MESSAGES] Failed to send contextual message:', sendError)
+            toast.error('Conversation loaded but failed to send message')
+          }
+        } else {
+          toast.success('Conversation loaded')
+        }
       } else {
+        console.log('🔍 [MESSAGES] Creating new conversation...')
         // Create a new conversation with contextual initial message
         const result = await messagesAPI.createConversation({
           property_id: propertyId,
@@ -356,13 +378,33 @@ export default function TenantMessagesPage() {
           initial_message: getContextualInitialMessage(context)
         })
         
+        console.log('✅ [MESSAGES] Created new conversation:', result.conversation_id)
         // Navigate to the new conversation
         router.replace(`/tenant/messages?conversation=${result.conversation_id}`)
         setSelectedConversationId(result.conversation_id)
+        toast.success('Conversation started')
       }
     } catch (error) {
-      console.error('Failed to create conversation from parameters:', error)
-      toast.error('Failed to start conversation')
+      console.error('❌ [MESSAGES] Failed to create conversation from parameters:', error)
+      
+      // Better error handling based on error type
+      let errorMessage = 'Failed to start conversation. Please try again.'
+      const axiosError = error as any // Type assertion for axios error
+      
+      if (axiosError?.response?.status === 500) {
+        errorMessage = 'Database connection issue. Please try again in a moment.'
+      } else if (axiosError?.response?.status === 400) {
+        errorMessage = 'Invalid conversation request. Please check the property details.'
+      } else if (axiosError?.code === 'ECONNABORTED' || axiosError?.message?.includes('timeout')) {
+        errorMessage = 'Request timed out. Please check your connection and try again.'
+      }
+      
+      toast.error(errorMessage, {
+        action: {
+          label: 'Retry',
+          onClick: () => handleCreateConversationFromParams(landlordId, propertyId, context)
+        }
+      })
     } finally {
       setIsCreatingConversation(false)
     }

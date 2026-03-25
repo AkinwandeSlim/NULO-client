@@ -19,6 +19,7 @@ import { toast } from "sonner"
 import ViewingRequestModal from "@/components/rental/ViewingRequestModal"
 import { ChatModal } from "@/components/ChatModal"
 import { favoritesAPI } from "@/lib/api/favorites"
+import { formatNGN, calculateRentalBreakdown, RentalBreakdown } from "@/lib/utils/rentalCalculations"
 import { viewingRequestsAPI } from "@/lib/api/viewingRequestsTenant"
 import { propertiesAPI } from "@/lib/api/properties"
 import { Loader2 } from "lucide-react"
@@ -514,13 +515,8 @@ export default function PropertyDetailPage() {
 
                 {/* Pricing breakdown — matches agreement & application pages exactly */}
                 {(() => {
-                  const monthlyRent    = propertyData.price || 0
-                  const annualRent     = monthlyRent * 12
-                  // Use the actual field from the property; fall back to 1 month rent if not set
-                  const cautionFee     = propertyData.security_deposit ?? propertyData.caution_fee ?? monthlyRent
-                  const platformFee    = propertyData.platform_fee ?? 0
-                  const serviceCharge  = propertyData.service_charge ?? 0
-                  const totalDue       = annualRent + cautionFee + platformFee + serviceCharge
+                  const breakdown = calculateRentalBreakdown(propertyData)
+                  const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
 
                   return (
                     <div className="bg-gradient-to-r from-orange-50/70 to-blue-50/70 border border-orange-100 rounded-xl p-4 md:p-5">
@@ -544,8 +540,14 @@ export default function PropertyDetailPage() {
                         </div>
 
                         <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-700">Caution Fee <span className="text-slate-400 text-xs">(Security Deposit)</span></span>
-                          <span className="font-semibold text-slate-900">{formatPrice(cautionFee)}</span>
+                          <div className="flex flex-col">
+                            <span className="text-slate-700">Caution Fee <span className="text-slate-400 text-xs">(Security Deposit)</span></span>
+                            <span className="text-xs text-blue-600 font-medium">2 months' rent</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-semibold text-slate-900">{formatPrice(cautionFee)}</span>
+                            <div className="text-xs text-slate-500">{formatPrice(monthlyRent)} × 2</div>
+                          </div>
                         </div>
 
                         <div className="flex justify-between items-center text-sm">
@@ -564,12 +566,17 @@ export default function PropertyDetailPage() {
 
                         {/* Total */}
                         <div className="border-t border-slate-200 pt-2.5 mt-1 flex justify-between items-center">
-                          <span className="font-bold text-slate-900 text-sm">Total Due on Move-In</span>
-                          <span className="text-lg font-bold text-orange-600">{formatPrice(totalDue)}</span>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-900 text-sm">Total Due on Move-In</span>
+                            <span className="text-[11px] text-slate-500">12 months rent + 2 months deposit</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-lg font-bold text-orange-600">{formatPrice(totalDue)}</span>
+                            <div className="text-[11px] text-slate-400">
+                              {platformFee > 0 ? " + fees" : serviceCharge > 0 ? " + fees" : ""}
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 text-right">
-                          Annual rent + caution fee{platformFee > 0 ? " + platform fee" : ""}{serviceCharge > 0 ? " + service charge" : ""}
-                        </p>
                       </div>
                     </div>
                   )
