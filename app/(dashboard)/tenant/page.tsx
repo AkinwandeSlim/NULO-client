@@ -33,6 +33,7 @@ import {
 } from "@/lib/api/engagement"
 import { toast } from "sonner"
 import { notificationsAPI } from "@/lib/api/notifications"
+import { calculateAgreementBreakdown } from "@/lib/utils/rentalCalculations"
 
 const DEFAULT_PROPERTY_IMAGE =
   "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop"
@@ -60,17 +61,143 @@ export default function TenantDashboard() {
   const [recentPayments, setRecentPayments] = useState<any[]>([])
   const [paymentsLoading, setPaymentsLoading] = useState(true)
   const [dismissedApprovalBanner, setDismissedApprovalBanner] = useState<string[]>([])
-  
+
   // Track dismissed payment ready banners by agreement ID
   const [dismissedPaymentBanners, setDismissedPaymentBanners] = useState<string[]>([])
-  
+
+  // Track dismissed payment CONFIRMED banners by payment ID (time-based, not auto-dismissing)
+  const [dismissedPaymentConfirmedBanners, setDismissedPaymentConfirmedBanners] = useState<string[]>([])
+
   // Track dismissed viewing confirmed banners by viewing ID
   const [dismissedViewingBanners, setDismissedViewingBanners] = useState<string[]>([])
-  
-  // Track dismissed message banners by notification ID
+
+  // Track dismissed message banners with 30-minute auto-dismiss
   const [dismissedMessageBanners, setDismissedMessageBanners] = useState<string[]>([])
 
+
+  // ✅ Auto-dismiss TASK-BASED banners after 30 minutes (not time-based ones like Payment Confirmed or Upcoming Viewing)
+  useEffect(() => {
+    const checkExpiredBanners = () => {
+      const now = Date.now()
+      const thirtyMinutes = 30 * 60 * 1000 // 30 minutes in milliseconds
+
+      // Clear expired approval banners (task-based: Application needs signature)
+      setDismissedApprovalBanner(prev => prev.filter(id => {
+        const timestamp = parseInt(localStorage.getItem(`approval-banner-${id}`) || '0')
+        return now - timestamp < thirtyMinutes
+      }))
+
+      // Clear expired payment ready banners (task-based: Agreement ready for payment)
+      setDismissedPaymentBanners(prev => prev.filter(id => {
+        const timestamp = parseInt(localStorage.getItem(`payment-ready-banner-${id}`) || '0')
+        return now - timestamp < thirtyMinutes
+      }))
+
+      // Clear expired viewing confirmed banners (task-based: Viewing confirmed by landlord)
+      setDismissedViewingBanners(prev => prev.filter(id => {
+        const timestamp = parseInt(localStorage.getItem(`viewing-confirmed-banner-${id}`) || '0')
+        // Don't auto-clear "upcoming-*" IDs (those are time-based for 24h countdown)
+        if (id.startsWith('upcoming-')) return true
+        return now - timestamp < thirtyMinutes
+      }))
+
+      // Clear expired message banners (task-based: New message from landlord)
+      setDismissedMessageBanners(prev => prev.filter(id => {
+        const timestamp = parseInt(localStorage.getItem(`message-banner-${id}`) || '0')
+        return now - timestamp < thirtyMinutes
+      }))
+    }
+
+    // Check every minute for expired banners
+    const interval = setInterval(checkExpiredBanners, 60000)
+    checkExpiredBanners() // Check immediately on mount
+
+    return () => clearInterval(interval)
+  }, [])
+
   useEffect(() => { setMounted(true) }, [])
+
+  // ✅ Initialize dismissed banners from localStorage on mount
+  useEffect(() => {
+    if (!mounted) return
+
+    // Restore dismissed state from localStorage so 30-min auto-dismiss works across page refreshes
+    const restoreDismissedBanners = () => {
+      const now = Date.now()
+      const thirtyMinutes = 30 * 60 * 1000
+
+      // Restore task-based approvals
+      const storedApprovals: string[] = []
+      for (const [key, value] of Object.entries(localStorage)) {
+        if (key.startsWith('approval-banner-')) {
+          const timestamp = parseInt(value)
+          if (now - timestamp < thirtyMinutes) {
+            storedApprovals.push(key.replace('approval-banner-', ''))
+          }
+        }
+      }
+      if (storedApprovals.length > 0) {
+        setDismissedApprovalBanner(storedApprovals)
+      }
+
+      // Restore task-based and time-based viewing banners
+      const storedViewingBanners: string[] = []
+      for (const [key, value] of Object.entries(localStorage)) {
+        if (key.startsWith('viewing-confirmed-banner-')) {
+          const timestamp = parseInt(value)
+          if (now - timestamp < thirtyMinutes) {
+            storedViewingBanners.push(key.replace('viewing-confirmed-banner-', ''))
+          }
+        }
+      }
+      // Also restore time-based upcoming viewings (don't expire after 30 min)
+      for (const [key] of Object.entries(localStorage)) {
+        if (key.startsWith('upcoming-viewing-banner-')) {
+          const viewingId = key.replace('upcoming-viewing-banner-', '')
+          storedViewingBanners.push(`upcoming-${viewingId}`)
+        }
+      }
+      if (storedViewingBanners.length > 0) {
+        setDismissedViewingBanners(storedViewingBanners)
+      }
+
+      // Restore task-based payment ready
+      const storedPaymentBanners: string[] = []
+      for (const [key, value] of Object.entries(localStorage)) {
+        if (key.startsWith('payment-ready-banner-')) {
+          const timestamp = parseInt(value)
+          if (now - timestamp < thirtyMinutes) {
+            storedPaymentBanners.push(key.replace('payment-ready-banner-', ''))
+          }
+        }
+      }
+      if (storedPaymentBanners.length > 0) {
+        setDismissedPaymentBanners(storedPaymentBanners)
+      }
+
+      // Restore task-based messages
+      const storedMessages: string[] = []
+      for (const [key, value] of Object.entries(localStorage)) {
+        if (key.startsWith('message-banner-')) {
+          const timestamp = parseInt(value)
+          if (now - timestamp < thirtyMinutes) {
+            storedMessages.push(key.replace('message-banner-', ''))
+          }
+        }
+      }
+      if (storedMessages.length > 0) {
+        setDismissedMessageBanners(storedMessages)
+      }
+
+      // Restore time-based payment confirmed banners (manually dismissed, don't expire)
+      const storedPaymentConfirmed = localStorage.getItem('dismissed-payment-confirmed-banners')
+      if (storedPaymentConfirmed) {
+        setDismissedPaymentConfirmedBanners(JSON.parse(storedPaymentConfirmed))
+      }
+    }
+
+    restoreDismissedBanners()
+  }, [mounted])
 
   // ✅ Fetch dashboard data on mount or when user changes
   useEffect(() => {
@@ -235,7 +362,9 @@ export default function TenantDashboard() {
 
     if (!activeAgreement) return { state: "no-lease" as const }
 
-    const rentAmount = (activeAgreement as any).rent_amount ?? 0
+    // Use the consistent rental calculation utility
+    const rentalBreakdown = calculateAgreementBreakdown(activeAgreement)
+    
     let daysUntilDue: number | null = null
 
     if ((activeAgreement as any).lease_start_date) {
@@ -252,10 +381,24 @@ export default function TenantDashboard() {
 
     // Use actual payment data instead of agreement payment_pending
     if (completedPayments === 0 && totalPayments === 0) {
-      return { state: "due" as const, rentAmount, daysUntilDue }
+      return { 
+        state: "due" as const, 
+        rentAmount: rentalBreakdown.monthlyRent, 
+        totalAnnualRent: rentalBreakdown.totalDue, 
+        cautionFee: rentalBreakdown.cautionFee,
+        daysUntilDue 
+      }
     }
     
-    return { state: "paid" as const, rentAmount, daysUntilDue, completedPayments, totalPayments }
+    return { 
+      state: "paid" as const, 
+      rentAmount: rentalBreakdown.monthlyRent, 
+      totalAnnualRent: rentalBreakdown.totalDue, 
+      cautionFee: rentalBreakdown.cautionFee,
+      daysUntilDue, 
+      completedPayments, 
+      totalPayments 
+    }
   }, [tenantData?.agreements, tenantData?.stats?.totalPayments, tenantData?.stats?.completedPayments])
 
   // ─── Tenant Banner System ─────────────────────────────────────────────────────
@@ -427,9 +570,9 @@ export default function TenantDashboard() {
           </div>
         </div>
 
-        {/* ─── Tenant Payment Confirmation Banner ─────────────────────────────────────── */}
-        {tenantBanner && (
-          <div className="mb-8 rounded-xl border border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 p-6 shadow-sm">
+        {/* ─── Tenant Payment Confirmation Banner (Time-based: 24h, manually dismissible) ─────────────────────────────────────── */}
+        {tenantBanner && !dismissedPaymentConfirmedBanners.includes(tenantBanner.payment.id) && (
+          <div className="mb-8 rounded-xl border border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 p-6 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="flex items-start gap-4">
               <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                 <CheckCircle2 className="h-6 w-6 text-green-600" />
@@ -497,6 +640,16 @@ export default function TenantDashboard() {
                   </Link>
                 </div>
               </div>
+              <button
+                onClick={() => {
+                  setDismissedPaymentConfirmedBanners(prev => [...prev, tenantBanner.payment.id])
+                  localStorage.setItem('dismissed-payment-confirmed-banners', JSON.stringify([...dismissedPaymentConfirmedBanners, tenantBanner.payment.id]))
+                }}
+                className="text-green-600 hover:text-green-900 flex-shrink-0 mt-0.5"
+                title="Dismiss this notification"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
           </div>
           )}
@@ -575,6 +728,7 @@ export default function TenantDashboard() {
                             className="bg-green-600 hover:bg-green-700 text-white shadow-md"
                             onClick={() => {
                               setDismissedApprovalBanner(prev => [...prev, latestAgreement.id])
+                              localStorage.setItem(`approval-banner-${latestAgreement.id}`, Date.now().toString())
                             }}
                           >
                             <FileCheck className="mr-2 h-4 w-4" />
@@ -587,6 +741,7 @@ export default function TenantDashboard() {
                             className="border-green-300 text-green-700 hover:bg-green-50"
                             onClick={() => {
                               setDismissedApprovalBanner(prev => [...prev, latestAgreement.id])
+                              localStorage.setItem(`approval-banner-${latestAgreement.id}`, Date.now().toString())
                             }}
                           >
                             View Application Details
@@ -597,6 +752,7 @@ export default function TenantDashboard() {
                     <button
                       onClick={() => {
                         setDismissedApprovalBanner(prev => [...prev, latestAgreement.id])
+                        localStorage.setItem(`approval-banner-${latestAgreement.id}`, Date.now().toString())
                       }}
                       className="hidden sm:block text-slate-400 hover:text-slate-600 transition-colors"
                     >
@@ -667,6 +823,7 @@ export default function TenantDashboard() {
                             className="bg-purple-600 hover:bg-purple-700 text-white shadow-md"
                             onClick={() => {
                               setDismissedPaymentBanners(prev => [...prev, latestAgreement.id])
+                              localStorage.setItem(`payment-ready-banner-${latestAgreement.id}`, Date.now().toString())
                             }}
                           >
                             <DollarSign className="mr-2 h-4 w-4" />
@@ -679,6 +836,7 @@ export default function TenantDashboard() {
                             className="border-purple-300 text-purple-700 hover:bg-purple-50"
                             onClick={() => {
                               setDismissedPaymentBanners(prev => [...prev, latestAgreement.id])
+                              localStorage.setItem(`payment-ready-banner-${latestAgreement.id}`, Date.now().toString())
                             }}
                           >
                             View Agreement
@@ -689,6 +847,7 @@ export default function TenantDashboard() {
                     <button
                       onClick={() => {
                         setDismissedPaymentBanners(prev => [...prev, latestAgreement.id])
+                        localStorage.setItem(`payment-ready-banner-${latestAgreement.id}`, Date.now().toString())
                       }}
                       className="hidden sm:block text-purple-400 hover:text-purple-600 transition-colors"
                     >
@@ -761,6 +920,7 @@ export default function TenantDashboard() {
                             className="bg-blue-600 hover:bg-blue-700 text-white shadow-md"
                             onClick={() => {
                               setDismissedViewingBanners(prev => [...prev, latestViewing.id])
+                              localStorage.setItem(`viewing-confirmed-banner-${latestViewing.id}`, Date.now().toString())
                             }}
                           >
                             <Calendar className="mr-2 h-4 w-4" />
@@ -773,6 +933,7 @@ export default function TenantDashboard() {
                             className="border-blue-300 text-blue-700 hover:bg-blue-50"
                             onClick={() => {
                               setDismissedViewingBanners(prev => [...prev, latestViewing.id])
+                              localStorage.setItem(`viewing-confirmed-banner-${latestViewing.id}`, Date.now().toString())
                             }}
                           >
                             <MessageSquare className="mr-2 h-4 w-4" />
@@ -784,6 +945,7 @@ export default function TenantDashboard() {
                     <button
                       onClick={() => {
                         setDismissedViewingBanners(prev => [...prev, latestViewing.id])
+                        localStorage.setItem(`viewing-confirmed-banner-${latestViewing.id}`, Date.now().toString())
                       }}
                       className="hidden sm:block text-blue-400 hover:text-blue-600 transition-colors"
                     >
@@ -854,6 +1016,7 @@ export default function TenantDashboard() {
                               className="bg-teal-600 hover:bg-teal-700 text-white shadow-md"
                               onClick={() => {
                                 setDismissedMessageBanners(prev => [...prev, latestMessage.id])
+                                localStorage.setItem(`message-banner-${latestMessage.id}`, Date.now().toString())
                               }}
                             >
                               <MessageSquare className="mr-2 h-4 w-4" />
@@ -866,6 +1029,7 @@ export default function TenantDashboard() {
                               className="bg-teal-600 hover:bg-teal-700 text-white shadow-md"
                               onClick={() => {
                                 setDismissedMessageBanners(prev => [...prev, latestMessage.id])
+                                localStorage.setItem(`message-banner-${latestMessage.id}`, Date.now().toString())
                               }}
                             >
                               <MessageSquare className="mr-2 h-4 w-4" />
@@ -878,6 +1042,7 @@ export default function TenantDashboard() {
                           className="border-teal-300 text-teal-700 hover:bg-teal-50"
                           onClick={() => {
                             setDismissedMessageBanners(prev => [...prev, latestMessage.id])
+                            localStorage.setItem(`message-banner-${latestMessage.id}`, Date.now().toString())
                           }}
                         >
                           Mark as Read
@@ -887,6 +1052,7 @@ export default function TenantDashboard() {
                     <button
                       onClick={() => {
                         setDismissedMessageBanners(prev => [...prev, latestMessage.id])
+                        localStorage.setItem(`message-banner-${latestMessage.id}`, Date.now().toString())
                       }}
                       className="hidden sm:block text-teal-400 hover:text-teal-600 transition-colors"
                     >
@@ -958,6 +1124,8 @@ export default function TenantDashboard() {
                             className="bg-orange-600 hover:bg-orange-700 text-white shadow-md"
                             onClick={() => {
                               setDismissedViewingBanners(prev => [...prev, `upcoming-${nearestViewing.id}`])
+                              // Time-based banners persist across sessions but don't auto-clear
+                              localStorage.setItem(`upcoming-viewing-banner-${nearestViewing.id}`, 'dismissed')
                             }}
                           >
                             <Calendar className="mr-2 h-4 w-4" />
@@ -969,6 +1137,8 @@ export default function TenantDashboard() {
                           className="border-orange-300 text-orange-700 hover:bg-orange-50"
                           onClick={() => {
                             setDismissedViewingBanners(prev => [...prev, `upcoming-${nearestViewing.id}`])
+                            // Time-based banners persist across sessions but don't auto-clear
+                            localStorage.setItem(`upcoming-viewing-banner-${nearestViewing.id}`, 'dismissed')
                           }}
                         >
                           Got it
@@ -978,6 +1148,8 @@ export default function TenantDashboard() {
                     <button
                       onClick={() => {
                         setDismissedViewingBanners(prev => [...prev, `upcoming-${nearestViewing.id}`])
+                        // Time-based banners persist across sessions but don't auto-clear
+                        localStorage.setItem(`upcoming-viewing-banner-${nearestViewing.id}`, 'dismissed')
                       }}
                       className="hidden sm:block text-orange-400 hover:text-orange-600 transition-colors"
                     >
@@ -1214,19 +1386,18 @@ export default function TenantDashboard() {
                       <p className={`text-xl sm:text-3xl font-bold leading-tight truncate ${
                         paymentSummary.state === "no-lease" ? "text-slate-400" : "text-slate-900"
                       }`}>
-                        {paymentSummary.state === "no-lease" ? "—" :
-                         paymentSummary.rentAmount > 0 ? formatPrice(paymentSummary.rentAmount * 12) : "???"}
+                        {paymentSummary.state === "no-lease" ? "-" :
+                         paymentSummary.totalAnnualRent > 0 ? formatPrice(paymentSummary.totalAnnualRent) : "???"}
                       </p>
                       {paymentSummary.state !== "no-lease" && (
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-1.5 mt-1">
+                        <div className="flex items-center gap-1 mt-0.5">
                           <span className={`text-xs font-semibold ${
                             paymentSummary.state === "due" ? "text-orange-600 bg-orange-50 border border-orange-200" : "text-green-700 bg-green-50 border border-green-200"
-                          } px-2 py-0.5 rounded-full inline-block w-fit`}>
-                            {formatPrice(paymentSummary.rentAmount)}/month
+                          } px-1.5 py-0.5 rounded-full inline-block`}>
+                            {formatPrice(paymentSummary.rentAmount)}/mo
                           </span>
                           <span className="text-xs text-slate-500 truncate">
-                            {paymentSummary.state === "due" ? "Payment Required" : 
-                             `${paymentSummary.completedPayments} payment${paymentSummary.completedPayments !== 1 ? "s" : ""} made`}
+                            +{formatPrice(paymentSummary.cautionFee)} caution
                           </span>
                         </div>
                       )}

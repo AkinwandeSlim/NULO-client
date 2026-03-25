@@ -136,6 +136,9 @@ export default function LandlordDashboard() {
   // Track dismissed viewing request banners
   const [dismissedViewingBanner, setDismissedViewingBanner] = useState(false)
 
+  // Track dismissed message banners with 30-minute auto-dismiss
+  const [dismissedMessageBanners, setDismissedMessageBanners] = useState<string[]>([])
+
 
 
   // Handle dashboard refresh
@@ -275,6 +278,35 @@ export default function LandlordDashboard() {
     if (notification.link) router.push(notification.link)
 
   }, [invalidateLandlordCache, router])
+
+  // Restore dismissed message banners from localStorage on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stored = localStorage.getItem('dismissed-message-banners')
+    if (stored) {
+      setDismissedMessageBanners(JSON.parse(stored))
+    }
+  }, [])
+
+  // Auto-expire message banner dismissals after 30 minutes
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const thirtyMinutes = 30 * 60 * 1000
+    const interval = setInterval(() => {
+      setDismissedMessageBanners(prev => {
+        const now = Date.now()
+        const filtered = prev.filter(id => {
+          const timestamp = parseInt(localStorage.getItem(`message-banner-${id}`) || '0')
+          return now - timestamp < thirtyMinutes
+        })
+        if (filtered.length !== prev.length) {
+          localStorage.setItem('dismissed-message-banners', JSON.stringify(filtered))
+        }
+        return filtered
+      })
+    }, 60000) // Check every minute
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -1529,7 +1561,38 @@ export default function LandlordDashboard() {
 
         {progressiveBanner}
 
-
+        {/* Messages Banner — Task-based (auto-dismiss after 30 min) */}
+        {stats.unread_messages > 0 && !dismissedMessageBanners.includes('unread-messages') && (
+          <div className="mb-8 p-5 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-xl shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3 flex-1">
+                <Mail className="h-5 w-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-purple-900 mb-1">New Messages</h3>
+                  <p className="text-purple-700 text-sm mb-3">
+                    You have <span className="font-bold">{stats.unread_messages}</span> unread message{stats.unread_messages > 1 ? 's' : ''} from tenant{stats.unread_messages > 1 ? 's' : ''}.
+                  </p>
+                  <Link href="/landlord/messages">
+                    <Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white">
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      View Messages
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setDismissedMessageBanners(prev => [...prev, 'unread-messages'])
+                  localStorage.setItem(`message-banner-unread-messages`, Date.now().toString())
+                  localStorage.setItem('dismissed-message-banners', JSON.stringify([...dismissedMessageBanners, 'unread-messages']))
+                }}
+                className="text-purple-600 hover:text-purple-900 flex-shrink-0 mt-0.5"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Stats — Responsive 4-card grid with improved text sizing */}
 

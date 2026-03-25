@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   ArrowLeft, ArrowRight, Check, Upload, FileText, User, Briefcase,
   Users, Home, ChevronRight, MapPin, Bed, Bath, Square, Shield,
-  Clock, CheckCircle2, Lock
+  Clock, CheckCircle2, Lock, Search, AlertTriangle
 } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/utils/supabase/client"
@@ -98,6 +98,7 @@ export default function ApplicationPage() {
 
   const [currentStep,      setCurrentStep]      = useState(1)
   const [isSubmitting,     setIsSubmitting]      = useState(false)
+  const [duplicateError,   setDuplicateError]    = useState(false)
   const [property,         setProperty]          = useState<any>(null)
   const [loadingProperty,  setLoadingProperty]   = useState(true)
   const [errors,           setErrors]            = useState<Record<string, string>>({})
@@ -319,7 +320,20 @@ export default function ApplicationPage() {
 
     } catch (error: any) {
       console.error("Error submitting application:", error)
-      toast.error("Failed to submit application", { description: getErrorMessage(error) })
+      
+      // ✅ Better UX for duplicate applications
+      const isDuplicate = error.response?.status === 400 && 
+                         error.response?.data?.detail?.includes("already applied")
+      
+      if (isDuplicate) {
+        setDuplicateError(true)
+        toast.error("Already Applied", {
+          description: "You've already applied for this property.",
+          duration: 5000,
+        })
+      } else {
+        toast.error("Failed to submit application", { description: getErrorMessage(error) })
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -865,6 +879,70 @@ export default function ApplicationPage() {
 
         </div>
       </div>
+
+      {/* ─── Duplicate Application Modal ─────────────────────────────────── */}
+      {duplicateError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <Card className="w-full max-w-md border-orange-200 shadow-2xl">
+            <CardContent className="p-6">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="h-12 w-12 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="h-6 w-6 text-orange-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">
+                    Already Applied
+                  </h3>
+                  <p className="text-sm text-slate-600">
+                    You've already submitted an application for this property. You can only have one active application per property.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <p className="text-sm text-blue-900 font-medium mb-2">What happens next?</p>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-500 mt-0.5">•</span>
+                    <span>The landlord will review your existing application</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-500 mt-0.5">•</span>
+                    <span>You'll notified when they respond</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-500 mt-0.5">•</span>
+                    <span>You can withdraw if needed and reapply</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <Link href="/tenant/applications" className="flex-1">
+                  <Button className="w-full bg-orange-600 hover:bg-orange-700 text-white">
+                    <FileText className="h-4 w-4 mr-2" />
+                    View My Applications
+                  </Button>
+                </Link>
+                <Button
+                  variant="outline"
+                  onClick={() => setDuplicateError(false)}
+                  className="flex-1"
+                >
+                  Back to Property
+                </Button>
+              </div>
+
+              <Link href="/properties" className="block mt-3">
+                <Button variant="ghost" className="w-full text-slate-600 hover:text-orange-600">
+                  <Search className="h-4 w-4 mr-2" />
+                  Browse Other Properties
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

@@ -266,14 +266,34 @@ export default function TenantApplicationsPage() {
 
   // Handle withdraw
   const handleWithdraw = async (applicationId: string) => {
+    // Get application details for confirmation message
+    const app = applications.find(a => a.id === applicationId)
+    
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to withdraw your application for "${app?.property?.title}"?\n\n` +
+      "You can reapply for this property later."
+    )
+    if (!confirmed) return
+
     setWithdrawingId(applicationId)
     try {
       await applicationsAPI.withdraw(applicationId)
-      setApplications(prev => prev.filter(app => app.id !== applicationId))
-      toast.success("Application withdrawn successfully")
-    } catch (error) {
+      setApplications(prev => prev.filter(a => a.id !== applicationId))
+      toast.success("Application withdrawn", {
+        description: "You can reapply for this property anytime.",
+        duration: 4000
+      })
+    } catch (error: any) {
       console.error("Failed to withdraw application:", error)
-      toast.error("Failed to withdraw application")
+      const errorMessage = 
+        error?.response?.data?.detail || 
+        error?.message || 
+        "Please try again"
+      toast.error("Failed to withdraw application", {
+        description: errorMessage,
+        duration: 4000
+      })
     } finally {
       setWithdrawingId(null)
     }
