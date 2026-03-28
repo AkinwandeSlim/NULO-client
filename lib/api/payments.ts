@@ -138,4 +138,28 @@ export const paymentsAPI = {
     );
     return response.data;
   },
+
+  /**
+   * Confirm payment immediately for live server callback.
+   * Used when tenant clicks "Confirm Payment" button on callback page.
+   * Works on both dev and live servers (backend checks auth + user ownership).
+   * POST /api/v1/payments/confirm-webhook-manually?reference=NULO-...
+   */
+  confirmPaymentImmediately: async (reference: string): Promise<PaymentStatusResponse> => {
+    const response = await apiClient.post<any>(
+      `/api/v1/payments/confirm-webhook-manually?reference=${encodeURIComponent(reference)}`,
+      {}
+    );
+    
+    // The backend only returns success/message, so we need to re-fetch the transaction
+    if (response.data.success) {
+      // Fetch updated transaction status
+      const statusResponse = await apiClient.get<PaymentStatusResponse>(
+        `/api/v1/payments/status?reference=${encodeURIComponent(reference)}`
+      );
+      return statusResponse.data;
+    }
+    
+    throw new Error(response.data.message || response.data.detail || 'Failed to confirm payment');
+  },
 };
