@@ -18,7 +18,8 @@ import {
   Target, Award, Users, FileText,
   X, FileCheck, DollarSign,
   AlertTriangle, CheckCheck, Loader2,
-  RefreshCw, Wallet, CalendarClock, Plus, Mail, CheckCircle2
+  RefreshCw, Wallet, CalendarClock, Plus, Mail, CheckCircle2,
+  Home, CreditCard
 } from "lucide-react"
 import Link from "next/link"
 import { applicationsAPI } from "@/lib/api/applications"
@@ -74,6 +75,8 @@ export default function TenantDashboard() {
   // Track dismissed message banners with 30-minute auto-dismiss
   const [dismissedMessageBanners, setDismissedMessageBanners] = useState<string[]>([])
 
+  // Track dismissed tenancy status banners
+  const [dismissedTenancyBanners, setDismissedTenancyBanners] = useState<string[]>([])
 
   // ✅ Auto-dismiss TASK-BASED banners after 30 minutes (not time-based ones like Payment Confirmed or Upcoming Viewing)
   useEffect(() => {
@@ -517,6 +520,8 @@ export default function TenantDashboard() {
           </div>
         )}
 
+
+
         {/* Hero */}
         <div className="mb-10">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 mb-8">
@@ -653,6 +658,76 @@ export default function TenantDashboard() {
             </div>
           </div>
           )}
+
+        {/* Tenancy Status Banner - shows with Payment Confirmed */}
+        {tenantData?.agreements && tenantData.agreements.length > 0 && (() => {
+          const activeAgreement = tenantData.agreements.find((a: any) => a.status === 'ACTIVE')
+          const isActive = !!activeAgreement
+          const bannerId = `tenancy-${isActive ? 'active' : 'pending'}`
+          
+          if (dismissedTenancyBanners.includes(bannerId)) return null
+          
+          return (
+            <div className={`mb-8 rounded-xl border-2 ${isActive ? 'border-green-300 bg-gradient-to-r from-green-50 to-emerald-50' : 'border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50'} p-6 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300`}>
+              <div className="flex items-start gap-4">
+                <div className={`h-12 w-12 rounded-full flex items-center justify-center flex-shrink-0 ${isActive ? 'bg-green-100' : 'bg-amber-100'}`}>
+                  {isActive ? (
+                    <CheckCircle2 className={`h-6 w-6 ${isActive ? 'text-green-600' : 'text-amber-600'}`} />
+                  ) : (
+                    <AlertCircle className={`h-6 w-6 ${isActive ? 'text-green-600' : 'text-amber-600'}`} />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className={`text-lg font-bold mb-2 ${isActive ? 'text-green-900' : 'text-amber-900'}`}>
+                    Tenancy Status: {isActive ? '✨ Active' : '⏳ Pending'}
+                  </h3>
+                  <p className={`text-sm mb-3 ${isActive ? 'text-green-700' : 'text-amber-700'}`}>
+                    {isActive ? (
+                      <>Your rental agreement for <span className="font-semibold">{activeAgreement.property_title}</span> is now active. Payment is confirmed and you're all set!</>
+                    ) : (
+                      <>You have {tenantData.agreements.length} agreement{tenantData.agreements.length > 1 ? 's' : ''} pending. Complete your application and sign your agreement to activate your tenancy.</>
+                    )}
+                  </p>
+                  <div className="flex gap-2 flex-wrap">
+                    {isActive ? (
+                      <>
+                        <Link href="/tenant/agreements">
+                          <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
+                            <FileCheck className="h-4 w-4 mr-1.5" />
+                            View Agreement
+                          </Button>
+                        </Link>
+                        <Link href="/tenant/messages">
+                          <Button size="sm" variant="outline" className="border-green-400 text-green-700 hover:bg-green-50">
+                            <MessageSquare className="h-4 w-4 mr-1.5" />
+                            Contact Landlord
+                          </Button>
+                        </Link>
+                      </>
+                    ) : (
+                      <Link href="/tenant/applications">
+                        <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white">
+                          <FileText className="h-4 w-4 mr-1.5" />
+                          Complete Application
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setDismissedTenancyBanners(prev => [...prev, bannerId])
+                    localStorage.setItem(`tenancy-banner-${bannerId}`, Date.now().toString())
+                  }}
+                  className={`${isActive ? 'text-green-600 hover:text-green-900' : 'text-amber-600 hover:text-amber-900'} flex-shrink-0 mt-0.5`}
+                  title="Dismiss this notification"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Payment Success Banner - Next Steps */}
         {/* Only shown within 48h of the agreement becoming ACTIVE/SIGNED — same window as landlord dashboard.
@@ -1406,6 +1481,55 @@ export default function TenantDashboard() {
                 </CardContent>
               </Card>
             </button>
+
+            {/* Active Rentals Card */}
+            <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="h-10 w-10 sm:h-12 sm:w-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Home className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Active Rentals</p>
+                    <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">
+                      {tenantData?.agreements?.filter((a: any) => a.status === 'ACTIVE').length ?? 0}
+                    </p>
+                    <span className="text-xs text-slate-400 mt-1 block">
+                      {(() => {
+                        const total = tenantData?.agreements?.length ?? 0
+                        const active = tenantData?.agreements?.filter((a: any) => a.status === 'ACTIVE').length ?? 0
+                        return total > 0 ? `of ${total}` : 'none active'
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Pending Applications Card */}
+            <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="h-10 w-10 sm:h-12 sm:w-12 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Pending Applications</p>
+                    <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">
+                      {tenantData?.stats?.pendingApplications ?? 0}
+                    </p>
+                    <span className="text-xs text-slate-400 mt-1 block">
+                      {(() => {
+                        const total = tenantData?.stats?.applicationsSubmitted ?? 0
+                        const pending = tenantData?.stats?.pendingApplications ?? 0
+                        return total > 0 ? `of ${total}` : 'none pending'
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
 
 
 

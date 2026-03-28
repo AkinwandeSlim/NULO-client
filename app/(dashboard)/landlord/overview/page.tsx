@@ -1756,64 +1756,77 @@ export default function LandlordDashboard() {
 
 
 
-            <Link href="/landlord/viewings">
-
+            <Link href="/landlord/properties">
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
-
                 <CardContent className="p-4 sm:p-6">
-
-                  <div className="flex items-start gap-3 sm:gap-4">
-
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-
-                      <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
-
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-600" />
                     </div>
-
                     <div className="flex-1 min-w-0">
-
-                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Viewings</p>
-
-                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{pendingCount}</p>
-
-                      <div className="flex flex-wrap gap-1 mt-1">
-
-                        {pendingCount > 0 && (
-
-                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full inline-block">
-
-                            {pendingCount} pending
-
-                          </span>
-
-                        )}
-
-                        {confirmedCount > 0 && (
-
-                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full inline-block">
-
-                            {confirmedCount} confirmed
-
-                          </span>
-
-                        )}
-
-                        {pendingCount === 0 && confirmedCount === 0 && !viewingsLoading && (
-
-                          <span className="text-xs text-slate-400">none active</span>
-
-                        )}
-
-                      </div>
-
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Rented Properties</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">
+                        {agreements.filter((a: any) => a.status === 'ACTIVE').length}
+                      </p>
+                      <span className="text-xs text-slate-500 mt-1 block">
+                        with active tenants
+                      </span>
                     </div>
-
                   </div>
-
                 </CardContent>
-
               </Card>
+            </Link>
 
+            <Link href="/landlord/properties">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-sky-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Building2 className="h-5 w-5 sm:h-6 sm:w-6 text-sky-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Available Properties</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">
+                        {stats.total_properties - agreements.filter((a: any) => a.status === 'ACTIVE').length}
+                      </p>
+                      <span className="text-xs text-slate-500 mt-1 block">
+                        ready to list
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+
+            <Link href="/landlord/viewings">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Viewings</p>
+                      <p className="text-xl sm:text-3xl font-bold text-slate-900 truncate">{pendingCount}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {pendingCount > 0 && (
+                          <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full inline-block">
+                            {pendingCount} pending
+                          </span>
+                        )}
+                        {confirmedCount > 0 && (
+                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full inline-block">
+                            {confirmedCount} confirmed
+                          </span>
+                        )}
+                        {pendingCount === 0 && confirmedCount === 0 && !viewingsLoading && (
+                          <span className="text-xs text-slate-400">none active</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </Link>
 
 
