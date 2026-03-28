@@ -73,7 +73,7 @@ export default function TenantPaymentCallbackPage() {
           if (response.payment.status === "released") {
             setState("success")
             toast.success("Payment confirmed! Your tenancy is now active.")
-            setTimeout(() => router.push("/tenant/dashboard"), 2000)
+            setTimeout(() => router.push("/tenant"), 2000)
             return
           }
 
@@ -117,7 +117,7 @@ export default function TenantPaymentCallbackPage() {
         setTransaction(response.payment || transaction)
         setState("success")
         toast.success("Payment confirmed! Your tenancy is now active.")
-        setTimeout(() => router.push("/tenant/dashboard"), 2000)
+        setTimeout(() => router.push("/tenant"), 2000)
       } else {
         console.error("[CALLBACK] Confirm failed:", response)
         toast.error(response.error || "Failed to confirm payment")
@@ -187,7 +187,7 @@ export default function TenantPaymentCallbackPage() {
               </div>
             )}
 
-            <Link href="/tenant/dashboard" className="block">
+            <Link href="/tenant" className="block">
               <Button className="w-full bg-green-600 hover:bg-green-700 text-white">
                 <Home className="mr-2 h-4 w-4" />
                 Go to Dashboard
@@ -236,7 +236,7 @@ export default function TenantPaymentCallbackPage() {
                 </Button>
               </Link>
 
-              <Link href="/tenant/dashboard">
+              <Link href="/tenant">
                 <Button variant="outline" className="w-full">
                   <Home className="mr-2 h-4 w-4" />
                   Back to Dashboard
