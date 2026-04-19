@@ -17,8 +17,6 @@ export default function PublicLayout({
         <main className="pt-[7.5rem] sm:pt-20">{children}</main>
 
     
-    
-    
     </div>
   )
 }

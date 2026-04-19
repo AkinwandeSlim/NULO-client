@@ -2,6 +2,8 @@ import Link from "next/link"
 import { Facebook, Twitter, Instagram, Linkedin, Mail, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Logo } from "@/components/logo"
+
 
 export function Footer() {
   return (
@@ -26,16 +28,34 @@ export function Footer() {
 
         <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-4">
           <div>
-            <div className="mb-4 text-2xl font-bold">
+            {/* <div className="mb-4 text-2xl font-bold">
               <span className="text-slate-800">Nulo</span>
               <span className="text-orange-600">Africa</span>
             </div>
             <p className="mb-4 text-sm text-slate-600 leading-relaxed">
               Your trusted partner in finding the perfect home across Africa.
+            </p> */}
+
+
+
+            <div className="mb-4">
+              <Logo size={80}/>
+            </div>
+            <p className="mb-4 text-sm text-slate-600 leading-relaxed">
+              Your trusted partner in finding the perfect home across Africa.
             </p>
+
+
+
+
+
+
+
+
+
             <div className="flex gap-3">
               <Link
-                href="#"
+                href="https://www.facebook.com/share/1Dui43e6nk/"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white transition-all duration-300 hover:scale-110"
               >
                 <Facebook className="h-4 w-4" />
@@ -47,13 +67,13 @@ export function Footer() {
                 <Twitter className="h-4 w-4" />
               </Link>
               <Link
-                href="#"
+                href="https://www.instagram.com/nuloafrica"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white transition-all duration-300 hover:scale-110"
               >
                 <Instagram className="h-4 w-4" />
               </Link>
               <Link
-                href="#"
+                href="https://www.linkedin.com/in/nulo-africa-924136399/"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white transition-all duration-300 hover:scale-110"
               >
                 <Linkedin className="h-4 w-4" />

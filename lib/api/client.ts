@@ -191,9 +191,47 @@ apiClient.interceptors.response.use(
       }
     }
     
-    // Handle 403 Forbidden
+    // Handle 403 Forbidden - Check if it's a license error
     if (error.response?.status === 403) {
-      console.error('Access forbidden:', error.response.data);
+      const data = error.response.data as any
+      
+      // Log full response for debugging
+      console.warn('⚠️ [API CLIENT] Got 403 Forbidden response:', {
+        statusCode: error.response.status,
+        statusText: error.response.statusText,
+        data: data,
+        dataKeys: data ? Object.keys(data) : 'no data',
+        errorField: data?.error,
+        messageField: data?.message,
+        detailField: data?.detail,
+      })
+      
+      // Check if it's a license error (try multiple field patterns)
+      const isLicenseError = 
+        data?.error === 'LICENSE_EXPIRED' ||
+        data?.message === 'LICENSE_EXPIRED' ||
+        data?.detail?.includes('license') ||
+        data?.message?.includes('license') ||
+        data?.message?.includes('License') ||
+        data?.error?.includes('license')
+      
+      if (isLicenseError) {
+        console.error('🔒 [API CLIENT] LICENSE EXPIRED - Dispatching event for hook to handle');
+        
+        // Dispatch custom event that the hook can listen to
+        const licenseEvent = new CustomEvent('licenseExpired', {
+          detail: {
+            error: data?.error || 'LICENSE_EXPIRED',
+            message: data?.message || 'License expired',
+            detail: data?.detail || 'The application license has expired. Please contact support to renew your license.',
+            support: data?.support || process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@nuloafrica.com',
+          }
+        })
+        window.dispatchEvent(licenseEvent)
+        console.log('✅ [API CLIENT] License expired event dispatched')
+      } else {
+        console.error('❌ [API CLIENT] Access forbidden (non-license):', error.response.data);
+      }
     }
     
     // Handle 500 Server Error

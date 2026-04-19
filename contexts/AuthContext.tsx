@@ -316,7 +316,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setAuthInitialized(true)
           }
           return
-        }
+        } 
 
         // 🚀 PHASE 3: Update token cache
         tokenCache.current = {

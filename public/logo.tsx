@@ -9,7 +9,7 @@ export function Logo({ size = 50, className = "" }: LogoProps) {
   
   return (
     <img 
-      src="/nuloafrica-logo.svg"
+      src="/new@-nuloafrica.svg"
       alt="NuloAfrica" 
       width={width}
       height={size}

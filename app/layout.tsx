@@ -8,6 +8,7 @@ import { AuthProvider } from "@/contexts/AuthContext"
 import { DashboardProvider } from "@/contexts/DashboardContext"
 import { PropertiesProvider } from "@/contexts/PropertiesContext"
 import { NotificationProvider } from "@/contexts/NotificationContext"
+import LicenseCheckWrapper from "@/components/auth/LicenseCheckWrapper"
 import { initializeLoggerConfig } from "@/lib/logger-config"
 import { metadata } from "./metadata"
 import "./globals.css"
@@ -62,7 +63,9 @@ export default function RootLayout({
             cleanupInterval: 60 * 1000
           }}
         >
-          <Suspense fallback={null}>{children}</Suspense>
+          <LicenseCheckWrapper>
+            <Suspense fallback={null}>{children}</Suspense>
+          </LicenseCheckWrapper>
           <Analytics />
           <Toaster 
             position="bottom-right"
