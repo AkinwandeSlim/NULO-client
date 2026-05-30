@@ -84,6 +84,16 @@ export interface AgreementWithDetails extends Agreement {
     price: number
     images: string[] | null
   } | null
+  // AI integration fields
+  agreement_source?: "groq_llama" | "manual_template"
+  generation_metadata?: {
+    compliance_score?: number
+    model_used?: string
+    tokens_used?: number
+    cost_usd?: number
+    generated_at?: string
+    template_version?: string
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

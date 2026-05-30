@@ -98,7 +98,7 @@ export default function LandlordVerificationPage() {
       console.log('📤 [VERIFICATION PAGE] Fetching data...')
 
       const [verificationsData, statsData] = await Promise.all([
-        verificationAPI.getAllLandlordVerifications(),
+        verificationAPI.getAllLandlordVerifications(statusFilter === 'all' ? undefined : statusFilter),
         verificationAPI.getVerificationStats()
       ])
 

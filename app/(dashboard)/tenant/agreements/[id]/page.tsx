@@ -18,6 +18,7 @@ import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
 import { paymentsAPI, type Transaction } from "@/lib/api/payments"
 import { toast } from "sonner"
 import { formatNGN, calculateAgreementBreakdown } from "@/lib/utils/rentalCalculations"
+import { AIBadge } from "@/components/ui/ai-badge"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -533,6 +534,7 @@ export default function TenantAgreementDetailPage() {
                   <FileText className="h-4 w-4 text-orange-500" />
                   Agreement Terms
                 </CardTitle>
+                <AIBadge agreement={agreement} variant="badge" />
               </CardHeader>
               <CardContent>
                 <div className="bg-slate-50 rounded-xl border border-slate-100 p-5 max-h-96 overflow-y-auto">

@@ -34,14 +34,20 @@ export default function LandlordOnboardingStep5() {
 
     // Guard: all 4 steps must have data before submitting
     if (!step1Data || !step2Data || !step3Data || !step4Data) {
-      toast.error('Please complete all previous steps first')
+      toast.error('❌ Please complete all previous steps first')
       router.push('/onboarding/landlord/step-1')
       return
     }
 
     // user is guaranteed non-null here because isReady already confirmed auth
     try {
-      await submitCompleteOnboarding(user!.id, user!.email || '')
+      console.log('🔍 [STEP 5] Validating locally and submitting onboarding...')
+
+      // Submit complete onboarding using data collected in localStorage (hook)
+      const ok = await submitCompleteOnboarding(user!.id, user!.email || '')
+      if (!ok) {
+        throw new Error('Failed to submit onboarding. Please try again.')
+      }
       toast.success('🎉 Onboarding submitted for review!')
       setTimeout(() => {
         router.push('/onboarding/landlord/verification-pending')
@@ -260,10 +266,10 @@ export default function LandlordOnboardingStep5() {
                   <span className="text-sm font-medium text-slate-700">Property Type:</span>
                   <p className="text-slate-900 capitalize">{step3Data?.property_type || 'Not provided'}</p>
                 </div>
-                <div className="space-y-1">
+                {/* <div className="space-y-1">
                   <span className="text-sm font-medium text-slate-700">Property Images:</span>
                   <p className="text-slate-900">{step3Data?.property_images?.length || 0} images uploaded</p>
-                </div>
+                </div> */}
                 <div className="space-y-1">
                   <span className="text-sm font-medium text-slate-700">Ownership Proof:</span>
                   <div className="flex items-center gap-2">

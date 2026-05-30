@@ -21,6 +21,7 @@ import {
 import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
 import { toast } from "sonner"
+import { AIBadge } from "@/components/ui/ai-badge"
 
 const DEFAULT_PROPERTY_IMAGE = "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop"
 const DEFAULT_AVATAR = "https://api.dicebear.com/7.x/avataaars/svg?seed="
@@ -152,7 +153,10 @@ function AgreementCard({ agreement }: { agreement: AgreementWithDetails }) {
                   </span>
                 </div>
               </div>
-              <StatusBadge agreement={agreement} />
+              <div className="flex flex-col items-end gap-2">
+                <StatusBadge agreement={agreement} />
+                <AIBadge agreement={agreement} variant="compact" />
+              </div>
             </div>
 
             {/* Landlord pill */}

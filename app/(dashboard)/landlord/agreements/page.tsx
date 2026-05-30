@@ -14,6 +14,7 @@ import {
 import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
 import { toast } from "sonner"
+import { AIBadge } from "@/components/ui/ai-badge"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -159,7 +160,10 @@ function AgreementCard({ agreement }: { agreement: AgreementWithDetails }) {
                   </span>
                 </div>
               </div>
-              <StatusBadge agreement={agreement} />
+              <div className="flex flex-col items-end gap-2">
+                <StatusBadge agreement={agreement} />
+                <AIBadge agreement={agreement} variant="compact" />
+              </div>
             </div>
 
             {/* Tenant pill */}

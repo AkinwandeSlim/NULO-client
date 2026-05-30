@@ -197,7 +197,7 @@ export const getAllLandlordVerifications = async (
     const params = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
-      ...(status && { status })
+      ...(status && { status_filter: status })
     })
     
     const response = await apiClient.get(

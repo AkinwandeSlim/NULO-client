@@ -37,7 +37,7 @@ export interface OnboardingStep2Data {
 export interface OnboardingStep3Data {
   property_address: string
   property_type: string
-  property_images: string[]
+  property_images?: string[]
   property_ownership_proof: string
 }
 

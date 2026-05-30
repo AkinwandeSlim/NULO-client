@@ -112,8 +112,10 @@ export const paymentsAPI = {
    * Landlord's received payments.
    * Called from /landlord/payments
    */
-  getReceivedPayments: async (): Promise<PaymentsListResponse> => {
-    const response = await apiClient.get<PaymentsListResponse>('/api/v1/payments/received');
+  getReceivedPayments: async (limit: number = 50): Promise<PaymentsListResponse> => {
+    const response = await apiClient.get<PaymentsListResponse>(`/api/v1/payments/received?limit=${limit}`, {
+      timeout: 60000, // allow a bit more time for dashboard data fetching
+    });
     return response.data;
   },
 

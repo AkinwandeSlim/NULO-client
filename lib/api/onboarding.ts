@@ -140,19 +140,43 @@ const submitCompleteOnboardingDirect = async (
       payment_step_completed: true,
       protection_step_completed: true,
       all_steps_completed: true,
-      current_step: 5,
+      current_step: 4,
       onboarding_completed_at: new Date().toISOString(),
       last_updated_at: new Date().toISOString()
     }
-    
-    console.log(' [API] Inserting into landlord-onboarding table:', onboardingData)
-    
-    // Insert into landlord-onboarding table
-    const { data, error } = await supabase
+
+    console.log(' [API] Upserting into landlord-onboarding table:', onboardingData)
+
+    // Upsert existing onboarding record if one is already present
+    const { data: existingRecord, error: existingError } = await supabase
       .from('landlord_onboarding')
-      .insert(onboardingData)
-      .select()
+      .select('id')
+      .eq('landlord_id', payload.landlord_id)
       .single()
+
+    if (existingError && existingError.code !== 'PGRST116') {
+      console.error(' [API] Supabase error checking existing onboarding record:', existingError)
+      throw new Error(existingError.message)
+    }
+
+    let result;
+    if (existingRecord?.id) {
+      console.log(' [API] Existing onboarding record found, updating it:', existingRecord.id)
+      result = await supabase
+        .from('landlord_onboarding')
+        .update(onboardingData)
+        .eq('id', existingRecord.id)
+        .select()
+        .single()
+    } else {
+      result = await supabase
+        .from('landlord_onboarding')
+        .insert(onboardingData)
+        .select()
+        .single()
+    }
+
+    const { data, error } = result
     
     if (error) {
       console.error(' [API] Supabase error:', error)
@@ -184,18 +208,39 @@ export const getOnboardingStatus = async (
 ): Promise<OnboardingStatusResponse> => {
   try {
     console.log('📤 [API] Fetching onboarding status for:', landlordId)
-    
-    // MVP: Mock status when backend is down
-    console.log('🎭 [API] Backend down - mocking status response')
-    
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Mock response based on typical flow
+    const response = await apiClient.get('/api/v1/onboarding/status')
+    const data = response.data
+
+    // Support two shapes: { steps_completed: {...} } or flat fields
+    const steps = data.steps_completed || {
+      profile_step_completed: data.profile_step_completed,
+      property_step_completed: data.property_step_completed,
+      payment_step_completed: data.payment_step_completed,
+      protection_step_completed: data.protection_step_completed,
+    }
+
+    const result: any = {
+      id: data.id || data.onboarding_id || 'unknown',
+      landlord_id: data.landlord_id || landlordId,
+      admin_review_status: data.admin_review_status || 'pending',
+      submitted_for_review_at: data.submitted_for_review_at || null,
+      profile_step_completed: steps.profile_step_completed,
+      property_step_completed: steps.property_step_completed,
+      payment_step_completed: steps.payment_step_completed,
+      protection_step_completed: steps.protection_step_completed,
+      all_steps_completed: data.all_steps_completed || false,
+      current_step: data.current_step || 0,
+      _raw: data
+    }
+
+    return result as OnboardingStatusResponse
+  } catch (error: any) {
+    console.error('❌ [API] Error fetching status from backend, falling back to mock:', error?.message || error)
+    // Fallback mock (keeps previous behavior when backend unreachable)
     const mockResponse: OnboardingStatusResponse = {
       id: 'mock-onboarding-id',
       landlord_id: landlordId,
-      admin_review_status: 'pending', // or 'in_review', 'approved', 'rejected'
+      admin_review_status: 'pending',
       submitted_for_review_at: new Date().toISOString(),
       profile_step_completed: true,
       property_step_completed: true,
@@ -204,15 +249,7 @@ export const getOnboardingStatus = async (
       all_steps_completed: true,
       current_step: 5
     }
-    
-    console.log('✅ [API] Status retrieved (mocked):', mockResponse)
     return mockResponse
-  } catch (error: any) {
-    console.error('❌ [API] Error fetching status:', error)
-    throw new Error(
-      error.response?.data?.detail || 
-      'Failed to fetch onboarding status'
-    )
   }
 }
 

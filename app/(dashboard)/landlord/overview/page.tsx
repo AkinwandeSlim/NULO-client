@@ -654,7 +654,7 @@ export default function LandlordDashboard() {
         // 🔄 FALLBACK: Fetch fresh data
         console.log('🔄 [OVERVIEW] Fetching received payments from API...')
         setPaymentsLoading(true)
-        const data = await paymentsAPI.getReceivedPayments()
+        const data = await paymentsAPI.getReceivedPayments(50)
         setReceivedPayments(data.payments || [])
       } catch (error) {
         console.error('❌ Failed to fetch payments:', error)

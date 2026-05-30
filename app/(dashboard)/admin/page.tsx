@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useDashboard } from "@/contexts/DashboardContext"
@@ -59,6 +60,7 @@ export default function AdminDashboardPage() {
   
   // ✅ Enhanced state management with better caching
   const [recentSignups, setRecentSignups] = useState<RecentSignup[]>([])
+  const [recentTenantSignups, setRecentTenantSignups] = useState<RecentSignup[]>([])
   const [recentSignupsLoading, setRecentSignupsLoading] = useState(false)
   const [recentSignupsError, setRecentSignupsError] = useState<string | null>(null)
   const [hasApiFailed, setHasApiFailed] = useState(false)
@@ -84,8 +86,28 @@ export default function AdminDashboardPage() {
       setRecentSignupsLoading(true)
       setRecentSignupsError(null)
       
+      console.log('🔍 [ADMIN DASHBOARD] Fetching recent signups from API...')
       const data = await adminDashboardAPI.getRecentSignups(7)
-      setRecentSignups(data.recent_signups || [])
+      const signups = data.recent_signups || []
+      
+      console.log('📊 [ADMIN DASHBOARD] Raw API Response:')
+      console.log('  Total signups returned:', signups.length)
+      console.log('  Full data:', JSON.stringify(signups, null, 2))
+      
+      // Filter to only show landlords and tenants separately
+      const landlordSignups = signups.filter((signup: any) => signup.user_type === 'landlord')
+      const tenantSignups = signups.filter((signup: any) => signup.user_type === 'tenant')
+      
+      console.log('🏢 [ADMIN DASHBOARD] After filtering for landlords:')
+      console.log('  Landlord signups count:', landlordSignups.length)
+      console.log('  Filtered data:', JSON.stringify(landlordSignups, null, 2))
+      
+      console.log('👥 [ADMIN DASHBOARD] After filtering for tenants:')
+      console.log('  Tenant signups count:', tenantSignups.length)
+      console.log('  Filtered data:', JSON.stringify(tenantSignups, null, 2))
+      
+      setRecentSignups(landlordSignups)  // ✅ FIX: Save filtered landlord data only
+      setRecentTenantSignups(tenantSignups)  // ✅ Save filtered tenant data
       setCacheTimestamp(now)
       setHasApiFailed(false)
       
@@ -100,6 +122,8 @@ export default function AdminDashboardPage() {
         : 'Failed to load recent signups. Please try again.'
       
       setRecentSignupsError(errorMessage)
+      setRecentSignups([])
+      setRecentTenantSignups([])
       setHasApiFailed(true)
       
       toast.error(errorMessage)
@@ -759,7 +783,11 @@ export default function AdminDashboardPage() {
             </CardHeader>
             <CardContent className="pt-6">
               <div className="space-y-3">
-                {recentSignups.slice(0, 5).map((landlord) => (
+                {(() => {
+                  console.log('🎯 [ADMIN DISPLAY] Rendering Recent Landlord Signups:')
+                  console.log('  Total items to render:', recentSignups.length)
+                  console.log('  Items (first 5):', JSON.stringify(recentSignups.slice(0, 5), null, 2))
+                  return recentSignups.slice(0, 5).map((landlord) => (
                   <div 
                     key={landlord.id}
                     className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border-2 border-slate-200 rounded-2xl hover:border-orange-300 hover:bg-orange-50/50 transition-all duration-300 cursor-pointer group hover:shadow-lg"
@@ -811,7 +839,8 @@ export default function AdminDashboardPage() {
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </div>
-                ))}
+                ))
+                })()}
                 
                 {recentSignups.length > 5 && (
                   <Button 
@@ -849,6 +878,95 @@ export default function AdminDashboardPage() {
                     <p className="text-slate-600 font-medium">No recent landlord signups yet</p>
                   </>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ✅ RECENT TENANT SIGNUPS - Complementary to Landlord Signups */}
+        {recentTenantSignups.length > 0 && !recentSignupsLoading && (
+          <Card className="bg-white/80 backdrop-blur-lg border-2 border-purple-300 rounded-2xl shadow-2xl mb-8 sm:mb-12 overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-t-2xl pb-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-3 text-purple-900 font-bold text-lg">
+                  <Users className="w-5 h-5" />
+                  Recent Tenant Signups
+                </CardTitle>
+                <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 font-bold text-base px-3 py-1">
+                  {recentTenantSignups.length}
+                </Badge>
+              </div>
+              <CardDescription className="text-purple-700 font-medium text-sm mt-1">
+                Latest tenants who joined in the last 7 days
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="space-y-4">
+                {recentTenantSignups.map((tenant, index) => (
+                  <div
+                    key={index}
+                    className="p-4 bg-gradient-to-r from-purple-50 to-slate-50 rounded-xl border-2 border-purple-200 hover:border-purple-400 hover:shadow-lg transition-all duration-300 flex items-center justify-between"
+                  >
+                    <div className="flex-1">
+                      <p className="font-bold text-slate-900 text-base">
+                        {tenant.full_name || 'Unknown Tenant'}
+                      </p>
+                      <p className="text-slate-600 text-sm mt-1">{tenant.email}</p>
+                      <div className="flex items-center gap-3 mt-2">
+                        <Badge 
+                          variant="outline" 
+                          className={`text-xs font-bold px-2 py-1 ${
+                            tenant.verification_status === 'pending' 
+                              ? 'bg-yellow-100 text-yellow-700 border-yellow-300'
+                              : tenant.verification_status === 'approved'
+                              ? 'bg-green-100 text-green-700 border-green-300'
+                              : 'bg-slate-100 text-slate-700 border-slate-300'
+                          }`}
+                        >
+                          {tenant.verification_status || 'pending'}
+                        </Badge>
+                        <span className="text-xs text-slate-500">
+                          {tenant.created_at ? new Date(tenant.created_at).toLocaleDateString() : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                    <Link href={`/admin/user-details?userId=${tenant.id}`}>
+                      <Button 
+                        size="sm" 
+                        className="ml-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg"
+                      >
+                        View
+                      </Button>
+                    </Link>
+                  </div>
+                ))}
+              </div>
+              {recentTenantSignups.length > 5 && (
+                <Button
+                  variant="outline"
+                  className="w-full text-purple-600 hover:bg-purple-50 font-bold rounded-xl text-base py-3 border-2 border-dashed border-purple-300 mt-4"
+                  onClick={() => router.push('/admin/tenant-management')}
+                >
+                  View All {recentTenantSignups.length} Recent Signups
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {recentTenantSignups.length === 0 && !recentSignupsLoading && (
+          <Card className="bg-white/80 backdrop-blur-lg border-2 border-purple-300 rounded-2xl shadow-2xl mb-8 sm:mb-12 overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-t-2xl pb-4">
+              <CardTitle className="flex items-center gap-3 text-purple-900 font-bold text-lg">
+                <Users className="w-5 h-5" />
+                Recent Tenant Signups
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6 text-center py-12">
+              <div className="flex flex-col items-center gap-4">
+                <Users className="w-12 h-12 text-slate-300" />
+                <p className="text-slate-600 font-medium">No recent tenant signups yet</p>
               </div>
             </CardContent>
           </Card>
