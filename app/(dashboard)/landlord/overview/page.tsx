@@ -184,18 +184,20 @@ export default function LandlordDashboard() {
       // Already handled this one
       if (processedNotifIds.current.has(n.id)) return false
 
+      // ✅ FIXED: Only check type, not title/message to avoid duplicate matches
+      // The notification service creates notifications with type='onboarding_approved'
+      // Checking both type AND text content was causing the same notification
+      // to match multiple conditions
       return (
         n.type === 'onboarding_approved' ||
-        n.type === 'verification_approved' ||
-        (typeof n.title === 'string' && n.title.toLowerCase().includes('verified')) ||
-        (typeof n.message === 'string' && n.message.toLowerCase().includes('verified'))
+        n.type === 'verification_approved'
       )
     })
 
     if (approvalNotif) {
       // Mark as processed immediately so subsequent polls don't re-trigger
       processedNotifIds.current.add(approvalNotif.id)
-      console.log('[OVERVIEW] New approval notification detected — optimistic update + DB refresh')
+      console.log('[OVERVIEW] ✅ New approval notification detected — optimistic update + DB refresh')
 
       // ✅ Flip the banner IMMEDIATELY based on the notification — no DB roundtrip needed
       if (user) setUser({ ...user, verification_status: 'approved' })
