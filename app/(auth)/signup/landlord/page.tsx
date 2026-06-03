@@ -57,28 +57,41 @@ export default function LandlordSignupPage() {
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
-    
+
+    // ✅ FIXED: First name validation with min length
     if (!formData.firstName.trim()) {
       newErrors.firstName = "First name is required"
+    } else if (formData.firstName.trim().length < 2) {
+      newErrors.firstName = "First name must be at least 2 characters"
     }
-    
+
+    // ✅ FIXED: Last name validation with min length
     if (!formData.lastName.trim()) {
       newErrors.lastName = "Last name is required"
+    } else if (formData.lastName.trim().length < 2) {
+      newErrors.lastName = "Last name must be at least 2 characters"
     }
     
+    // ✅ FIXED: Email validation
     if (!formData.email.trim()) {
       newErrors.email = "Email is required"
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = "Please enter a valid email"
+      newErrors.email = "Please enter a valid email address"
     }
     
+    // ✅ FIXED: Password strength validation (matching tenant signup)
     if (!formData.password) {
       newErrors.password = "Password is required"
     } else if (formData.password.length < 8) {
       newErrors.password = "Password must be at least 8 characters"
+    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
+      newErrors.password = "Password must contain at least one uppercase letter, one lowercase letter, and one number"
     }
-    
-    if (formData.password !== formData.confirmPassword) {
+
+    // ✅ FIXED: Confirm password validation
+    if (!formData.confirmPassword) {
+      newErrors.confirmPassword = "Please confirm your password"
+    } else if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = "Passwords do not match"
     }
     
