@@ -155,6 +155,49 @@ export default function SignInPage() {
     return Object.keys(newErrors).length === 0
   }
 
+  // ✅ FIXED: Parse signin errors to provide specific, helpful messages
+  const parseSignInError = (error: any): { title: string; message: string } => {
+    const errorMsg = error?.message?.toLowerCase() || error?.toString().toLowerCase() || ''
+    
+    // Wrong password or invalid credentials
+    if (errorMsg.includes('invalid') || errorMsg.includes('incorrect') || errorMsg.includes('credentials')) {
+      return {
+        title: '❌ Invalid Credentials',
+        message: 'The email or password you entered is incorrect. Please try again.',
+      }
+    }
+    
+    // User not found / email doesn't exist
+    if (errorMsg.includes('user not found') || errorMsg.includes('no user') || errorMsg.includes('doesnt exist')) {
+      return {
+        title: '❌ Account Not Found',
+        message: 'No account exists with this email address. Please sign up first.',
+      }
+    }
+    
+    // Email not confirmed
+    if (errorMsg.includes('email not confirmed') || errorMsg.includes('email_not_confirmed')) {
+      return {
+        title: '📧 Email Not Verified',
+        message: 'Please verify your email address first. Check your inbox for the verification link.',
+      }
+    }
+    
+    // User disabled/banned
+    if (errorMsg.includes('disabled') || errorMsg.includes('banned')) {
+      return {
+        title: '🚫 Account Disabled',
+        message: 'Your account has been disabled. Please contact support for help.',
+      }
+    }
+    
+    // Generic fallback
+    return {
+      title: '⚠️ Sign In Failed',
+      message: error?.message || 'An error occurred during sign in. Please try again.',
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -171,9 +214,10 @@ export default function SignInPage() {
       
       if (!user) {
         console.error('❌ [SIGNIN] Sign in failed: No user returned')
-        setApiError('Sign in failed. Please try again.')
-        toast.error('Sign In Failed', {
-          description: 'Sign in failed. Please try again.',
+        const errorInfo = parseSignInError('Sign in failed')
+        setApiError(errorInfo.message)
+        toast.error(errorInfo.title, {
+          description: errorInfo.message,
           duration: 5000,
         })
       } else {
@@ -184,11 +228,14 @@ export default function SignInPage() {
         })
       }
     } catch (error: any) {
-      console.error('❌ Unexpected sign in error:', error)
-      const message = 'An unexpected error occurred. Please try again.'
-      setApiError(message)
-      toast.error('Error', {
-        description: message,
+      console.error('❌ Sign in error:', error)
+      
+      // ✅ FIXED: Parse error to show specific message
+      const errorInfo = parseSignInError(error)
+      setApiError(errorInfo.message)
+      
+      toast.error(errorInfo.title, {
+        description: errorInfo.message,
         duration: 5000,
       })
     } finally {
