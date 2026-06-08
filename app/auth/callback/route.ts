@@ -195,6 +195,14 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ [CALLBACK] Session created for:', data.session.user.id)
 
+    // ✅ FIXED: Verify email is confirmed after session exchange
+    if (!data.session.user.email_confirmed_at) {
+      console.warn('⚠️ [CALLBACK] Email not confirmed even after verification link processed')
+      return NextResponse.redirect(
+        new URL(`/auth/verify-email-failed?error=email_not_confirmed&message=${encodeURIComponent('Email verification failed. Please try again.')}`, requestUrl.origin)
+      )
+    }
+
     // ─── Step 1: DB lookup WITH retry (must happen before finalUserType is set) ──
     // Production bug fix: on cold Render starts the DB query can fail or return
     // an error. We retry up to 4 times with 600ms gaps so the DB has time to

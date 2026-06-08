@@ -41,9 +41,20 @@ export const updateSession = async (request: NextRequest) => {
       data: { user },
     } = await supabase.auth.getUser();
 
-    // Redirect logged-in users away from /login and /signup
+    // ✅ FIXED: Check email verification for protected routes
     if (user) {
       const pathname = request.nextUrl.pathname;
+      
+      // Allow public routes and email verification page
+      const publicRoutes = ['/', '/signin', '/signup', '/auth/verify-email', '/auth/callback', '/properties'];
+      const isPublicRoute = publicRoutes.some(route => pathname === route || pathname.startsWith('/properties/') || pathname.startsWith('/about') || pathname.startsWith('/blog'));
+      
+      // If email not verified and trying to access protected route, redirect to verify-email
+      if (!user.email_confirmed_at && !isPublicRoute && !pathname.startsWith('/auth/')) {
+        return NextResponse.redirect(new URL(`/auth/verify-email?email=${encodeURIComponent(user.email || '')}`, request.url));
+      }
+      
+      // Redirect logged-in users away from /login and /signup
       if (pathname === '/login' || pathname === '/signup') {
         return NextResponse.redirect(new URL('/', request.url));
       }

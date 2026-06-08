@@ -19,7 +19,14 @@ export default function VerifyEmailPage() {
   // Redirect if already verified
   useEffect(() => {
     if (user?.email_verified) {
-      router.push('/tenant')
+      // ✅ FIXED: Route based on user_type instead of hardcoding to tenant
+      if (user.user_type === 'admin') {
+        router.push('/admin')
+      } else if (user.user_type === 'landlord') {
+        router.push('/landlord/overview')
+      } else {
+        router.push('/tenant')
+      }
     }
   }, [user, router])
 

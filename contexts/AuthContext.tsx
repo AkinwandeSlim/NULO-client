@@ -1098,6 +1098,16 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
       }
 
       console.log('✅ [AUTH] Sign in successful for:', data.user.email);
+      
+      // ✅ FIXED: Check if email is verified
+      if (!data.user.email_confirmed_at) {
+        console.warn('⚠️ [AUTH] User email not verified');
+        setUser(null);
+        setProfile(null);
+        const error = new Error('email_not_confirmed');
+        (error as any).code = 'email_not_confirmed';
+        throw error;
+      }
 
       // 🔥 IMPORTANT: Save tokens to localStorage immediately for API client
       if (typeof window !== 'undefined' && data.session) {
