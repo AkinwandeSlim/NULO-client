@@ -105,33 +105,41 @@ export default function TenantSignupPage() {
 
     setIsLoading(true)
     try {
-      // ✅ NEW: Check if email already exists
-      const emailCheck = await checkEmailExists(formData.email.trim())
+      // ⚠️ TEMPORARY: Disabled email check to avoid rate limiting during development
+      // Supabase Auth endpoint has global rate limit (60 req/min per IP)
+      // const emailCheck = await checkEmailExists(formData.email.trim())
+      // 
+      // if (emailCheck.exists && emailCheck.userType) {
+      //   console.log('⚠️ Email already exists as:', emailCheck.userType)
+      //   setEmailExistsModal({
+      //       isOpen: true,
+      //       email: formData.email.trim(),
+      //       userType: emailCheck.userType
+      //   })
+      //   setIsLoading(false)
+      //   return
+      // }
       
-      if (emailCheck.exists && emailCheck.userType) {
-        console.log('⚠️ Email already exists as:', emailCheck.userType)
-        setEmailExistsModal({
-            isOpen: true,
-            email: formData.email.trim(),
-            userType: emailCheck.userType
-        })
-        setIsLoading(false)
-        return
-      }
-      
-      await signUpTenant(
+      const result = await signUpTenant(
         formData.firstName.trim(),
         formData.lastName.trim(),
         formData.email.trim(),
         formData.password
       )
       
+      // Check if signup was successful (no error)
+      if (result?.error) {
+        console.error('Signup failed:', result.error)
+        // Error already shown by AuthContext
+        return
+      }
+      
       // Save email to localStorage for confirmation page
       if (typeof window !== 'undefined') {
         localStorage.setItem('signup_email', formData.email.trim())
       }
       
-      // Redirect to confirmation page
+      // Redirect to confirmation page (only on success)
       router.push('/signup/tenant/confirmation')
       
     } catch (error: any) {

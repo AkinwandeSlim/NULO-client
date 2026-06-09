@@ -269,12 +269,14 @@ export async function GET(request: NextRequest) {
       metaUserType ||
       'tenant'
 
-    console.log('✅ [CALLBACK] user_type resolution:', {
-      db: dbUserType,
-      cookie: cookieUserType,
-      url: urlUserType,
-      meta: metaUserType,
-      final: finalUserType,
+    console.log('✅ [CALLBACK] user_type resolution ORDER:', {
+      step_1_db: dbUserType || '(not found)',
+      step_2_cookie: cookieUserType || '(not found)',
+      step_3_url: urlUserType || '(not found)',
+      step_4_metadata: metaUserType || '(not found)',
+      step_5_default: 'tenant',
+      FINAL_CHOICE: finalUserType,
+      query_param_value: requestUrl.searchParams.get('user_type'),
     })
 
     // ─── Step 3: Compute isReturningUser AFTER we have the DB result ────────────
@@ -329,7 +331,10 @@ export async function GET(request: NextRequest) {
     // For returning users: DO NOT overwrite user_type — DB already has the correct value.
     // Only update for new users or if metadata was missing.
     if (!isReturningUser) {
-      const updateData: any = { user_type: finalUserType }
+      const updateData: any = { 
+        user_type: finalUserType,
+        email_verified: true  // ✅ CRITICAL: Mark email as verified in DB
+      }
       if (finalUserType === 'landlord') {
         updateData.verification_status = 'pending'
       }
@@ -345,7 +350,18 @@ export async function GET(request: NextRequest) {
         console.log('✅ [CALLBACK] Database updated for new user:', updateData)
       }
     } else {
-      console.log('✅ [CALLBACK] Returning user — skipping DB user_type overwrite')
+      // ✅ ALSO UPDATE for returning users: ensure email_verified is set if not already
+      const { error: dbError } = await supabase
+        .from('users')
+        .update({ email_verified: true })
+        .eq('id', data.session.user.id)
+        .eq('email_verified', false)  // Only update if currently false
+      
+      if (dbError) {
+        console.warn('⚠️ [CALLBACK] Could not update email_verified for returning user:', dbError.message)
+      } else {
+        console.log('✅ [CALLBACK] Updated email_verified for returning user')
+      }
     }
 
     // ─── 🔄 SYNC PROFILE + SIGNUP NOTIFICATION (Google OAuth only) ──────────
@@ -465,6 +481,15 @@ export async function GET(request: NextRequest) {
       ? (existingUser?.onboarding_completed === true)
       : false
 
+    console.log('📋 [CALLBACK] Landlord redirect logic:', {
+      isReturningUser,
+      isOnboarded,
+      onboarding_completed: existingUser?.onboarding_completed,
+      accountAgeMs,
+      existingUser: !!existingUser,
+      existingUserError: !!existingUserError
+    })
+
     let redirectTo = '/properties'
 
     if (finalUserType === 'admin') {
@@ -473,12 +498,17 @@ export async function GET(request: NextRequest) {
       if (customRedirectTo && !customRedirectTo.startsWith('/properties')) {
         // Respect custom redirect only if it's not a tenant page
         redirectTo = customRedirectTo
+        console.log('🔀 [CALLBACK] Using custom redirect:', customRedirectTo)
       } else if (isReturningUser && existingUser?.onboarding_completed === true) {
         // Returning landlord who already finished onboarding → dashboard
         redirectTo = '/landlord/overview'
+        console.log('🔀 [CALLBACK] Returning onboarded landlord → /landlord/overview')
       } else {
         // New landlord OR returning landlord who never finished onboarding → onboarding
         redirectTo = '/onboarding/landlord/step-1'
+        console.log('🔀 [CALLBACK] New or unfinished landlord → /onboarding/landlord/step-1', {
+          reason: isReturningUser ? 'Returning but not onboarded' : 'New user'
+        })
       }
     } else if (finalUserType === 'tenant') {
       // Tenants: 

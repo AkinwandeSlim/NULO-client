@@ -679,10 +679,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: { message: 'Admin code not found' } };
       }
 
-      // Check if code has expired
+      // ✅ IMPROVED: Check if code has expired with helpful message
       if (adminCodeData.expires_at && new Date(adminCodeData.expires_at) < new Date()) {
-        toast.error('Admin code has expired');
-        return { error: { message: 'Admin code expired' } };
+        const expiryDate = new Date(adminCodeData.expires_at).toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+        console.warn('⚠️ [AUTH] Admin code expired on:', expiryDate);
+        toast.error(`Admin code expired on ${expiryDate}. Please contact support to request a new code.`);
+        return { error: { message: `Admin code expired on ${expiryDate}` } };
       }
 
       // Check if code has reached max uses
@@ -805,36 +811,37 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
     const isDevelopment = process.env.NODE_ENV === 'development';
     const shouldSkipEmail = isDevelopment && email.includes('test');
     
-    // Step 1: Create auth user in Supabase
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          first_name: firstName,
-          last_name: lastName,
-          full_name: `${firstName} ${lastName}`,
-          user_type: 'tenant',
-          auth_provider: 'email'
-        },
-        // ✅ Keep emailRedirectTo - callback route now handles missing user_type correctly
-        emailRedirectTo: `${window.location.origin}/auth/callback?user_type=tenant${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`
-      }
-    });
+    // Step 1: Create auth user in Supabase WITH RETRY LOGIC
+    const { data, error } = await signUpWithRetry(() =>
+      supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+            full_name: `${firstName} ${lastName}`,
+            user_type: 'tenant',
+            auth_provider: 'email'
+          },
+          // ✅ Keep emailRedirectTo - callback route now handles missing user_type correctly
+          emailRedirectTo: `${window.location.origin}/auth/callback?user_type=tenant${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`
+        }
+      })
+    );
 
     if (error) {
-      // 🚨 DEVELOPMENT: Handle rate limit with helpful message
-      if (error.message?.includes('rate limit')) {
-        toast.error('Email rate limit exceeded. Try using a different email or wait 5 minutes.');
-        console.error('❌ [AUTH] Rate limit hit - suggest using email aliases:');
-        console.error('   - raphawellnessoptimization+test1@gmail.com');
-        console.error('   - raphawellnessoptimization+test2@gmail.com');
-      } else {
-        toast.error(error.message);
-      }
       console.error('❌ [AUTH] Tenant signup error:', error);
+      toast.error(error.message);
       return { error };
     }
+
+    console.log('🔗 [AUTH TENANT] Email redirect URL constructed:', {
+      emailRedirectTo: `${window.location.origin}/auth/callback?user_type=tenant${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`,
+      origin: window.location.origin,
+      user_type_param: 'tenant',
+      callback_url_param: callbackUrl || '(none)'
+    });
 
     console.log('✅ [AUTH] Supabase auth user created');
     console.log('📊 [AUTH] User ID from Supabase:', data.user?.id);
@@ -885,7 +892,39 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
   }
 };
 
-
+// ─── RETRY LOGIC FOR RATE LIMITING ─────────────────────────────────────────
+// Handles Supabase rate limit errors (429) with exponential backoff
+// Supabase returns errors in {data, error} object, not as thrown exceptions
+const signUpWithRetry = async (
+  signupFn: () => Promise<{data: any; error: any}>,
+  maxRetries: number = 3,
+  initialDelay: number = 1000
+): Promise<{data: any; error: any}> => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const result = await signupFn();
+    
+    // Check if we got a rate limit error
+    const isRateLimitError = result.error?.message?.includes('rate limit') || result.error?.status === 429;
+    
+    if (isRateLimitError && attempt < maxRetries) {
+      const delay = initialDelay * Math.pow(2, attempt - 1); // Exponential: 1s, 2s, 4s
+      console.log(`⏳ [RETRY] Rate limited. Attempt ${attempt}/${maxRetries}. Retrying in ${delay}ms...`);
+      
+      // Show user-friendly message
+      toast.info(`Server busy. Retrying in ${Math.ceil(delay / 1000)}s...`);
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, delay));
+      continue;
+    }
+    
+    // Return result (success or non-rate-limit error)
+    return result;
+  }
+  
+  // This shouldn't happen, but just in case
+  return { data: null, error: new Error('Max retries exceeded') };
+};
 
 
 const signUpLandlord = async (firstName: string, lastName: string, email: string, password: string) => {
@@ -900,21 +939,30 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
     const callbackUrl = typeof window !== 'undefined' ? localStorage.getItem('signup_callback_url') : null;
     console.log('🔗 [AUTH] Callback URL:', callbackUrl);
 
-    // Step 1: Create auth user in Supabase
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          first_name: firstName,
-          last_name: lastName,
-          full_name: `${firstName} ${lastName}`,
-          user_type: 'landlord',
-          auth_provider: 'email'
-        },
-        // ✅ Keep emailRedirectTo - callback route now handles missing user_type correctly
-        emailRedirectTo: `${window.location.origin}/auth/callback?user_type=landlord${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`
-      }
+    // Step 1: Create auth user in Supabase WITH RETRY LOGIC
+    const { data, error } = await signUpWithRetry(() =>
+      supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+            full_name: `${firstName} ${lastName}`,
+            user_type: 'landlord',
+            auth_provider: 'email'
+          },
+          // ✅ Keep emailRedirectTo - callback route now handles missing user_type correctly
+          emailRedirectTo: `${window.location.origin}/auth/callback?user_type=landlord${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`
+        }
+      })
+    );
+
+    console.log('🔗 [AUTH LANDLORD] Email redirect URL constructed:', {
+      emailRedirectTo: `${window.location.origin}/auth/callback?user_type=landlord${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`,
+      origin: window.location.origin,
+      user_type_param: 'landlord',
+      callback_url_param: callbackUrl || '(none)'
     });
 
     if (error) {

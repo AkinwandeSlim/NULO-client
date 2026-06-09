@@ -118,17 +118,19 @@ export default function LandlordSignupPage() {
     console.log('====================================')
 
     try {
-      // ✅ NEW: Check if email already exists
-      const emailCheck = await checkEmailExists(formData.email.trim())
-      
-      if (emailCheck.exists && emailCheck.userType) {
-        console.log('⚠️ Email already exists as:', emailCheck.userType)
-        setExistingEmail(formData.email.trim())
-        setExistingUserType(emailCheck.userType)
-        setShowEmailExistsModal(true)
-        setIsLoading(false)
-        return
-      }
+      // ⚠️ TEMPORARY: Disabled email check to avoid rate limiting during development
+      // Supabase Auth endpoint has global rate limit (60 req/min per IP)
+      // Each email check + signup attempt = 2 requests, easily hitting limit
+      // const emailCheck = await checkEmailExists(formData.email.trim())
+      // 
+      // if (emailCheck.exists && emailCheck.userType) {
+      //   console.log('⚠️ Email already exists as:', emailCheck.userType)
+      //   setExistingEmail(formData.email.trim())
+      //   setExistingUserType(emailCheck.userType)
+      //   setShowEmailExistsModal(true)
+      //   setIsLoading(false)
+      //   return
+      // }
 
       const authData = await signUpLandlord(
         formData.firstName.trim(),
@@ -138,6 +140,13 @@ export default function LandlordSignupPage() {
       )
 
       console.log('✅ [LANDLORD PAGE] signUpLandlord returned:', authData)
+
+      // ✅ Check if signup failed (has error)
+      if (authData?.error) {
+        console.error('❌ [LANDLORD PAGE] Signup failed:', authData.error)
+        // Error already shown by AuthContext
+        return
+      }
 
       // Check if email confirmation is needed
       if (authData?.needsEmailConfirmation) {

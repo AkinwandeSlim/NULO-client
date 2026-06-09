@@ -102,7 +102,7 @@ export async function proxy(request: NextRequest) {
       console.log('ℹ️ [MIDDLEWARE] DB timeout, using metadata fallback. Type:', safeType)
       profile = {
         user_type: safeType,
-        email_verified: session.user.email_confirmed_at ? true : false,
+        email_verified: session.user.email_confirmed_at ? true : false,  // ✅ Trust auth session
         first_time_visit: session.user.user_metadata?.first_time_visit !== false,
         onboarding_completed: session.user.user_metadata?.onboarding_completed ?? false,
         verification_status: session.user.user_metadata?.verification_status ?? 'pending',
@@ -127,11 +127,23 @@ export async function proxy(request: NextRequest) {
   // ========================================
   // EMAIL VERIFICATION (except onboarding)
   // ========================================
-  if (!profile.email_verified && 
+  // ✅ FIXED: Check BOTH database AND session for email verification
+  // DB column might not be updated immediately, but session.email_confirmed_at is authoritative
+  const emailVerifiedInDB = profile.email_verified === true
+  const emailVerifiedInAuth = session.user.email_confirmed_at ? true : false
+  const emailVerified = emailVerifiedInDB || emailVerifiedInAuth
+  
+  console.log('📧 Email verification check:', {
+    emailVerifiedInDB,
+    emailVerifiedInAuth,
+    finalCheck: emailVerified
+  })
+
+  if (!emailVerified && 
       !pathname.startsWith('/auth/verify-email') &&
       !pathname.startsWith('/onboarding/landlord') &&
       !pathname.startsWith('/onboarding/tenant')) {
-    console.log('📧 Email not verified')
+    console.log('📧 Email not verified → redirect to /auth/verify-email')
     const url = request.nextUrl.clone()
     url.pathname = '/auth/verify-email'
     url.searchParams.set('email', session.user.email || '')

@@ -49,7 +49,15 @@ export default function AdminSignupPage() {
       
       console.log('✅ [ADMIN SIGNUP] Admin registration completed:', authData)
       
-      // Check if email confirmation is needed
+      // ✅ Check if signup failed (has error) FIRST
+      if (authData?.error) {
+        console.error('❌ [ADMIN SIGNUP] Signup failed:', authData.error)
+        // Error already shown by AuthContext
+        setIsLoading(false)
+        return
+      }
+      
+      // Check if email confirmation is needed (only if signup succeeded)
       if (authData?.needsEmailConfirmation) {
         // Redirect to email confirmation page
         setTimeout(() => {

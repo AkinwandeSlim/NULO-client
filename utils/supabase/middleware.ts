@@ -46,11 +46,13 @@ export const updateSession = async (request: NextRequest) => {
       const pathname = request.nextUrl.pathname;
       
       // Allow public routes and email verification page
-      const publicRoutes = ['/', '/signin', '/signup', '/auth/verify-email', '/auth/callback', '/properties'];
+      const publicRoutes = ['/', '/signin', '/signup', '/auth/verify-email', '/auth/callback', '/auth/verify-email-failed', '/properties'];
       const isPublicRoute = publicRoutes.some(route => pathname === route || pathname.startsWith('/properties/') || pathname.startsWith('/about') || pathname.startsWith('/blog'));
       
+      // ✅ FIXED: Check email_confirmed_at from auth session (more reliable than DB column)
       // If email not verified and trying to access protected route, redirect to verify-email
-      if (!user.email_confirmed_at && !isPublicRoute && !pathname.startsWith('/auth/')) {
+      if (!user.email_confirmed_at && !isPublicRoute && !pathname.startsWith('/auth/') && !pathname.startsWith('/onboarding/')) {
+        console.log('📧 [MIDDLEWARE] Email not confirmed → redirect to /auth/verify-email');
         return NextResponse.redirect(new URL(`/auth/verify-email?email=${encodeURIComponent(user.email || '')}`, request.url));
       }
       
