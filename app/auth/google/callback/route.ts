@@ -450,6 +450,13 @@ export async function GET(request: NextRequest) {
       if (redirectMatch) customRedirect = decodeURIComponent(redirectMatch[1])
     } catch {}
 
+    // ✅ Fallback: Use redirect_to query parameter when the cookie isn't present.
+    const urlRedirectTo = url.searchParams.get('redirect_to')
+    if (!customRedirect && urlRedirectTo) {
+      customRedirect = urlRedirectTo
+      console.log('[GOOGLE-CB] Found redirect path in query param:', customRedirect)
+    }
+
     let redirectTo = '/properties'
 
     if (resolvedUserType === 'admin') {

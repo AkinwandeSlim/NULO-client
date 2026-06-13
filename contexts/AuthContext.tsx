@@ -297,7 +297,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(cachedData.user)
             setProfile(cachedData.profile)
             console.log('✅ [AUTH] Using cached user data')
-          }
+           }
         }
 
         // 🚀 PHASE 2: Check Supabase session (could be stale if tab inactive)
@@ -812,6 +812,11 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
     const shouldSkipEmail = isDevelopment && email.includes('test');
     
     // Step 1: Create auth user in Supabase WITH RETRY LOGIC
+    const emailRedirectToUrl = `${window.location.origin}/auth/callback?user_type=tenant${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`
+    console.log('🔗 [AUTH TENANT] FULL emailRedirectTo URL:', emailRedirectToUrl);
+    console.log('🔗 [AUTH TENANT] URL length:', emailRedirectToUrl.length);
+    console.log('🔗 [AUTH TENANT] Encoded callback URL:', callbackUrl ? encodeURIComponent(callbackUrl) : '(none)');
+    
     const { data, error } = await signUpWithRetry(() =>
       supabase.auth.signUp({
         email,
@@ -825,7 +830,7 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
             auth_provider: 'email'
           },
           // ✅ Keep emailRedirectTo - callback route now handles missing user_type correctly
-          emailRedirectTo: `${window.location.origin}/auth/callback?user_type=tenant${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`
+          emailRedirectTo: emailRedirectToUrl
         }
       })
     );
@@ -836,11 +841,11 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
       return { error };
     }
 
-    console.log('🔗 [AUTH TENANT] Email redirect URL constructed:', {
-      emailRedirectTo: `${window.location.origin}/auth/callback?user_type=tenant${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`,
+    console.log('🔗 [AUTH TENANT] Email redirect URL sent to Supabase:', {
+      url: emailRedirectToUrl,
       origin: window.location.origin,
       user_type_param: 'tenant',
-      callback_url_param: callbackUrl || '(none)'
+      callback_url_from_storage: callbackUrl || '(none)'
     });
 
     console.log('✅ [AUTH] Supabase auth user created');
@@ -940,6 +945,11 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
     console.log('🔗 [AUTH] Callback URL:', callbackUrl);
 
     // Step 1: Create auth user in Supabase WITH RETRY LOGIC
+    const emailRedirectToUrl = `${window.location.origin}/auth/callback?user_type=landlord${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`
+    console.log('🔗 [AUTH LANDLORD] FULL emailRedirectTo URL:', emailRedirectToUrl);
+    console.log('🔗 [AUTH LANDLORD] URL length:', emailRedirectToUrl.length);
+    console.log('🔗 [AUTH LANDLORD] Encoded callback URL:', callbackUrl ? encodeURIComponent(callbackUrl) : '(none)');
+    
     const { data, error } = await signUpWithRetry(() =>
       supabase.auth.signUp({
         email,
@@ -953,13 +963,13 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
             auth_provider: 'email'
           },
           // ✅ Keep emailRedirectTo - callback route now handles missing user_type correctly
-          emailRedirectTo: `${window.location.origin}/auth/callback?user_type=landlord${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`
+          emailRedirectTo: emailRedirectToUrl
         }
       })
     );
 
-    console.log('🔗 [AUTH LANDLORD] Email redirect URL constructed:', {
-      emailRedirectTo: `${window.location.origin}/auth/callback?user_type=landlord${callbackUrl ? '&redirect_to=' + encodeURIComponent(callbackUrl) : ''}`,
+    console.log('🔗 [AUTH LANDLORD] Email redirect URL sent to Supabase:', {
+      emailRedirectTo: emailRedirectToUrl,
       origin: window.location.origin,
       user_type_param: 'landlord',
       callback_url_param: callbackUrl || '(none)'

@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
   console.log('📝 [CALLBACK] User type (final):', user_type)
   console.log('🌍 [CALLBACK] Origin:', requestUrl.origin)
 
+  
   // ─── Handle email verification errors ──────────────────────────────────────
   if (error || error_code) {
     console.error('❌ [CALLBACK] Email verification error:', error, error_code)
@@ -474,6 +475,13 @@ export async function GET(request: NextRequest) {
       }
     } catch (cookieError) {
       console.warn('⚠️ [CALLBACK] Error reading redirect cookie:', cookieError)
+    }
+
+    // ✅ Fallback: Use redirect_to query parameter when the cookie isn't present.
+    const urlRedirectTo = requestUrl.searchParams.get('redirect_to')
+    if (!customRedirectTo && urlRedirectTo) {
+      customRedirectTo = urlRedirectTo
+      console.log('🔗 [CALLBACK] Found redirect path in query param:', customRedirectTo)
     }
 
     // For returning users, use DB onboarding_completed (more reliable than metadata)

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { motion, Variants } from "framer-motion"
 import { useAuth } from "@/contexts/AuthContext"
 import { Footer } from "@/components/footer"
@@ -24,6 +25,55 @@ import { toast } from "sonner"
 export default function HomePage() {
   // ✅ CRITICAL: Get auth context for favorites
   const { user, loading: authLoading } = useAuth()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  // 🚨 INTERCEPT EMAIL VERIFICATION CODES AT ROOT LEVEL
+  // Supabase redirects email verifications to root with code param instead of /auth/callback
+  useEffect(() => {
+    const code = searchParams?.get('code')
+    if (code) {
+      console.error('🚨 [HOME PAGE] Email verification code detected at root level!')
+      console.error('[HOME PAGE] Code:', code.substring(0, 20) + '...')
+      
+      // Get stored redirect path if available
+      const redirectPath = typeof window !== 'undefined' 
+        ? localStorage.getItem('signup_callback_url') 
+        : null
+      
+      // Route to callback handler with all parameters preserved
+      const callbackUrl = new URL('/auth/callback', window.location.origin)
+      callbackUrl.searchParams.set('code', code)
+      
+      // Preserve other params from root URL
+      const type = searchParams?.get('type')
+      const error = searchParams?.get('error')
+      const error_code = searchParams?.get('error_code')
+      const error_description = searchParams?.get('error_description')
+      
+      if (type) callbackUrl.searchParams.set('type', type)
+      if (error) callbackUrl.searchParams.set('error', error)
+      if (error_code) callbackUrl.searchParams.set('error_code', error_code)
+      if (error_description) callbackUrl.searchParams.set('error_description', error_description)
+      
+      // Try to get user_type from cookie if available
+      if (typeof window !== 'undefined') {
+        const userTypeMatch = document.cookie.match(/nulo_user_type=([^;]+)/)
+        if (userTypeMatch) {
+          callbackUrl.searchParams.set('user_type', decodeURIComponent(userTypeMatch[1]))
+        }
+      }
+      
+      // Add stored redirect path if available
+      if (redirectPath) {
+        callbackUrl.searchParams.set('redirect_to', redirectPath)
+      }
+      
+      console.error('[HOME PAGE] Redirecting to callback:', callbackUrl.toString())
+      window.location.href = callbackUrl.toString()
+      return
+    }
+  }, [searchParams])
   
   const [location, setLocation] = useState("")
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])

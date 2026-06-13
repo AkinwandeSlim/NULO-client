@@ -27,7 +27,8 @@ import {
   EyeOff,
   Zap,
   AlertCircle,
-  Settings
+  Settings,
+  Shield
 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -386,53 +387,60 @@ export default function AdminDashboardPage() {
           </Alert>
         )}
 
-        {/* 🔴 CRITICAL ALERTS - Enhanced */}
-        {hasData && dashboardStats?.landlords && (dashboardStats?.landlords.pending_verification > 0 || dashboardStats.landlords.pending_onboarding > 0) && (
+        {/* 🔴 ALERT 1: PENDING VERIFICATION - Landlords who submitted and need admin review */}
+        {hasData && dashboardStats?.landlords && dashboardStats?.landlords.pending_verification > 0 && (
           <Alert 
-            className={`mb-8 rounded-2xl transition-all duration-300 ${
-              priorityLevel === 'urgent' 
-                ? 'bg-gradient-to-r from-red-50 to-orange-50 border border-red-200' :
-              priorityLevel === 'high' 
-                ? 'bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-200' :
-              'bg-gradient-to-r from-orange-50/80 to-yellow-50/80 border border-orange-200'
-            }`}
+            className="mb-6 rounded-2xl transition-all duration-300 bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-300"
           >
-            <AlertCircle className={`h-5 w-5 flex-shrink-0 ${
-              priorityLevel === 'urgent' ? 'text-red-600' : 'text-orange-600'
-            }`} />
+            <AlertCircle className="h-5 w-5 flex-shrink-0 text-orange-600" />
             <AlertDescription className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ml-2">
               <div>
-                <p className={`font-semibold text-base ${
-                  priorityLevel === 'urgent' ? 'text-red-900' : 'text-orange-900'
-                }`}>
-                  {dashboardStats.landlords.pending_verification > 0 && (
-                    <>
-                      <span className={priorityLevel === 'urgent' ? 'text-red-600' : 'text-orange-600'}>
-                        {dashboardStats?.landlords.pending_verification}
-                      </span>
-                      {' '}landlord{dashboardStats.landlords.pending_verification > 1 ? 's' : ''} pending verification
-                      {dashboardStats.landlords.pending_onboarding > 0 && ' • '}
-                    </>
-                  )}
-                  {dashboardStats.landlords.pending_onboarding > 0 && (
-                    <>
-                      <span className={priorityLevel === 'urgent' ? 'text-red-600' : 'text-orange-600'}>
-                        {dashboardStats.landlords.pending_onboarding}
-                      </span>
-                      {' '}in onboarding
-                    </>
-                  )}
+                <p className="font-semibold text-base text-orange-900">
+                  <span className="text-orange-600 font-bold">
+                    {dashboardStats.landlords.pending_verification}
+                  </span>
+                  {' '}landlord{dashboardStats.landlords.pending_verification > 1 ? 's' : ''} pending verification
                 </p>
                 <p className="text-gray-600 text-sm mt-1">
-                  Action required to approve listings and complete user onboarding
+                  📋 Submitted onboarding documents • Waiting for admin review to approve or request corrections
                 </p>
               </div>
               <Button 
                 size="sm" 
-                onClick={() => router.push('/admin/landlord-verification')}
+                onClick={() => router.push('/admin/landlord-verification?status=pending')}
                 className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap"
               >
                 Review Now
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* 🟡 ALERT 2: AWAITING SUBMISSION - Landlords who haven't submitted onboarding yet */}
+        {hasData && dashboardStats?.landlords && dashboardStats?.landlords.pending_onboarding > 0 && (
+          <Alert 
+            className="mb-6 rounded-2xl transition-all duration-300 bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-300"
+          >
+            <AlertCircle className="h-5 w-5 flex-shrink-0 text-yellow-600" />
+            <AlertDescription className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ml-2">
+              <div>
+                <p className="font-semibold text-base text-yellow-900">
+                  <span className="text-yellow-600 font-bold">
+                    {dashboardStats.landlords.pending_onboarding}
+                  </span>
+                  {' '}landlord{dashboardStats.landlords.pending_onboarding > 1 ? 's' : ''} awaiting submission
+                </p>
+                <p className="text-gray-600 text-sm mt-1">
+                  🚀 Recently signed up • Filling out onboarding form (profile, payment, bank details, etc)
+                </p>
+              </div>
+              <Button 
+                size="sm" 
+                onClick={() => router.push('/admin/landlord-verification?status=awaiting_submission')}
+                className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap"
+              >
+                View Signups
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </AlertDescription>
@@ -448,7 +456,7 @@ export default function AdminDashboardPage() {
             onClick={() => router.push('/admin/landlord-verification')}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-orange-900">Landlord Reviews</CardTitle>
+              <CardTitle className="text-sm font-semibold text-orange-900">Verification Queue</CardTitle>
               <div className="p-3 bg-gradient-to-br from-orange-200 to-orange-300 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
                 <Building className="h-5 w-5 text-orange-700" />
               </div>
@@ -458,8 +466,9 @@ export default function AdminDashboardPage() {
                 {dashboardStats?.landlords?.pending_verification || 0}
               </div>
               <p className="text-xs text-gray-600 font-medium uppercase tracking-wide">
-                Pending Review
+                Awaiting Review
               </p>
+              <p className="text-xs text-gray-500 mt-2">Completed onboarding</p>
               {dashboardStats && dashboardStats.landlords.pending_verification > 0 && (
                 <Badge className="mt-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white border-0 font-semibold shadow-lg">
                   <Zap className="h-3 w-3 mr-1" />
@@ -491,8 +500,11 @@ export default function AdminDashboardPage() {
                 <Badge className="bg-green-100 text-green-800 border border-green-300 text-xs font-semibold">
                   {dashboardStats?.landlords?.verified || 0} verified
                 </Badge>
-                <Badge className="bg-orange-200 text-orange-900 border border-orange-400 text-xs font-semibold">
-                  {dashboardStats?.landlords?.pending_verification || 0} pending
+                <Badge className="bg-orange-200 text-orange-900 border border-orange-400 text-xs font-semibold" title="Completed onboarding, awaiting admin review">
+                  {dashboardStats?.landlords?.pending_verification || 0} review
+                </Badge>
+                <Badge className="bg-yellow-200 text-yellow-900 border border-yellow-400 text-xs font-semibold" title="Recently signed up, in onboarding">
+                  {dashboardStats?.landlords?.pending_onboarding || 0} new
                 </Badge>
               </div>
             </CardContent>
@@ -556,7 +568,7 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* 📋 DETAILED PLATFORM OVERVIEW - Management Sections */}
-        <div className="grid gap-6 md:grid-cols-3 mb-8 sm:mb-12">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8 sm:mb-12">
           
           {/* Landlords Management */}
           <Card className="bg-white/80 backdrop-blur-lg border-2 border-orange-200 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden">
@@ -575,12 +587,16 @@ export default function AdminDashboardPage() {
               </div>
               <div className="space-y-3">
                 <div className="flex justify-between items-center p-3 bg-green-50 rounded-xl border-2 border-green-200">
-                  <span className="text-sm font-medium text-slate-700">✓ Verified</span>
+                  <span className="text-sm font-medium text-slate-700">✓ Verified & Active</span>
                   <Badge className="bg-green-500 text-white font-bold">{dashboardStats?.landlords?.verified || 0}</Badge>
                 </div>
                 <div className="flex justify-between items-center p-3 bg-orange-50 rounded-xl border-2 border-orange-200">
-                  <span className="text-sm font-medium text-slate-700">⏳ Pending</span>
-                  <Badge className="bg-orange-500 text-white font-bold">{dashboardStats?.landlords?.pending_verification || 0}</Badge>
+                  <span className="text-sm font-medium text-slate-700">📋 Awaiting Verification</span>
+                  <Badge className="bg-orange-500 text-white font-bold" title="Completed onboarding, waiting for admin review">{dashboardStats?.landlords?.pending_verification || 0}</Badge>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-yellow-50 rounded-xl border-2 border-yellow-200">
+                  <span className="text-sm font-medium text-slate-700">🚀 In Onboarding</span>
+                  <Badge className="bg-yellow-500 text-white font-bold" title="Recently signed up, hasn't completed setup">{dashboardStats?.landlords?.pending_onboarding || 0}</Badge>
                 </div>
                 <div className="flex justify-between items-center p-3 bg-red-50 rounded-xl border-2 border-red-200">
                   <span className="text-sm font-medium text-slate-700">✗ Rejected</span>
@@ -704,6 +720,32 @@ export default function AdminDashboardPage() {
                 <Eye className="w-4 h-4 mr-2" />
                 Review Properties
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* 🔐 Webhook Testing */}
+          <Card className="bg-white/80 backdrop-blur-lg border-2 border-blue-200 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-t-2xl pb-4">
+              <CardTitle className="flex items-center gap-3 text-blue-900 font-bold text-lg">
+                <div className="p-2 bg-blue-500 rounded-lg shadow-lg">
+                  <Shield className="w-5 h-5 text-white" />
+                </div>
+                Webhook Testing
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-3">
+              <p className="text-sm text-slate-600">
+                Test HMAC SHA-512 signature validation for Paystack webhooks
+              </p>
+              <div className="flex gap-2 pt-4 border-t border-slate-200">
+                <Button 
+                  className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105" 
+                  onClick={() => router.push('/admin/webhook-testing')}
+                >
+                  <Shield className="w-4 h-4 mr-2" />
+                  Test Signatures
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

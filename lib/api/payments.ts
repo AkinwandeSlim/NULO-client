@@ -70,6 +70,40 @@ export interface PaymentsListResponse {
   error?: string
 }
 
+// 🔐 Webhook Testing Types (QA Admin Only)
+export interface WebhookLog {
+  timestamp: string
+  signature_header_received: string
+  signature_valid: boolean
+  event_type: string
+  paystack_ref: string
+  reason: string
+}
+
+export interface WebhookLogsResponse {
+  success: boolean
+  total_attempts: number
+  logs: WebhookLog[]
+}
+
+export interface WebhookTestResponse {
+  success: boolean
+  message: string
+  details: {
+    signature_header_received: string
+    expected: string
+    match: boolean
+    test_type?: 'valid' | 'invalid'
+    event_type?: string
+    paystack_ref?: string
+  }
+}
+
+export interface WebhookClearResponse {
+  success: boolean
+  message: string
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // API methods
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,5 +197,184 @@ export const paymentsAPI = {
     }
     
     throw new Error(response.data.message || response.data.detail || 'Failed to confirm payment');
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────────
+  // 🔐 Webhook Testing (QA Admin Only)
+  // ───────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get recent webhook test attempts with HMAC validation results
+   * Admin-only endpoint for QA testing
+   * 
+   * @returns Array of webhook log entries with signature validation details
+   */
+  getWebhookLogs: async (): Promise<WebhookLog[]> => {
+    console.log('📤 [PAYMENTS API] Fetching webhook test logs...');
+    
+    try {
+      const response = await apiClient.get<WebhookLogsResponse>(
+        '/api/v1/payments/webhook-logs'
+      );
+      
+      console.log('✅ [PAYMENTS API] Webhook logs retrieved:', {
+        total_attempts: response.data.total_attempts,
+        logs_count: response.data.logs.length
+      });
+      
+      return response.data.logs;
+    } catch (error: any) {
+      console.error('❌ [PAYMENTS API] Error fetching webhook logs:', error);
+      
+      // Provide better error messages
+      if (error.response?.status === 401) {
+        throw new Error('Unauthorized. Please log in again.');
+      }
+      if (error.response?.status === 403) {
+        throw new Error('Access denied. Admin privileges required.');
+      }
+      
+      throw new Error(
+        error.response?.data?.detail || 
+        error.response?.data?.message ||
+        'Failed to fetch webhook logs'
+      );
+    }
+  },
+
+  /**
+   * Test webhook signature validation with invalid signature
+   * Sends a test webhook that will be rejected and logged
+   * Admin-only endpoint for QA testing
+   * 
+   * @returns Test result with signature comparison details
+   */
+  testWebhookSignature: async (
+    eventType: string = 'charge.success',
+    invalidSignature: string = 'FAKE_INVALID_SIGNATURE_FOR_QA_TESTING'
+  ): Promise<WebhookTestResponse> => {
+    console.log('📤 [PAYMENTS API] Testing webhook with INVALID signature...');
+    
+    try {
+      const response = await apiClient.post<WebhookTestResponse>(
+        '/api/v1/payments/test-webhook?test_type=invalid',
+        {
+          event: eventType,
+          signature: invalidSignature,
+        }
+      );
+      
+      console.log('✅ [PAYMENTS API] Invalid signature test completed:', {
+        success: response.data.success,
+        message: response.data.message,
+        match: response.data.details?.match
+      });
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ [PAYMENTS API] Error testing invalid signature:', error);
+      
+      // Provide better error messages
+      if (error.response?.status === 401) {
+        throw new Error('Unauthorized. Please log in again.');
+      }
+      if (error.response?.status === 403) {
+        throw new Error('Access denied. Admin privileges required.');
+      }
+      
+      throw new Error(
+        error.response?.data?.detail || 
+        error.response?.data?.message ||
+        'Failed to test webhook signature'
+      );
+    }
+  },
+
+  /**
+   * Test webhook signature validation with a VALID signature
+   * Backend generates the correct HMAC-SHA512 signature and verifies it
+   * Admin-only endpoint for QA testing
+   * 
+   * @returns Test result confirming valid signature acceptance
+   */
+  testWebhookValidSignature: async (
+    eventType: string = 'charge.success'
+  ): Promise<WebhookTestResponse> => {
+    console.log('📤 [PAYMENTS API] Testing webhook with VALID signature...');
+    
+    try {
+      const response = await apiClient.post<WebhookTestResponse>(
+        '/api/v1/payments/test-webhook?test_type=valid',
+        {
+          event: eventType,
+          data: {
+            reference: 'NULO-TEST-VALID-' + Date.now(),
+            status: 'success',
+            amount: 50000,
+          }
+        }
+      );
+      
+      console.log('✅ [PAYMENTS API] Valid signature test completed:', {
+        success: response.data.success,
+        message: response.data.message,
+        match: response.data.details?.match
+      });
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ [PAYMENTS API] Error testing valid signature:', error);
+      
+      // Provide better error messages
+      if (error.response?.status === 401) {
+        throw new Error('Unauthorized. Please log in again.');
+      }
+      if (error.response?.status === 403) {
+        throw new Error('Access denied. Admin privileges required.');
+      }
+      
+      throw new Error(
+        error.response?.data?.detail || 
+        error.response?.data?.message ||
+        'Failed to test webhook signature'
+      );
+    }
+  },
+
+  /**
+   * Clear all webhook test logs
+   * Removes all logged webhook attempts from memory
+   * Admin-only endpoint for QA testing
+   * 
+   * @returns Confirmation message
+   */
+  clearWebhookLogs: async (): Promise<WebhookClearResponse> => {
+    console.log('📤 [PAYMENTS API] Clearing webhook test logs...');
+    
+    try {
+      const response = await apiClient.delete<WebhookClearResponse>(
+        '/api/v1/payments/webhook-logs'
+      );
+      
+      console.log('✅ [PAYMENTS API] Webhook logs cleared');
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ [PAYMENTS API] Error clearing webhook logs:', error);
+      
+      // Provide better error messages
+      if (error.response?.status === 401) {
+        throw new Error('Unauthorized. Please log in again.');
+      }
+      if (error.response?.status === 403) {
+        throw new Error('Access denied. Admin privileges required.');
+      }
+      
+      throw new Error(
+        error.response?.data?.detail || 
+        error.response?.data?.message ||
+        'Failed to clear webhook logs'
+      );
+    }
   },
 };

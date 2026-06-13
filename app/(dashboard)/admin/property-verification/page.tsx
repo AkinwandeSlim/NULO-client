@@ -96,10 +96,12 @@ export default function PropertyVerification() {
   const [total, setTotal] = useState(0)
   
   // Dialog state
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)  // Detail/View dialog
+  const [actionProperty, setActionProperty] = useState<Property | null>(null)      // ✅ NEW: Action (approve/reject) dialog
   const [rejectionReason, setRejectionReason] = useState("")
   const [actionDialogOpen, setActionDialogOpen] = useState(false)
   const [pendingAction, setPendingAction] = useState<'approve' | 'reject' | null>(null)
+  const [isActionInProgress, setIsActionInProgress] = useState(false)
 
   // ✅ TRACK INITIAL LOAD - Smart loading condition
   const [hasInitialLoad, setHasInitialLoad] = useState(false)
@@ -168,56 +170,68 @@ export default function PropertyVerification() {
 
   // ==================== PROPERTY ACTIONS ====================
   const handleApprove = async (property: Property) => {
+    if (isActionInProgress) return // Prevent double-click
+    
     try {
+      setIsActionInProgress(true)
       await propertyVerificationAPI.verifyProperty(property.id, { action: 'approve' })
       toast.success('Property approved successfully!')
       
-      // Close dialog and reset state
+      // Close dialog and reset state IMMEDIATELY
       setActionDialogOpen(false)
-      setSelectedProperty(null)
+      setActionProperty(null)  // ✅ CHANGED: Clear actionProperty, not selectedProperty
       setPendingAction(null)
       
       // Invalidate cache and fetch fresh data
       invalidateCache()
       await Promise.all([
         fetchProperties(),
-        fetchStats()  // ✅ Use local fetchStats to update page stats immediately
+        fetchStats()
       ])
     } catch (error: any) {
       toast.error(error.message || 'Failed to approve property')
+    } finally {
+      setIsActionInProgress(false)
     }
   }
 
   const handleReject = async (property: Property) => {
+    if (isActionInProgress) return // Prevent double-click
+    
     if (!rejectionReason.trim()) {
       toast.error('Please provide a rejection reason')
       return
     }
     
     try {
+      setIsActionInProgress(true)
       await propertyVerificationAPI.verifyProperty(property.id, { 
         action: 'reject', 
         rejection_reason: rejectionReason 
       })
       toast.success('Property rejected successfully!')
+      
+      // Close dialog and reset state IMMEDIATELY
       setActionDialogOpen(false)
       setRejectionReason("")
-      setSelectedProperty(null)
+      setActionProperty(null)  // ✅ CHANGED: Clear actionProperty, not selectedProperty
       setPendingAction(null)
       
       // Invalidate cache and fetch fresh data
       invalidateCache()
       await Promise.all([
         fetchProperties(),
-        fetchStats()  // ✅ Use local fetchStats to update page stats immediately
+        fetchStats()
       ])
     } catch (error: any) {
       toast.error(error.message || 'Failed to reject property')
+    } finally {
+      setIsActionInProgress(false)
     }
   }
 
   const openActionDialog = (property: Property, action: 'approve' | 'reject') => {
-    setSelectedProperty(property)
+    setActionProperty(property)  // ✅ CHANGED: Use actionProperty instead of selectedProperty
     setPendingAction(action)
     setActionDialogOpen(true)
     if (action === 'reject') {
@@ -790,11 +804,11 @@ export default function PropertyVerification() {
               </DialogTitle>
             </DialogHeader>
             
-            {selectedProperty && (
+            {actionProperty && (
               <div className="space-y-4">
                 <div>
-                  <p className="font-medium">{selectedProperty.title}</p>
-                  <p className="text-sm text-gray-500">{formatAddress(selectedProperty)}</p>
+                  <p className="font-medium">{actionProperty.title}</p>
+                  <p className="text-sm text-gray-500">{formatAddress(actionProperty)}</p>
                 </div>
                 
                 {pendingAction === 'reject' && (
@@ -823,25 +837,33 @@ export default function PropertyVerification() {
                   <Button
                     onClick={() => {
                       if (pendingAction === 'approve') {
-                        handleApprove(selectedProperty)
+                        handleApprove(actionProperty)
                       } else {
-                        handleReject(selectedProperty)
+                        handleReject(actionProperty)
                       }
                     }}
                     className={pendingAction === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
-                    disabled={pendingAction === 'reject' && !rejectionReason.trim()}
+                    disabled={isActionInProgress || (pendingAction === 'reject' && !rejectionReason.trim())}
                   >
-                    {pendingAction === 'approve' ? 'Approve' : 'Reject'}
+                    {isActionInProgress ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        {pendingAction === 'approve' ? 'Approving...' : 'Rejecting...'}
+                      </>
+                    ) : (
+                      pendingAction === 'approve' ? 'Approve' : 'Reject'
+                    )}
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => {
                       setActionDialogOpen(false)
-                      setSelectedProperty(null)
+                      setActionProperty(null)
                       setPendingAction(null)
                       setRejectionReason("")
                     }}
                     className="border-gray-200 text-gray-700 hover:bg-gray-50"
+                    disabled={isActionInProgress}
                   >
                     Cancel
                   </Button>

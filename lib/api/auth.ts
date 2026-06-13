@@ -208,6 +208,47 @@ export const authAPI = {
   getStoredUser: (): User | null => {
     return storage.getUser();
   },
+
+  /**
+   * Sync user profile with FastAPI backend
+   * Called after signup to ensure user_type is set correctly in database
+   */
+  syncUserProfile: async (data: {
+    user_id: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+    full_name: string;
+    user_type: 'tenant' | 'landlord' | 'admin';
+    auth_provider?: string;
+  }): Promise<any> => {
+    try {
+      console.log('🔄 [AUTH API] Syncing user profile with backend...');
+      console.log('📦 [AUTH API] Sync payload:', data);
+
+      const response = await apiClient.post('/api/v1/auth/sync-user-profile', {
+        user_id: data.user_id,
+        email: data.email,
+        first_name: data.first_name,
+        last_name: data.last_name,
+        full_name: data.full_name,
+        user_type: data.user_type,
+        auth_provider: data.auth_provider || 'email'
+      });
+
+      console.log('✅ [AUTH API] User profile synced successfully:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ [AUTH API] Failed to sync user profile');
+      console.error('❌ [AUTH API] Error response:', error.response?.data);
+      console.error('❌ [AUTH API] Error message:', error.message);
+      
+      // Non-fatal - don't throw. User is already created in Supabase
+      // Backend sync is for consistency only
+      console.warn('⚠️ [AUTH API] Backend sync failed (non-fatal), user still created in Supabase');
+      return null;
+    }
+  },
 };
 
 export default authAPI;

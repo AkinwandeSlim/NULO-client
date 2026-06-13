@@ -18,6 +18,7 @@ export interface VerificationStats {
   rejected: number
   needs_correction: number
   not_submitted: number
+  awaiting_submission?: number
 }
 
 export interface LandlordVerification {
@@ -60,6 +61,7 @@ export interface LandlordVerification {
   admin_reviewer_id?: string
   onboarding_completed_at?: string
   submitted_at?: string
+  verification_submitted_at?: string
   // Account details
   account_name?: string
   account_number?: string
@@ -209,6 +211,33 @@ export const getAllLandlordVerifications = async (
   } catch (error: any) {
     console.error('❌ [VERIFICATION API] Error fetching verifications:', error)
     throw new Error(error.response?.data?.detail || 'Request timed out. The server might be slow. Please try again.')
+  }
+}
+
+/**
+ * Get landlords awaiting submission (in onboarding, haven't submitted docs)
+ */
+export const getAwaitingSubmissionLandlords = async (
+  page: number = 1,
+  limit: number = 50
+): Promise<{ verifications: LandlordVerification[], total: number, page: number, limit: number }> => {
+  console.log('📤 [VERIFICATION API] Fetching landlords awaiting submission')
+  
+  try {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString()
+    })
+    
+    const response = await apiClient.get(
+      `${ENDPOINTS.VERIFICATION_QUEUE}/awaiting-submission?${params.toString()}`
+    )
+    
+    console.log('✅ [VERIFICATION API] Awaiting submission landlords retrieved:', response.data?.verifications?.length)
+    return response.data
+  } catch (error: any) {
+    console.error('❌ [VERIFICATION API] Error fetching awaiting submission landlords:', error)
+    throw new Error(error.response?.data?.detail || 'Failed to fetch awaiting submission landlords')
   }
 }
 
@@ -393,6 +422,7 @@ const verificationAPI = {
   // Core operations
   getVerificationStats,
   getAllLandlordVerifications,
+  getAwaitingSubmissionLandlords,
   getVerificationDetail,
   getLandlordVerificationDetail,
   reviewVerification,
