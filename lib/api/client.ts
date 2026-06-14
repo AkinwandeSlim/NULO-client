@@ -9,7 +9,7 @@ import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'ax
 import { createClient, cleanupSupabaseClient } from '@/utils/supabase/client';
 
 // API Base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 // 🔧 TIMEOUT STRATEGY: 
 // - Default: 30s (for most endpoints)
@@ -27,6 +27,9 @@ const apiClient: AxiosInstance = axios.create({
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     try {
+      // Log the full URL being called
+      console.log(`📍 [API CLIENT] Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
+      
       // 🔥 NEW: Try localStorage first to bypass Supabase client locks
       const cachedToken = localStorage.getItem('sb-access-token');
       const cachedRefreshToken = localStorage.getItem('sb-refresh-token');

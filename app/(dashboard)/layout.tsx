@@ -466,7 +466,11 @@ export default function DashboardLayout({
               )}
 
               {/* Settings */}
-              <Link href={userType === 'landlord' ? '/landlord/profile' : '/tenant/profile'}>
+              <Link href={
+                userType === 'admin' ? '/admin/settings' :
+                userType === 'landlord' ? '/landlord/profile' : 
+                '/tenant/profile'
+              }>
                 <Button 
                   variant="ghost" 
                   className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"

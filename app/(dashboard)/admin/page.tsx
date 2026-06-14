@@ -723,7 +723,7 @@ export default function AdminDashboardPage() {
             </CardContent>
           </Card>
 
-          {/* 🔐 Webhook Testing */}
+          {/* 🔐 Webhook Testing
           <Card className="bg-white/80 backdrop-blur-lg border-2 border-blue-200 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-t-2xl pb-4">
               <CardTitle className="flex items-center gap-3 text-blue-900 font-bold text-lg">
@@ -747,7 +747,7 @@ export default function AdminDashboardPage() {
                 </Button>
               </div>
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
 
         {/* 📈 PLATFORM ACTIVITY */}

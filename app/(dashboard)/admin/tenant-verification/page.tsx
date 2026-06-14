@@ -35,7 +35,6 @@ import {
 } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { VerificationBadge } from "@/components/ui/verification-badge"
-import "@/styles/admin-theme.css"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 

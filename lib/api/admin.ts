@@ -144,7 +144,96 @@ export const adminAPI = {
       
       throw new Error(error.message || 'Failed to get admin profile');
     }
+  },
+
+  /**
+   * Get list of all admin accounts (Super Admin only)
+   * Returns: { success, admins[], total }
+   */
+  async getAdminAccounts(limit: number = 50, offset: number = 0) {
+    try {
+      console.log('📋 [ADMIN API] Fetching admin accounts...')
+      
+      const response = await apiClient.get('/api/v1/admin/role-accounts', {
+        params: { limit, offset }
+      })
+
+      console.log('✅ [ADMIN API] Admin accounts retrieved:', {
+        total: response.data.total,
+        count: response.data.admins?.length || 0
+      })
+
+      return response.data
+    } catch (error: any) {
+      console.error('❌ [ADMIN API] Failed to fetch admin accounts:', error.response?.data || error.message)
+      throw error
+    }
+  },
+
+  /**
+   * Update admin role level (Super Admin only)
+   * role_level: 1=super_admin, 2=admin, 3=limited_admin
+   */
+  async updateAdminRole(
+    adminId: string,
+    roleLevel: 1 | 2 | 3,
+    reason?: string
+  ) {
+    try {
+      console.log(`🔄 [ADMIN API] Updating admin ${adminId} to role level ${roleLevel}...`)
+
+      const response = await apiClient.post(`/api/v1/admin/admin-accounts/${adminId}/role`, {
+        role_level: roleLevel,
+        reason: reason
+      })
+
+      console.log('✅ [ADMIN API] Admin role updated:', response.data)
+      return response.data
+    } catch (error: any) {
+      console.error('❌ [ADMIN API] Failed to update admin role:', error.response?.data || error.message)
+      throw error
+    }
+  },
+
+  /**
+   * Delete admin account (Super Admin only)
+   * Soft delete - removes from admins table only
+   */
+  async deleteAdmin(adminId: string) {
+    try {
+      console.log(`🗑️ [ADMIN API] Deleting admin ${adminId}...`)
+
+      const response = await apiClient.delete(`/api/v1/admin/admin-accounts/${adminId}`)
+
+      console.log('✅ [ADMIN API] Admin deleted:', response.data)
+      return response.data
+    } catch (error: any) {
+      console.error('❌ [ADMIN API] Failed to delete admin:', error.response?.data || error.message)
+      throw error
+    }
+  },
+
+  /**
+   * Get current user's admin role level
+   * Returns: role_level (1, 2, or 3) or undefined if not admin
+   */
+  async getCurrentAdminRole() {
+    try {
+      console.log('🔍 [ADMIN API] Fetching current admin role...')
+
+      const response = await apiClient.get('/api/v1/admin/current-role')
+
+      console.log('✅ [ADMIN API] Current role:', response.data.role_level)
+      return response.data.role_level
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        // User is not an admin
+        return undefined
+      }
+      console.warn('⚠️ [ADMIN API] Could not fetch current admin role:', error.message)
+      return undefined
+    }
   }
-};
+}
 
 export default adminAPI;
