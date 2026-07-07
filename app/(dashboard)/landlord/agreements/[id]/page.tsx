@@ -12,12 +12,16 @@ import {
   ArrowLeft, Download, FileText, Loader2, CheckCircle,
   AlertCircle, Calendar, MapPin, Users, Building2,
   Eye, Shield, Clock, Mail, Phone, FilePlus2,
-  PenLine, Banknote, CheckCircle2
+  PenLine, Banknote, CheckCircle2, ArrowDownToLine, RefreshCw
 } from "lucide-react"
 import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
+import {
+  paymentsAPI,
+  type TransferHistoryEntry,
+} from "@/lib/api/payments"
 import { toast } from "sonner"
-import { formatNGN, calculateAgreementBreakdown } from "@/lib/utils/rentalCalculations"
+import { formatNGN, calculateAgreementBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { AIBadge } from "@/components/ui/ai-badge"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,6 +176,77 @@ function FinancialRow({ label, amount, isTotal, highlight }: FinancialRowProps) 
   )
 }
 
+// Map a transfer reconciliation result to the NuloAfrica brand-style pill.
+const getTransferReconciliationPill = (result: TransferHistoryEntry["reconciliation_result"]) => {
+  switch (result) {
+    case "FULL_PAYMENT":
+      return { label: "Full",  bg: "bg-green-100",  text: "text-green-700" }
+    case "UNDERPAYMENT":
+      return { label: "Partial", bg: "bg-amber-100",  text: "text-amber-700" }
+    case "OVERPAYMENT":
+      return { label: "Over",  bg: "bg-blue-100",   text: "text-blue-700" }
+    default:
+      return { label: "Pending", bg: "bg-slate-100", text: "text-slate-700" }
+  }
+}
+
+// Compact transfer-history table. Renders a brand-consistent orange-bordered
+// card. Empty-state and loading-state are handled inside the parent.
+function TransferHistoryTable({ entries }: { entries: TransferHistoryEntry[] }) {
+  if (entries.length === 0) {
+    return (
+      <div className="bg-slate-50 rounded-xl border border-slate-100 p-6 text-center">
+        <ArrowDownToLine className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+        <p className="text-sm text-slate-600">No inbound transfers yet.</p>
+        <p className="text-xs text-slate-400 mt-1">
+          Tenant payments into the agreement NUBAN will appear here.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-200">
+      <table className="w-full text-sm">
+        <thead className="bg-orange-50/60 text-orange-800">
+          <tr>
+            <th className="text-left font-semibold px-4 py-2.5">Date</th>
+            <th className="text-left font-semibold px-4 py-2.5">Sender</th>
+            <th className="text-left font-semibold px-4 py-2.5">Bank</th>
+            <th className="text-right font-semibold px-4 py-2.5">Amount</th>
+            <th className="text-left  font-semibold px-4 py-2.5">Status</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white">
+          {entries.map((t) => {
+            const pill = getTransferReconciliationPill(t.reconciliation_result)
+            return (
+              <tr key={t.id} className="hover:bg-orange-50/30 transition-colors">
+                <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
+                  {formatDateTime(t.created_at) ?? "—"}
+                </td>
+                <td className="px-4 py-2.5 text-slate-800 font-medium">
+                  {t.sender_name ?? "—"}
+                </td>
+                <td className="px-4 py-2.5 text-slate-600">
+                  {t.sender_bank ?? "—"}
+                </td>
+                <td className="px-4 py-2.5 text-right font-semibold text-slate-900">
+                  {formatNGN(t.amount_received)}
+                </td>
+                <td className="px-4 py-2.5">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${pill.bg} ${pill.text}`}>
+                    {pill.label}
+                  </span>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main page component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,6 +263,9 @@ export default function LandlordAgreementDetailPage() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   // Checkbox must be checked before signing — per handoff spec
   const [termsAccepted, setTermsAccepted] = useState(false)
+  // Transfer history (Stage 3 polish) -- shown after Signature History
+  const [transfers, setTransfers] = useState<TransferHistoryEntry[]>([])
+  const [isTransfersLoading, setIsTransfersLoading] = useState(false)
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -217,6 +295,43 @@ export default function LandlordAgreementDetailPage() {
     if (!user) { router.push("/signin"); return }
     if (agreementId) fetchAgreement()
   }, [user, agreementId, fetchAgreement, router])
+
+  // ── Transfer history fetch ─────────────────────────────────────────────────
+  // Pulls inbound NUBAN transfers from /nomba/payment_status. Only runs when
+  // the agreement has a nomba_account_ref (i.e. a NUBAN was provisioned). On
+  // failure we silently fall back to an empty list so the page still renders.
+  const fetchTransfers = useCallback(async (accountRef: string) => {
+    if (!accountRef) {
+      setTransfers([])
+      return
+    }
+    setIsTransfersLoading(true)
+    try {
+      const entries = await paymentsAPI.getTransferHistory(accountRef)
+      setTransfers(entries)
+    } catch (error) {
+      console.warn("[AgreementDetail] transfer history fetch failed (non-fatal):", error)
+      setTransfers([])
+    } finally {
+      setIsTransfersLoading(false)
+    }
+  }, [])
+
+  // Trigger transfer fetch once the agreement's NUBAN is known. The
+  // `nomba_account_ref` is not on the AgreementWithDetails type today, so we
+  // cast through unknown defensively. If it's absent, transfers stays [].
+  // We pass the AGREEMENT ID (not the raw account_ref) to getTransferHistory —
+  // the backend /agreements/{id}/payment-status route takes the agreement id
+  // in the path and looks up the (suffixed) account_ref server-side.
+  useEffect(() => {
+    const ref = (agreement as unknown as { nomba_account_ref?: string | null } | null)
+      ?.nomba_account_ref
+    if (ref && agreementId) {
+      fetchTransfers(agreementId)
+    } else {
+      setTransfers([])
+    }
+  }, [agreement, agreementId, fetchTransfers])
 
   // ── Sign ───────────────────────────────────────────────────────────────────
 
@@ -285,7 +400,8 @@ export default function LandlordAgreementDetailPage() {
 
   // ── Financial totals — Nigeria: rent is annual upfront ────────────────────
   const breakdown = calculateAgreementBreakdown(agreement || {})
-  const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
+  const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue, periodRent, periodLabel, paymentFrequency } = breakdown
+  const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
 
   // ── Signing progress ───────────────────────────────────────────────────────
   const signaturesCount =
@@ -477,21 +593,21 @@ export default function LandlordAgreementDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {/* FIX: annual upfront culture — show monthly AND annual, plus all fee lines */}
+                {/* FIX: rent is paid in the property's selected payment_frequency period — not always 12 months */}
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
                   <FinancialRow label="Monthly Rent" amount={agreement.rent_amount} />
-                  <FinancialRow label="Annual Rent (×12)" amount={annualRent} highlight />
-                  <FinancialRow label="Caution Fee (Security Deposit)" amount={agreement.deposit_amount} />
-                  <FinancialRow label="Platform Fee" amount={agreement.platform_fee} />
+                  <FinancialRow label={periodLabel} amount={periodRent} highlight />
+                  <FinancialRow label="Caution Fee (Security Deposit)" amount={cautionFee} />
+                  <FinancialRow label="Platform Fee" amount={platformFee} />
                   {/* FIX: service_charge is nullable — only show if non-null */}
                   {agreement.service_charge != null && (
                     <FinancialRow label="Service Charge" amount={agreement.service_charge} />
                   )}
-                  {/* Total Due — the key number for Nigerian annual upfront */}
+                  {/* Total Due — the key number tenant must pay into the NUBAN */}
                   <FinancialRow label="Total Due on Move-in" amount={totalDue} isTotal />
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  * Rent is payable annually in advance per Nigerian tenancy convention.
+                  * Rent is payable in advance per the property's payment frequency ({paymentFrequency}, ×{frequencyMultiplier} months).
                   No agency fee — NuloAfrica charges only the platform fee above.
                 </p>
               </CardContent>
@@ -575,6 +691,49 @@ export default function LandlordAgreementDetailPage() {
                     />
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Transfer History (Stage 3 polish)
+                - Reads inbound NUBAN transfers from /nomba/payment_status
+                - Brand-consistent orange-tinted table; empty-state handled in
+                  TransferHistoryTable. Renders a refresh button so the landlord
+                  can re-query after a recent tenant payment. */}
+            <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                    <ArrowDownToLine className="h-4 w-4 text-orange-500" />
+                    Transfer History
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isTransfersLoading}
+                    onClick={() => {
+                      const ref = (agreement as unknown as { nomba_account_ref?: string | null } | null)
+                        ?.nomba_account_ref
+                      if (ref) fetchTransfers(ref)
+                    }}
+                    className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1 ${isTransfersLoading ? "animate-spin" : ""}`} />
+                    Refresh
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Inbound payments from the tenant into the agreement NUBAN.
+                </p>
+              </CardHeader>
+              <CardContent>
+                {isTransfersLoading ? (
+                  <div className="bg-slate-50 rounded-xl border border-slate-100 p-6 text-center">
+                    <Loader2 className="h-6 w-6 text-orange-500 animate-spin mx-auto mb-2" />
+                    <p className="text-sm text-slate-600">Loading transfers...</p>
+                  </div>
+                ) : (
+                  <TransferHistoryTable entries={transfers} />
+                )}
               </CardContent>
             </Card>
           </div>
@@ -740,7 +899,9 @@ export default function LandlordAgreementDetailPage() {
             {/* ── PDF Actions ───────────────────────────────────────────────
                 FIX: Correctly gate PDF actions on status === 'SIGNED' and document_url.
                 Show "Generate PDF" first, then "Download PDF" once URL exists.
-                ALSO: Detect old fake URLs (from https://storage.nuloafrica.com) and force regeneration.
+                ALSO: Detect old fake URLs (from https://storage.nuloafrica.com) or URLs
+                that were written to the old 'property-images' bucket (AGMT-08) and force
+                regeneration against the correct 'ownership-docs' bucket.
             ─────────────────────────────────────────────────────────────────── */}
             {(effectiveStatus === "SIGNED" || effectiveStatus === "ACTIVE") && (
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
@@ -748,9 +909,9 @@ export default function LandlordAgreementDetailPage() {
                   <CardTitle className="text-sm font-semibold text-slate-700">Agreement Document</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {/* Check if URL is real (Supabase CDN) vs old fake placeholder */}
-                  {agreement.document_url && agreement.document_url.includes("supabase.co") ? (
-                    // Real Supabase URL — show download link
+                  {/* Check if URL is real (Supabase CDN + correct bucket) vs old/broken URL */}
+                  {agreement.document_url && agreement.document_url.includes("supabase.co") && agreement.document_url.includes("/ownership-docs/") ? (
+                    // Real Supabase URL pointing at the correct bucket — show download link
                     <a href={agreement.document_url} target="_blank" rel="noopener noreferrer">
                       <Button variant="outline" className="w-full border-green-300 text-green-700 hover:bg-green-50">
                         <Download className="mr-2 h-4 w-4" />
@@ -758,7 +919,7 @@ export default function LandlordAgreementDetailPage() {
                       </Button>
                     </a>
                   ) : (
-                    // Old fake URL or no URL — show generate button
+                    // Old fake URL, missing URL, or pointing at wrong bucket — show generate button
                     <Button
                       onClick={handleGeneratePdf}
                       disabled={isGeneratingPdf}

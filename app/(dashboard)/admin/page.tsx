@@ -8,1069 +8,937 @@ import { useDashboard } from "@/contexts/DashboardContext"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { toast } from "sonner"
-import { 
-  Users, 
-  Building2, 
-  CheckCircle, 
-  Clock, 
-  XCircle,
-  TrendingUp,
-  Bell,
-  RefreshCw,
-  ArrowRight,
-  UserCheck,
-  Building,
-  Activity,
-  Home,
-  Eye,
-  EyeOff,
-  Zap,
-  AlertCircle,
-  Settings,
-  Shield
-} from "lucide-react"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-
-// ============================================================================
-// USING UNIFIED ADMIN DASHBOARD API
-// ============================================================================
+import { toast } from "sonner"
+import {
+  Users, Building2, CheckCircle, Clock, XCircle, TrendingUp,
+  RefreshCw, ArrowRight, UserCheck, Building, Activity, Home,
+  AlertCircle, Shield, ChevronRight, Zap, BarChart2, Eye,
+} from "lucide-react"
 import adminDashboardAPI from "@/lib/api/adminDashboard"
+import type { AdminDashboardStats, RecentSignup } from "@/lib/api/adminDashboard"
 
-import type { 
-  AdminDashboardStats, 
-  RecentSignup 
-} from "@/lib/api/adminDashboard"
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+const fmt = (n: number | undefined | null) => (n ?? 0).toLocaleString("en-NG")
+
+const pct = (part: number, total: number) =>
+  total === 0 ? 0 : Math.round((part / total) * 100)
+
+const timeAgo = (iso: string) => {
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return "just now"
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+// ─── mini progress bar (no external chart lib) ──────────────────────────────
+
+function Bar({ value, max, color }: { value: number; max: number; color: string }) {
+  const w = max === 0 ? 0 : Math.min(100, Math.round((value / max) * 100))
+  return (
+    <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+      <div className={`h-full rounded-full ${color}`} style={{ width: `${w}%` }} />
+    </div>
+  )
+}
+
+// ─── status pill ─────────────────────────────────────────────────────────────
+
+function StatusPill({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    pending:  "bg-amber-100 text-amber-700 border-amber-200",
+    approved: "bg-green-100 text-green-700 border-green-200",
+    verified: "bg-green-100 text-green-700 border-green-200",
+    rejected: "bg-red-100 text-red-700 border-red-200",
+    active:   "bg-blue-100 text-blue-700 border-blue-200",
+  }
+  const cls = map[status?.toLowerCase()] ?? "bg-slate-100 text-slate-600 border-slate-200"
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${cls}`}>
+      {status ?? "—"}
+    </span>
+  )
+}
 
 export default function AdminDashboardPage() {
-  const router = useRouter()
+  const router   = useRouter()
   const { user, loading: authLoading } = useAuth()
-  const [mounted, setMounted] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  
-  // ============================================================================
-  // ✅ USING DASHBOARD CONTEXT WITH AUTO-CACHING
-  // ============================================================================
-  const { 
-    stats: dashboardStats,      // Auto-cached dashboard stats
-    loading,                     // Smart loading state
-    fetchDashboardStats,         // Smart fetch (uses cache automatically)
-    invalidateCache              // Cache invalidation if needed
-  } = useDashboard()
-  
-  // ✅ Enhanced state management with better caching
-  const [recentSignups, setRecentSignups] = useState<RecentSignup[]>([])
-  const [recentTenantSignups, setRecentTenantSignups] = useState<RecentSignup[]>([])
-  const [recentSignupsLoading, setRecentSignupsLoading] = useState(false)
-  const [recentSignupsError, setRecentSignupsError] = useState<string | null>(null)
-  const [hasApiFailed, setHasApiFailed] = useState(false)
-  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null)
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
-  const [cacheTimestamp, setCacheTimestamp] = useState<number>(0)
+  const { stats: dashboardStats, loading, fetchDashboardStats } = useDashboard()
 
-  // ============================================================================
-  // FETCH RECENT SIGNUPS - Enhanced with caching and error handling
-  // ============================================================================
-  const fetchRecentSignups = useCallback(async (forceRefresh = false) => {
-    // Check cache validity (5 minutes)
-    const now = Date.now()
-    const cacheAge = now - cacheTimestamp
-    const isCacheValid = cacheAge < 300000 && recentSignups.length > 0 && !forceRefresh
+  const [mounted,          setMounted]          = useState(false)
+  const [refreshing,       setRefreshing]        = useState(false)
+  const [recentSignups,    setRecentSignups]     = useState<RecentSignup[]>([])
+  const [signupsLoading,   setSignupsLoading]    = useState(false)
+  const [lastRefresh,      setLastRefresh]       = useState<Date | null>(null)
 
-    if (isCacheValid) {
-      console.log('📦 [ADMIN DASHBOARD] Using cached recent signups data')
-      return
-    }
-
+  // ── fetch recent signups ─────────────────────────────────────────────────
+  const fetchSignups = useCallback(async () => {
+    setSignupsLoading(true)
     try {
-      setRecentSignupsLoading(true)
-      setRecentSignupsError(null)
-      
-      console.log('🔍 [ADMIN DASHBOARD] Fetching recent signups from API...')
       const data = await adminDashboardAPI.getRecentSignups(7)
-      const signups = data.recent_signups || []
-      
-      console.log('📊 [ADMIN DASHBOARD] Raw API Response:')
-      console.log('  Total signups returned:', signups.length)
-      console.log('  Full data:', JSON.stringify(signups, null, 2))
-      
-      // Filter to only show landlords and tenants separately
-      const landlordSignups = signups.filter((signup: any) => signup.user_type === 'landlord')
-      const tenantSignups = signups.filter((signup: any) => signup.user_type === 'tenant')
-      
-      console.log('🏢 [ADMIN DASHBOARD] After filtering for landlords:')
-      console.log('  Landlord signups count:', landlordSignups.length)
-      console.log('  Filtered data:', JSON.stringify(landlordSignups, null, 2))
-      
-      console.log('👥 [ADMIN DASHBOARD] After filtering for tenants:')
-      console.log('  Tenant signups count:', tenantSignups.length)
-      console.log('  Filtered data:', JSON.stringify(tenantSignups, null, 2))
-      
-      setRecentSignups(landlordSignups)  // ✅ FIX: Save filtered landlord data only
-      setRecentTenantSignups(tenantSignups)  // ✅ Save filtered tenant data
-      setCacheTimestamp(now)
-      setHasApiFailed(false)
-      
-      console.log('✅ [ADMIN DASHBOARD] Recent signups fetched successfully')
-    } catch (error: any) {
-      console.error('❌ [ADMIN DASHBOARD] Failed to fetch recent signups:', error)
-      
-      const errorMessage = error?.message?.includes('timeout') 
-        ? 'API request timed out. Showing cached data if available.'
-        : error?.message?.includes('Failed to fetch')
-        ? 'Network error. Please check your connection.'
-        : 'Failed to load recent signups. Please try again.'
-      
-      setRecentSignupsError(errorMessage)
-      setRecentSignups([])
-      setRecentTenantSignups([])
-      setHasApiFailed(true)
-      
-      toast.error(errorMessage)
+      const sorted = (data.recent_signups ?? []).sort(
+        (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+      setRecentSignups(sorted)
+    } catch {
+      // silent — table will show empty state
     } finally {
-      setRecentSignupsLoading(false)
+      setSignupsLoading(false)
     }
-  }, [cacheTimestamp, recentSignups.length])
-
-  // ============================================================================
-  // AUTO-REFRESH FUNCTIONALITY
-  // ============================================================================
-  useEffect(() => {
-    if (!autoRefreshEnabled || !mounted) return
-
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        console.log('🔄 [ADMIN DASHBOARD] Auto-refreshing dashboard data')
-        fetchDashboardStats()
-        fetchRecentSignups()
-        setLastRefreshTime(new Date())
-      }
-    }, 60000) // Refresh every 60 seconds
-
-    return () => clearInterval(interval)
-  }, [autoRefreshEnabled, mounted, fetchDashboardStats, fetchRecentSignups])
-
-  // ============================================================================
-  // EFFECTS - Initialize data on mount
-  // ============================================================================
-  useEffect(() => {
-    setMounted(true)
   }, [])
 
-  // ✅ Fetch dashboard stats and recent signups on component mount
-  useEffect(() => {
-    if (mounted && !authLoading && user?.user_type === 'admin') {
-      // Dashboard stats are auto-cached via context (initialized in layout)
-      if (!dashboardStats) {
-        fetchDashboardStats()
-      }
-      
-      // Fetch recent signups with caching
-      fetchRecentSignups()
-      
-      setLastRefreshTime(new Date())
-      console.log('🎯 [ADMIN PAGE] Data initialization complete')
-    }
-  }, [mounted, authLoading, user, dashboardStats, fetchDashboardStats, fetchRecentSignups])
+  // ── mount + auth guard ───────────────────────────────────────────────────
+  useEffect(() => { setMounted(true) }, [])
 
-  // Auth protection
   useEffect(() => {
-    if (!authLoading && mounted) {
-      if (!user) {
-        router.push('/signin')
-        return
-      }
-      
-      if (user.user_type !== 'admin') {
-        router.push('/dashboard')
-        return
-      }
-    }
-  }, [user, authLoading, mounted, router])
+    if (!mounted || authLoading) return
+    if (!user) { router.push("/signin"); return }
+    if (user.user_type !== "admin") { router.push("/admin"); return }
+    if (!dashboardStats) fetchDashboardStats()
+    fetchSignups()
+    setLastRefresh(new Date())
+  }, [mounted, authLoading, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ============================================================================
-  // EVENT HANDLERS - Enhanced with better error handling
-  // ============================================================================
+  // ── refresh ──────────────────────────────────────────────────────────────
   const handleRefresh = useCallback(async () => {
     if (refreshing) return
-    
+    setRefreshing(true)
     try {
-      setRefreshing(true)
-      setHasApiFailed(false)
-      
-      // Force refresh from context (invalidates cache and fetches fresh data)
-      await fetchDashboardStats()
-      
-      // Force refresh recent signups
-      await fetchRecentSignups(true) // forceRefresh = true
-      
-      setLastRefreshTime(new Date())
-      
-      toast.success('Dashboard refreshed successfully')
-      console.log('✅ [ADMIN PAGE] Dashboard refreshed successfully')
-    } catch (error: any) {
-      console.error('❌ [ADMIN PAGE] Refresh failed:', error)
-      
-      const errorMessage = error?.message || 'Failed to refresh dashboard'
-      toast.error(errorMessage)
-      setHasApiFailed(true)
+      await Promise.all([fetchDashboardStats(), fetchSignups()])
+      setLastRefresh(new Date())
+      toast.success("Dashboard refreshed")
+    } catch {
+      toast.error("Refresh failed")
     } finally {
       setRefreshing(false)
     }
-  }, [refreshing, fetchDashboardStats, fetchRecentSignups])
+  }, [refreshing, fetchDashboardStats, fetchSignups])
 
-  const handleRetry = useCallback(() => {
-    setHasApiFailed(false)
-    fetchRecentSignups(true)
-    fetchDashboardStats()
-  }, [fetchRecentSignups, fetchDashboardStats])
+  // ── derived numbers ──────────────────────────────────────────────────────
+  const s = dashboardStats
 
-  const toggleAutoRefresh = useCallback(() => {
-    setAutoRefreshEnabled(prev => {
-      const newState = !prev
-      toast.success(newState ? 'Auto-refresh enabled' : 'Auto-refresh disabled')
-      return newState
-    })
-  }, [])
-
-  // ============================================================================
-  // COMPUTED VALUES - Using Unified Admin Dashboard API
-  // ============================================================================
-  const totalPendingVerifications = useMemo(() => 
-    dashboardStats ? adminDashboardAPI.getTotalPendingVerifications(dashboardStats) : 0,
-    [dashboardStats]
+  const totalPending = useMemo(
+    () => (s ? adminDashboardAPI.getTotalPendingVerifications(s) : 0),
+    [s]
   )
-  
-  const totalVerified = useMemo(() => 
-    dashboardStats ? adminDashboardAPI.getTotalVerifiedUsers(dashboardStats) : 0,
-    [dashboardStats]
+  const totalUsers = useMemo(
+    () => (s ? (s.landlords.total + s.tenants.total) : 0),
+    [s]
   )
-  
-  const activitySummary = useMemo(() => 
-    dashboardStats ? adminDashboardAPI.getActivitySummaryFromStats(dashboardStats) : 'Loading dashboard...',
-    [dashboardStats]
-  )
-  
-  const priorityLevel = useMemo(() => 
-    dashboardStats ? adminDashboardAPI.getPriorityLevelFromStats(dashboardStats) : 'low',
-    [dashboardStats]
+  const totalVerified = useMemo(
+    () => (s ? adminDashboardAPI.getTotalVerifiedUsers(s) : 0),
+    [s]
   )
 
-  // ============================================================================
-  // LOADING STATE - Enhanced logic
-  // ============================================================================
-  const isInitialLoading = useMemo(() => 
-    !mounted || (authLoading && !dashboardStats && loading),
-    [mounted, authLoading, dashboardStats, loading]
-  )
+  // priority queue rows (what needs action right now)
+  const priorityRows = useMemo(() => {
+    if (!s) return []
+    return [
+      {
+        label:    "Landlord verifications",
+        count:    s.landlords.pending_verification,
+        urgency:  s.landlords.pending_verification > 10 ? "high" : s.landlords.pending_verification > 0 ? "medium" : "low",
+        href:     "/admin/landlord-verification",
+        icon:     Building,
+        color:    "text-orange-600",
+        bg:       "bg-orange-50",
+      },
+      {
+        label:    "Tenant verifications",
+        count:    s.tenants.pending_verification,
+        urgency:  s.tenants.pending_verification > 10 ? "high" : s.tenants.pending_verification > 0 ? "medium" : "low",
+        href:     "/admin/tenant-verification",
+        icon:     Users,
+        color:    "text-purple-600",
+        bg:       "bg-purple-50",
+      },
+      {
+        label:    "Property reviews",
+        count:    s.properties.pending_verification,
+        urgency:  s.properties.pending_verification > 10 ? "high" : s.properties.pending_verification > 0 ? "medium" : "low",
+        href:     "/admin/property-verification",
+        icon:     Home,
+        color:    "text-green-600",
+        bg:       "bg-green-50",
+      },
+      {
+        label:    "Onboarding in progress",
+        count:    s.landlords.pending_onboarding,
+        urgency:  "low" as const,
+        href:     "/admin/landlord-verification?status=awaiting_submission",
+        icon:     Clock,
+        color:    "text-amber-600",
+        bg:       "bg-amber-50",
+      },
+    ].filter(r => r.count > 0)
+  }, [s])
 
-  const hasData = useMemo(() => 
-    dashboardStats && !loading && !authLoading,
-    [dashboardStats, loading, authLoading]
-  )
+  const urgencyBadge = (u: string) => {
+    if (u === "high")   return <Badge className="bg-red-100 text-red-700 border-red-200 text-xs">Urgent</Badge>
+    if (u === "medium") return <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs">Review</Badge>
+    return <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-xs">Info</Badge>
+  }
 
-  // ============================================================================
-  // SKELETON LOADING COMPONENT
-  // ============================================================================
-  if (isInitialLoading) {
+  // ── loading skeleton ─────────────────────────────────────────────────────
+  const isBooting = !mounted || (authLoading && !s)
+
+  if (isBooting) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          {/* Header Skeleton */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <Skeleton className="h-10 w-1/2 mb-2" />
-                <Skeleton className="h-6 w-1/3" />
-              </div>
-              <Skeleton className="h-10 w-24" />
-            </div>
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
+        <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+          <Skeleton className="h-12 w-64" />
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
           </div>
-
-          {/* Alert Skeleton */}
-          <div className="mb-8">
-            <Skeleton className="h-24 w-full rounded-2xl" />
-          </div>
-
-          {/* Stats Grid Skeleton */}
-          <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8 sm:mb-12">
-            {[1, 2, 3, 4].map((i) => (
-              <Card key={i} className="border-orange-100 bg-white/80 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <Skeleton className="h-4 w-24 mb-2" />
-                  <Skeleton className="h-8 w-16" />
-                </CardHeader>
-              </Card>
-            ))}
-          </div>
-
-          {/* Main Content Skeleton */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <Skeleton className="h-96 w-full rounded-2xl" />
-            </div>
-            <div>
-              <Skeleton className="h-96 w-full rounded-2xl" />
-            </div>
+            <Skeleton className="h-72 lg:col-span-2" />
+            <Skeleton className="h-72" />
           </div>
+          <Skeleton className="h-64" />
         </div>
       </div>
     )
   }
 
-  // ============================================================================
-  // RENDER - Enhanced Admin Dashboard with Better UX
-  // ============================================================================
+  // ── RENDER ───────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* 🎯 WELCOME HEADER - Enhanced with Status */}
-        <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-2">
-                Welcome back, Admin! 👋
-              </h1>
-              <p className="text-gray-600 text-base">
-                {activitySummary}
-              </p>
-              {lastRefreshTime && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Last updated: {lastRefreshTime.toLocaleTimeString()}
-                </p>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
+      <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+
+        {/* ── PAGE HEADER ─────────────────────────────────────────────── */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent">
+              Admin Dashboard
+            </h1>
+            <p className="text-sm text-slate-500 mt-1">
+              {s
+                ? `${fmt(totalUsers)} users · ${fmt(totalPending)} pending reviews · ${fmt(s.properties.total)} properties`
+                : "Loading platform overview…"}
+              {lastRefresh && (
+                <span className="ml-2 text-slate-400">· refreshed {timeAgo(lastRefresh.toISOString())}</span>
               )}
-            </div>
-            <div className="flex items-center gap-2">
-              {autoRefreshEnabled && (
-                <Badge className="bg-green-100 text-green-800 border-green-300">
-                  <Zap className="h-3 w-3 mr-1" />
-                  Auto-refresh
-                </Badge>
-              )}
-              <Button 
-                onClick={handleRefresh} 
-                disabled={refreshing}
-                className="bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 gap-2 px-6"
-              >
-                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-              <Button 
-                variant="outline"
-                onClick={toggleAutoRefresh}
-                className="border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                {autoRefreshEnabled ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
-                {autoRefreshEnabled ? 'Disable' : 'Enable'} Auto
-              </Button>
-            </div>
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {totalPending > 0 && (
+              <Badge className="bg-red-100 text-red-700 border-red-200">
+                <AlertCircle className="w-3 h-3 mr-1" />
+                {totalPending} pending
+              </Badge>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="text-orange-700 border-orange-200 hover:bg-orange-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => router.push("/admin/settings")}
+              className="bg-orange-500 hover:bg-orange-600 text-white"
+            >
+              <Shield className="w-3.5 h-3.5 mr-1.5" />
+              Settings
+            </Button>
           </div>
         </div>
 
-        {/* 🔴 API FAILURE ALERT - Enhanced */}
-        {hasApiFailed && (
-          <Alert className="mb-8 rounded-2xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200">
-            <AlertCircle className="h-5 w-5 text-red-600" />
-            <AlertDescription className="ml-2 text-red-900 font-semibold">
-              ⚠️ Dashboard data temporarily unavailable. Some information may be outdated. 
-              <Button 
-                size="sm" 
-                variant="ghost"
-                className="ml-2 text-red-700 hover:bg-red-100 font-bold"
-                onClick={handleRetry}
-              >
-                Retry
-              </Button>
-            </AlertDescription>
-          </Alert>
+        {/* ── URGENT ACTION BANNERS (only when something needs attention) ── */}
+        {s && s.landlords.pending_verification > 0 && (
+          <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-lg bg-orange-50 border border-orange-200">
+            <div className="flex items-center gap-2 text-sm text-orange-900">
+              <AlertCircle className="w-4 h-4 text-orange-600 shrink-0" />
+              <span>
+                <strong>{s.landlords.pending_verification}</strong> landlord{s.landlords.pending_verification !== 1 ? "s" : ""} completed onboarding and are waiting for verification review.
+              </span>
+            </div>
+            <Button size="sm" onClick={() => router.push("/admin/landlord-verification")}
+              className="shrink-0 bg-orange-500 hover:bg-orange-600 text-white text-xs">
+              Review now <ChevronRight className="w-3 h-3 ml-1" />
+            </Button>
+          </div>
+        )}
+        {s && s.properties.pending_verification > 0 && (
+          <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200">
+            <div className="flex items-center gap-2 text-sm text-amber-900">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                <strong>{s.properties.pending_verification}</strong> propert{s.properties.pending_verification !== 1 ? "ies" : "y"} pending review.
+              </span>
+            </div>
+            <Button size="sm" onClick={() => router.push("/admin/property-verification")}
+              className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-xs">
+              Review now <ChevronRight className="w-3 h-3 ml-1" />
+            </Button>
+          </div>
         )}
 
-        {/* 🔴 ALERT 1: PENDING VERIFICATION - Landlords who submitted and need admin review */}
-        {hasData && dashboardStats?.landlords && dashboardStats?.landlords.pending_verification > 0 && (
-          <Alert 
-            className="mb-6 rounded-2xl transition-all duration-300 bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-300"
-          >
-            <AlertCircle className="h-5 w-5 flex-shrink-0 text-orange-600" />
-            <AlertDescription className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ml-2">
-              <div>
-                <p className="font-semibold text-base text-orange-900">
-                  <span className="text-orange-600 font-bold">
-                    {dashboardStats.landlords.pending_verification}
-                  </span>
-                  {' '}landlord{dashboardStats.landlords.pending_verification > 1 ? 's' : ''} pending verification
-                </p>
-                <p className="text-gray-600 text-sm mt-1">
-                  📋 Submitted onboarding documents • Waiting for admin review to approve or request corrections
-                </p>
-              </div>
-              <Button 
-                size="sm" 
-                onClick={() => router.push('/admin/landlord-verification?status=pending')}
-                className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap"
-              >
-                Review Now
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
+        {/* ── 6-CELL KPI GRID ─────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
 
-        {/* 🟡 ALERT 2: AWAITING SUBMISSION - Landlords who haven't submitted onboarding yet */}
-        {hasData && dashboardStats?.landlords && dashboardStats?.landlords.pending_onboarding > 0 && (
-          <Alert 
-            className="mb-6 rounded-2xl transition-all duration-300 bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-300"
-          >
-            <AlertCircle className="h-5 w-5 flex-shrink-0 text-yellow-600" />
-            <AlertDescription className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ml-2">
-              <div>
-                <p className="font-semibold text-base text-yellow-900">
-                  <span className="text-yellow-600 font-bold">
-                    {dashboardStats.landlords.pending_onboarding}
-                  </span>
-                  {' '}landlord{dashboardStats.landlords.pending_onboarding > 1 ? 's' : ''} awaiting submission
-                </p>
-                <p className="text-gray-600 text-sm mt-1">
-                  🚀 Recently signed up • Filling out onboarding form (profile, payment, bank details, etc)
-                </p>
+          {/* Total users */}
+          <Card className="border-orange-200 bg-white/90">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Users</p>
+                <Users className="w-3.5 h-3.5 text-orange-400" />
               </div>
-              <Button 
-                size="sm" 
-                onClick={() => router.push('/admin/landlord-verification?status=awaiting_submission')}
-                className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap"
-              >
-                View Signups
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* 📊 KEY METRICS - Enhanced Cards */}
-        <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8 sm:mb-12">
-          
-          {/* Pending Landlord Verifications */}
-          <Card 
-            className="cursor-pointer group bg-white/80 backdrop-blur-sm border border-orange-350 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 hover:border-orange-500"
-            onClick={() => router.push('/admin/landlord-verification')}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-orange-900">Verification Queue</CardTitle>
-              <div className="p-3 bg-gradient-to-br from-orange-200 to-orange-300 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                <Building className="h-5 w-5 text-orange-700" />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-3xl font-bold text-orange-700">
-                {dashboardStats?.landlords?.pending_verification || 0}
-              </div>
-              <p className="text-xs text-gray-600 font-medium uppercase tracking-wide">
-                Awaiting Review
+              <p className="text-2xl font-bold text-slate-900">{fmt(totalUsers)}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {fmt(s?.landlords.total)} landlords · {fmt(s?.tenants.total)} tenants
               </p>
-              <p className="text-xs text-gray-500 mt-2">Completed onboarding</p>
-              {dashboardStats && dashboardStats.landlords.pending_verification > 0 && (
-                <Badge className="mt-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white border-0 font-semibold shadow-lg">
-                  <Zap className="h-3 w-3 mr-1" />
-                  Action Required
-                </Badge>
-              )}
+              <Bar value={totalVerified} max={totalUsers} color="bg-orange-400" />
+              <p className="text-xs text-slate-400 mt-1">{pct(totalVerified, totalUsers)}% verified</p>
             </CardContent>
           </Card>
 
-          {/* Total Landlords */}
-          <Card 
-            className="cursor-pointer group bg-white/80 backdrop-blur-sm border border-orange-350 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 hover:border-orange-500"
-            onClick={() => router.push('/admin/users/landlords')}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-orange-900">All Landlords</CardTitle>
-              <div className="p-3 bg-gradient-to-br from-orange-200 to-orange-300 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                <Building2 className="h-5 w-5 text-orange-700" />
+          {/* Landlords */}
+          <Card className="border-orange-200 bg-white/90 cursor-pointer hover:border-orange-400 transition-colors"
+            onClick={() => router.push("/admin/users/landlords")}>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Landlords</p>
+                <Building className="w-3.5 h-3.5 text-orange-400" />
               </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-3xl font-bold text-orange-700">
-                {dashboardStats?.landlords?.total || 0}
+              <p className="text-2xl font-bold text-slate-900">{fmt(s?.landlords.total)}</p>
+              <div className="flex gap-1 mt-1 flex-wrap">
+                <span className="text-xs text-green-600 font-medium">{fmt(s?.landlords.verified)} verified</span>
+                <span className="text-xs text-slate-400">·</span>
+                <span className="text-xs text-amber-600 font-medium">{fmt(s?.landlords.pending_verification)} pending</span>
               </div>
-              <p className="text-xs text-gray-600 font-medium uppercase tracking-wide">
-                Registered
+              <Bar value={s?.landlords.verified ?? 0} max={s?.landlords.total ?? 1} color="bg-green-400" />
+            </CardContent>
+          </Card>
+
+          {/* Tenants */}
+          <Card className="border-purple-200 bg-white/90 cursor-pointer hover:border-purple-400 transition-colors"
+            onClick={() => router.push("/admin/users/tenants")}>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tenants</p>
+                <Users className="w-3.5 h-3.5 text-purple-400" />
+              </div>
+              <p className="text-2xl font-bold text-slate-900">{fmt(s?.tenants.total)}</p>
+              <div className="flex gap-1 mt-1 flex-wrap">
+                <span className="text-xs text-green-600 font-medium">{fmt(s?.tenants.verified)} verified</span>
+                <span className="text-xs text-slate-400">·</span>
+                <span className="text-xs text-amber-600 font-medium">{fmt(s?.tenants.pending_verification)} pending</span>
+              </div>
+              <Bar value={s?.tenants.verified ?? 0} max={s?.tenants.total ?? 1} color="bg-purple-400" />
+            </CardContent>
+          </Card>
+
+          {/* Properties */}
+          <Card className="border-green-200 bg-white/90 cursor-pointer hover:border-green-400 transition-colors"
+            onClick={() => router.push("/admin/property-verification")}>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Properties</p>
+                <Home className="w-3.5 h-3.5 text-green-400" />
+              </div>
+              <p className="text-2xl font-bold text-slate-900">{fmt(s?.properties.total)}</p>
+              <div className="flex gap-1 mt-1 flex-wrap">
+                <span className="text-xs text-green-600 font-medium">{fmt(s?.properties.verified)} live</span>
+                <span className="text-xs text-slate-400">·</span>
+                <span className="text-xs text-amber-600 font-medium">{fmt(s?.properties.pending_verification)} review</span>
+              </div>
+              <Bar value={s?.properties.verified ?? 0} max={s?.properties.total ?? 1} color="bg-green-400" />
+            </CardContent>
+          </Card>
+
+          {/* Pending reviews (action KPI) */}
+          <Card className={`border-2 bg-white/90 cursor-pointer transition-colors ${totalPending > 0 ? "border-red-200 hover:border-red-400" : "border-slate-200"}`}
+            onClick={() => router.push("/admin/landlord-verification")}>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Pending</p>
+                <Clock className={`w-3.5 h-3.5 ${totalPending > 0 ? "text-red-400" : "text-slate-300"}`} />
+              </div>
+              <p className={`text-2xl font-bold ${totalPending > 0 ? "text-red-600" : "text-slate-400"}`}>
+                {fmt(totalPending)}
               </p>
-              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200">
-                <Badge className="bg-green-100 text-green-800 border border-green-300 text-xs font-semibold">
-                  {dashboardStats?.landlords?.verified || 0} verified
-                </Badge>
-                <Badge className="bg-orange-200 text-orange-900 border border-orange-400 text-xs font-semibold" title="Completed onboarding, awaiting admin review">
-                  {dashboardStats?.landlords?.pending_verification || 0} review
-                </Badge>
-                <Badge className="bg-yellow-200 text-yellow-900 border border-yellow-400 text-xs font-semibold" title="Recently signed up, in onboarding">
-                  {dashboardStats?.landlords?.pending_onboarding || 0} new
-                </Badge>
+              <p className="text-xs text-slate-500 mt-0.5">across all queues</p>
+              {totalPending > 0
+                ? <Badge className="mt-1.5 bg-red-100 text-red-700 border-red-200 text-xs"><Zap className="w-2.5 h-2.5 mr-1" />Action needed</Badge>
+                : <p className="text-xs text-green-600 mt-1 font-medium">All clear ✓</p>}
+            </CardContent>
+          </Card>
+
+          {/* Today's signups */}
+          <Card className="border-slate-200 bg-white/90">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Today</p>
+                <TrendingUp className="w-3.5 h-3.5 text-slate-400" />
+              </div>
+              <p className="text-2xl font-bold text-slate-900">
+                {fmt((s?.recent_activity.new_landlord_signups_today ?? 0) + (s?.recent_activity.new_tenant_signups_today ?? 0))}
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">new signups</p>
+              <div className="flex gap-1 mt-1">
+                <span className="text-xs text-orange-600 font-medium">{fmt(s?.recent_activity.new_landlord_signups_today)} LL</span>
+                <span className="text-xs text-slate-400">·</span>
+                <span className="text-xs text-purple-600 font-medium">{fmt(s?.recent_activity.new_tenant_signups_today)} T</span>
               </div>
             </CardContent>
           </Card>
 
-          {/* Total Tenants */}
-          <Card 
-            className="cursor-pointer group bg-white/80 backdrop-blur-sm border border-purple-350 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 hover:border-purple-500"
-            onClick={() => router.push('/admin/users/tenants')}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-purple-900">All Tenants</CardTitle>
-              <div className="p-3 bg-gradient-to-br from-purple-200 to-purple-300 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                <Users className="h-5 w-5 text-purple-700" />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-3xl font-bold text-purple-700">
-                {dashboardStats?.tenants?.total || 0}
-              </div>
-              <p className="text-xs text-gray-600 font-medium uppercase tracking-wide">
-                Registered
-              </p>
-              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200">
-                <Badge className="bg-green-100 text-green-800 border border-green-300 text-xs font-semibold">
-                  {dashboardStats?.tenants?.verified || 0} verified
-                </Badge>
-                <Badge className="bg-purple-200 text-purple-900 border border-purple-400 text-xs font-semibold">
-                  {dashboardStats?.tenants?.pending_verification || 0} pending
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Properties Needing Review */}
-          <Card 
-            className="cursor-pointer group bg-white/80 backdrop-blur-sm border border-green-350 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 hover:border-green-500"
-            onClick={() => router.push('/admin/property-verification')}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-green-900">Property Reviews</CardTitle>
-              <div className="p-3 bg-gradient-to-br from-green-200 to-green-300 rounded-xl shadow-lg group-hover:scale-110 transition-transform">
-                <Home className="h-5 w-5 text-green-700" />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-3xl font-bold text-green-700">
-                {dashboardStats?.properties?.pending_verification || 0}
-              </div>
-              <p className="text-xs text-gray-600 font-medium uppercase tracking-wide">
-                Pending Review
-              </p>
-              {dashboardStats && dashboardStats.properties.pending_verification > 0 && (
-                <Badge className="mt-3 bg-gradient-to-r from-green-600 to-green-700 text-white border-0 font-semibold shadow-lg">
-                  <Zap className="h-3 w-3 mr-1" />
-                  Review Needed
-                </Badge>
-              )}
-            </CardContent>
-          </Card>
         </div>
 
-        {/* 📋 DETAILED PLATFORM OVERVIEW - Management Sections */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8 sm:mb-12">
-          
-          {/* Landlords Management */}
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-orange-200 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-t-2xl pb-4">
-              <CardTitle className="flex items-center gap-3 text-orange-900 font-bold text-lg">
-                <div className="p-2 bg-orange-500 rounded-lg shadow-lg">
-                  <Building className="w-5 h-5 text-white" />
-                </div>
-                Landlords
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6 space-y-3">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-200">
-                <span className="text-sm font-semibold text-slate-700">Total Registered</span>
-                <span className="text-3xl font-bold text-orange-600">{dashboardStats?.landlords?.total || 0}</span>
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-green-50 rounded-xl border-2 border-green-200">
-                  <span className="text-sm font-medium text-slate-700">✓ Verified & Active</span>
-                  <Badge className="bg-green-500 text-white font-bold">{dashboardStats?.landlords?.verified || 0}</Badge>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-orange-50 rounded-xl border-2 border-orange-200">
-                  <span className="text-sm font-medium text-slate-700">📋 Awaiting Verification</span>
-                  <Badge className="bg-orange-500 text-white font-bold" title="Completed onboarding, waiting for admin review">{dashboardStats?.landlords?.pending_verification || 0}</Badge>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-yellow-50 rounded-xl border-2 border-yellow-200">
-                  <span className="text-sm font-medium text-slate-700">🚀 In Onboarding</span>
-                  <Badge className="bg-yellow-500 text-white font-bold" title="Recently signed up, hasn't completed setup">{dashboardStats?.landlords?.pending_onboarding || 0}</Badge>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-red-50 rounded-xl border-2 border-red-200">
-                  <span className="text-sm font-medium text-slate-700">✗ Rejected</span>
-                  <Badge className="bg-red-500 text-white font-bold">{dashboardStats?.landlords?.rejected || 0}</Badge>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border-2 border-slate-300">
-                  <span className="text-sm font-medium text-slate-700">🏠 With Properties</span>
-                  <Badge variant="outline" className="border-2 border-orange-300 text-orange-700 font-bold">{dashboardStats?.landlords?.total || 0}</Badge>
-                </div>
-              </div>
-              <div className="flex gap-2 pt-4 border-t border-slate-200">
-                <Button 
-                  variant="outline"
-                  size="sm" 
-                  className="flex-1 border-2 border-orange-300 text-orange-700 hover:bg-orange-50 font-bold rounded-xl transition-all duration-300 hover:scale-105" 
-                  onClick={() => router.push('/admin/users/landlords')}
-                >
-                  <Eye className="w-4 h-4 mr-2" />
-                  View All
-                </Button>
-                <Button 
-                  size="sm"
-                  className="flex-1 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105" 
-                  onClick={() => router.push('/admin/landlord-verification')}
-                >
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  Review
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+        {/* ── MAIN 2-COL BODY ─────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-          {/* Tenants Management */}
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-purple-200 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-t-2xl pb-4">
-              <CardTitle className="flex items-center gap-3 text-purple-900 font-bold text-lg">
-                <div className="p-2 bg-purple-500 rounded-lg shadow-lg">
-                  <Users className="w-5 h-5 text-white" />
-                </div>
-                Tenants
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6 space-y-3">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-200">
-                <span className="text-sm font-semibold text-slate-700">Total Registered</span>
-                <span className="text-3xl font-bold text-purple-600">{dashboardStats?.tenants?.total || 0}</span>
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-green-50 rounded-xl border-2 border-green-200">
-                  <span className="text-sm font-medium text-slate-700">✓ Verified</span>
-                  <Badge className="bg-green-500 text-white font-bold">{dashboardStats?.tenants?.verified || 0}</Badge>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-purple-50 rounded-xl border-2 border-purple-200">
-                  <span className="text-sm font-medium text-slate-700">⏳ Pending</span>
-                  <Badge className="bg-purple-500 text-white font-bold">{dashboardStats?.tenants?.pending_verification || 0}</Badge>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-red-50 rounded-xl border-2 border-red-200">
-                  <span className="text-sm font-medium text-slate-700">✗ Rejected</span>
-                  <Badge className="bg-red-500 text-white font-bold">{dashboardStats?.tenants?.rejected || 0}</Badge>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border-2 border-slate-300">
-                  <span className="text-sm font-medium text-slate-700">📋 With Applications</span>
-                  <Badge variant="outline" className="border-2 border-purple-300 text-purple-700 font-bold">{dashboardStats?.tenants?.total || 0}</Badge>
-                </div>
-              </div>
-              <div className="flex gap-2 pt-4 border-t border-slate-200">
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 border-2 border-purple-300 text-purple-700 hover:bg-purple-50 font-bold rounded-xl transition-all duration-300 hover:scale-105" 
-                  onClick={() => router.push('/admin/users/tenants')}
-                >
-                  <Eye className="w-4 h-4 mr-2" />
-                  View All
-                </Button>
-                <Button 
-                  size="sm"
-                  className="flex-1 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105" 
-                  onClick={() => router.push('/admin/users/tenants')}
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Manage
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* LEFT — Priority Action Queue (2 cols) */}
+          <div className="lg:col-span-2 space-y-6">
 
-          {/* Properties Management */}
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-green-200 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-green-50 to-green-100 rounded-t-2xl pb-4">
-              <CardTitle className="flex items-center gap-3 text-green-900 font-bold text-lg">
-                <div className="p-2 bg-green-500 rounded-lg shadow-lg">
-                  <Home className="w-5 h-5 text-white" />
-                </div>
-                Properties
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6 space-y-3">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-200">
-                <span className="text-sm font-semibold text-slate-700">Total Listed</span>
-                <span className="text-3xl font-bold text-green-600">{dashboardStats?.properties.total || 0}</span>
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-green-50 rounded-xl border-2 border-green-200">
-                  <span className="text-sm font-medium text-slate-700">✓ Verified</span>
-                  <Badge className="bg-green-500 text-white font-bold">{dashboardStats?.properties.verified || 0}</Badge>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-orange-50 rounded-xl border-2 border-orange-200">
-                  <span className="text-sm font-medium text-slate-700">⏳ Pending Review</span>
-                  <Badge className="bg-orange-500 text-white font-bold">{dashboardStats?.properties.pending_verification || 0}</Badge>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-red-50 rounded-xl border-2 border-red-200">
-                  <span className="text-sm font-medium text-slate-700">✗ Rejected</span>
-                  <Badge className="bg-red-500 text-white font-bold">{dashboardStats?.properties.rejected || 0}</Badge>
-                </div>
-              </div>
-              <Button 
-                className="w-full mt-4 pt-4 border-t border-slate-200 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105" 
-                onClick={() => router.push('/admin/property-verification')}
-              >
-                <Eye className="w-4 h-4 mr-2" />
-                Review Properties
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* 🔐 Webhook Testing
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-blue-200 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-t-2xl pb-4">
-              <CardTitle className="flex items-center gap-3 text-blue-900 font-bold text-lg">
-                <div className="p-2 bg-blue-500 rounded-lg shadow-lg">
-                  <Shield className="w-5 h-5 text-white" />
-                </div>
-                Webhook Testing
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6 space-y-3">
-              <p className="text-sm text-slate-600">
-                Test HMAC SHA-512 signature validation for Paystack webhooks
-              </p>
-              <div className="flex gap-2 pt-4 border-t border-slate-200">
-                <Button 
-                  className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105" 
-                  onClick={() => router.push('/admin/webhook-testing')}
-                >
-                  <Shield className="w-4 h-4 mr-2" />
-                  Test Signatures
-                </Button>
-              </div>
-            </CardContent>
-          </Card> */}
-        </div>
-
-        {/* 📈 PLATFORM ACTIVITY */}
-        <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8 sm:mb-12">
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-slate-300 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-600 uppercase tracking-wider">New Tenants Today</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">
-                    {dashboardStats?.recent_activity.new_tenant_signups_today || 0}
-                  </p>
-                </div>
-                <div className="p-3 bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl shadow-lg">
-                  <Users className="w-6 h-6 text-slate-700" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-orange-300 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-600 uppercase tracking-wider">New Landlords Today</p>
-                  <p className="text-3xl font-bold text-orange-600 mt-2">
-                    {dashboardStats?.recent_activity.new_landlord_signups_today || 0}
-                  </p>
-                </div>
-                <div className="p-3 bg-gradient-to-br from-orange-100 to-orange-200 rounded-xl shadow-lg">
-                  <Building className="w-6 h-6 text-orange-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* 👥 RECENT LANDLORD SIGNUPS */}
-        {recentSignupsLoading && (
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-orange-300 rounded-2xl shadow-2xl mb-8 sm:mb-12 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-t-2xl pb-4">
-              <CardTitle className="flex items-center gap-3 text-orange-900 font-bold text-lg">
-                <Building className="w-5 h-5 animate-spin" />
-                Loading Recent Signups...
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-20 w-full rounded-xl" />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {recentSignups.length > 0 && !recentSignupsLoading && (
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-orange-300 rounded-2xl shadow-2xl mb-8 sm:mb-12 hover:shadow-xl transition-all duration-300 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-t-2xl pb-4">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex-1">
-                  <CardTitle className="flex items-center gap-3 text-orange-900 font-bold text-lg">
-                    <Building className="w-5 h-5" />
-                    Recent Landlord Signups
+            {/* Action queue table */}
+            <Card className="border-orange-200 bg-white/90 shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Zap className="w-4 h-4 text-orange-500" />
+                    Priority Action Queue
                   </CardTitle>
-                  <CardDescription className="text-orange-700 font-medium text-sm mt-1">
-                    Landlords completed onboarding in the last 7 days
-                  </CardDescription>
+                  <span className="text-xs text-slate-400">
+                    {priorityRows.length === 0 ? "Nothing pending" : `${priorityRows.length} queue${priorityRows.length !== 1 ? "s" : ""} need attention`}
+                  </span>
                 </div>
-                <Badge className="bg-gradient-to-r from-orange-500 to-orange-600 text-white border-0 font-bold shadow-lg whitespace-nowrap">
-                  <Clock className="h-3 w-3 mr-2" />
-                  {recentSignups.length} Recent
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="space-y-3">
-                {(() => {
-                  console.log('🎯 [ADMIN DISPLAY] Rendering Recent Landlord Signups:')
-                  console.log('  Total items to render:', recentSignups.length)
-                  console.log('  Items (first 5):', JSON.stringify(recentSignups.slice(0, 5), null, 2))
-                  return recentSignups.slice(0, 5).map((landlord) => (
-                  <div 
-                    key={landlord.id}
-                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border-2 border-slate-200 rounded-2xl hover:border-orange-300 hover:bg-orange-50/50 transition-all duration-300 cursor-pointer group hover:shadow-lg"
-                    onClick={() => router.push('/admin/landlord-verification')}
-                  >
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="w-14 h-14 bg-gradient-to-br from-orange-100 to-orange-200 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg flex-shrink-0">
-                        {landlord.account_type === 'company' ? (
-                          <Building className="w-7 h-7 text-orange-600" />
-                        ) : (
-                          <UserCheck className="w-7 h-7 text-orange-600" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-slate-900 text-base">
-                          {landlord.full_name}
-                        </p>
-                        {landlord.company_name && (
-                          <p className="text-sm text-slate-600 font-medium">
-                            {landlord.company_name}
-                          </p>
-                        )}
-                        <p className="text-sm text-slate-600 truncate">{landlord.email}</p>
-                        <div className="flex items-center gap-2 mt-2 flex-wrap">
-                          <Badge className={`text-xs font-bold ${
-                            landlord.account_type === 'company' 
-                              ? 'bg-purple-100 text-purple-800 border-2 border-purple-200' 
-                              : 'bg-orange-100 text-orange-800 border-2 border-orange-200'
-                          }`}>
-                            {landlord.account_type === 'company' ? '🏢 Company' : '👤 Individual'}
-                          </Badge>
-                          {landlord.onboarding_completed_at && (
-                            <span className="text-xs text-slate-500 font-medium">
-                              {new Date(landlord.onboarding_completed_at).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric', 
-                                year: 'numeric' 
-                              })}
+                <CardDescription>Items requiring admin action right now</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {priorityRows.length === 0 ? (
+                  <div className="py-12 text-center">
+                    <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-slate-700">All queues clear</p>
+                    <p className="text-xs text-slate-400 mt-1">No pending reviews across the platform</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50">
+                          <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Queue</th>
+                          <th className="text-right py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Count</th>
+                          <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Priority</th>
+                          <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Volume</th>
+                          <th className="py-2.5 px-4" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {priorityRows.map((row) => (
+                          <tr key={row.label} className="hover:bg-orange-50/40 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2.5">
+                                <div className={`w-7 h-7 rounded-lg ${row.bg} flex items-center justify-center shrink-0`}>
+                                  <row.icon className={`w-3.5 h-3.5 ${row.color}`} />
+                                </div>
+                                <span className="font-medium text-slate-900 text-sm">{row.label}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <span className={`text-xl font-bold ${row.color}`}>{fmt(row.count)}</span>
+                            </td>
+                            <td className="py-3 px-4 hidden sm:table-cell">
+                              {urgencyBadge(row.urgency)}
+                            </td>
+                            <td className="py-3 px-4 hidden md:table-cell w-40">
+                              <Bar
+                                value={row.count}
+                                max={Math.max(...priorityRows.map(r => r.count), 1)}
+                                color={
+                                  row.urgency === "high" ? "bg-red-400" :
+                                  row.urgency === "medium" ? "bg-amber-400" :
+                                  "bg-slate-300"
+                                }
+                              />
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <Button
+                                size="sm"
+                                onClick={() => router.push(row.href)}
+                                className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white"
+                              >
+                                Review <ChevronRight className="w-3 h-3 ml-0.5" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {/* Summary footer */}
+                      <tfoot>
+                        <tr className="border-t-2 border-orange-200 bg-orange-50/60">
+                          <td className="py-2.5 px-4 text-xs font-semibold text-slate-600">Total pending</td>
+                          <td className="py-2.5 px-4 text-right font-bold text-orange-700">{fmt(totalPending)}</td>
+                          <td colSpan={3} className="py-2.5 px-4 text-xs text-slate-400">across all queues</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Platform breakdown table */}
+            <Card className="border-orange-200 bg-white/90 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <BarChart2 className="w-4 h-4 text-orange-500" />
+                  Platform Breakdown
+                </CardTitle>
+                <CardDescription>Verification status across all entity types</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50">
+                        <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Entity</th>
+                        <th className="text-right py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
+                        <th className="text-right py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Verified</th>
+                        <th className="text-right py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Pending</th>
+                        <th className="text-right py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Rejected</th>
+                        <th className="py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {/* Landlords row */}
+                      <tr className="hover:bg-orange-50/40 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded bg-orange-100 flex items-center justify-center">
+                              <Building className="w-3 h-3 text-orange-600" />
+                            </div>
+                            <span className="font-medium text-slate-900">Landlords</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-semibold text-slate-900">{fmt(s?.landlords.total)}</td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-green-600 font-semibold">{fmt(s?.landlords.verified)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={`font-semibold ${(s?.landlords.pending_verification ?? 0) > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                            {fmt(s?.landlords.pending_verification)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={`font-semibold ${(s?.landlords.rejected ?? 0) > 0 ? "text-red-500" : "text-slate-400"}`}>
+                            {fmt(s?.landlords.rejected)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 hidden md:table-cell w-28">
+                          <div className="flex items-center gap-2">
+                            <Bar value={s?.landlords.verified ?? 0} max={s?.landlords.total ?? 1} color="bg-orange-400" />
+                            <span className="text-xs text-slate-500 shrink-0">
+                              {pct(s?.landlords.verified ?? 0, s?.landlords.total ?? 0)}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      {/* Tenants row */}
+                      <tr className="hover:bg-purple-50/40 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded bg-purple-100 flex items-center justify-center">
+                              <Users className="w-3 h-3 text-purple-600" />
+                            </div>
+                            <span className="font-medium text-slate-900">Tenants</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-semibold text-slate-900">{fmt(s?.tenants.total)}</td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-green-600 font-semibold">{fmt(s?.tenants.verified)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={`font-semibold ${(s?.tenants.pending_verification ?? 0) > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                            {fmt(s?.tenants.pending_verification)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={`font-semibold ${(s?.tenants.rejected ?? 0) > 0 ? "text-red-500" : "text-slate-400"}`}>
+                            {fmt(s?.tenants.rejected)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 hidden md:table-cell w-28">
+                          <div className="flex items-center gap-2">
+                            <Bar value={s?.tenants.verified ?? 0} max={s?.tenants.total ?? 1} color="bg-purple-400" />
+                            <span className="text-xs text-slate-500 shrink-0">
+                              {pct(s?.tenants.verified ?? 0, s?.tenants.total ?? 0)}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      {/* Properties row */}
+                      <tr className="hover:bg-green-50/40 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded bg-green-100 flex items-center justify-center">
+                              <Home className="w-3 h-3 text-green-600" />
+                            </div>
+                            <span className="font-medium text-slate-900">Properties</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-semibold text-slate-900">{fmt(s?.properties.total)}</td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-green-600 font-semibold">{fmt(s?.properties.verified)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={`font-semibold ${(s?.properties.pending_verification ?? 0) > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                            {fmt(s?.properties.pending_verification)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={`font-semibold ${(s?.properties.rejected ?? 0) > 0 ? "text-red-500" : "text-slate-400"}`}>
+                            {fmt(s?.properties.rejected)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 hidden md:table-cell w-28">
+                          <div className="flex items-center gap-2">
+                            <Bar value={s?.properties.verified ?? 0} max={s?.properties.total ?? 1} color="bg-green-400" />
+                            <span className="text-xs text-slate-500 shrink-0">
+                              {pct(s?.properties.verified ?? 0, s?.properties.total ?? 0)}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                    {/* Grand total footer */}
+                    <tfoot>
+                      <tr className="border-t-2 border-slate-200 bg-slate-50">
+                        <td className="py-2.5 px-4 text-xs font-semibold text-slate-600">Platform total</td>
+                        <td className="py-2.5 px-4 text-right font-bold text-slate-900">
+                          {fmt((s?.landlords.total ?? 0) + (s?.tenants.total ?? 0) + (s?.properties.total ?? 0))}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-bold text-green-600">
+                          {fmt((s?.landlords.verified ?? 0) + (s?.tenants.verified ?? 0) + (s?.properties.verified ?? 0))}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-bold text-amber-600">
+                          {fmt(totalPending)}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-bold text-red-500">
+                          {fmt((s?.landlords.rejected ?? 0) + (s?.tenants.rejected ?? 0) + (s?.properties.rejected ?? 0))}
+                        </td>
+                        <td className="py-2.5 px-4 hidden md:table-cell text-xs text-slate-400">
+                          {pct(totalVerified, totalUsers)}% users verified
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* RIGHT — Platform Health panel (1 col, sticky) */}
+          <div className="space-y-4">
+
+            {/* Health summary */}
+            <Card className="border-orange-200 bg-white/90 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Activity className="w-4 h-4 text-orange-500" />
+                  Platform Health
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Verification health */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-slate-600">User verification rate</span>
+                    <span className="text-xs font-bold text-slate-900">{pct(totalVerified, totalUsers)}%</span>
+                  </div>
+                  <Bar value={totalVerified} max={totalUsers} color="bg-green-400" />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-slate-600">Property approval rate</span>
+                    <span className="text-xs font-bold text-slate-900">
+                      {pct(s?.properties.verified ?? 0, s?.properties.total ?? 0)}%
+                    </span>
+                  </div>
+                  <Bar value={s?.properties.verified ?? 0} max={s?.properties.total ?? 1} color="bg-blue-400" />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-slate-600">Landlord onboarding rate</span>
+                    <span className="text-xs font-bold text-slate-900">
+                      {pct(
+                        (s?.landlords.total ?? 0) - (s?.landlords.pending_onboarding ?? 0),
+                        s?.landlords.total ?? 0
+                      )}%
+                    </span>
+                  </div>
+                  <Bar
+                    value={(s?.landlords.total ?? 0) - (s?.landlords.pending_onboarding ?? 0)}
+                    max={s?.landlords.total ?? 1}
+                    color="bg-orange-400"
+                  />
+                </div>
+
+                <Separator />
+
+                {/* Today's activity */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Today's activity</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-600 flex items-center gap-1.5">
+                        <Building className="w-3 h-3 text-orange-400" /> New landlords
+                      </span>
+                      <span className="text-xs font-bold text-orange-600">
+                        +{fmt(s?.recent_activity.new_landlord_signups_today)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-600 flex items-center gap-1.5">
+                        <Users className="w-3 h-3 text-purple-400" /> New tenants
+                      </span>
+                      <span className="text-xs font-bold text-purple-600">
+                        +{fmt(s?.recent_activity.new_tenant_signups_today)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-600 flex items-center gap-1.5">
+                        <Home className="w-3 h-3 text-green-400" /> New properties
+                      </span>
+                      <span className="text-xs font-bold text-green-600">
+                        +{fmt(s?.recent_activity.new_properties_today)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Rejection rates */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Rejection summary</p>
+                  <div className="space-y-1.5">
+                    {[
+                      { label: "Landlords rejected", val: s?.landlords.rejected ?? 0, total: s?.landlords.total ?? 0 },
+                      { label: "Tenants rejected",   val: s?.tenants.rejected ?? 0,   total: s?.tenants.total ?? 0 },
+                      { label: "Properties rejected", val: s?.properties.rejected ?? 0, total: s?.properties.total ?? 0 },
+                    ].map(row => (
+                      <div key={row.label} className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500">{row.label}</span>
+                        <span className={`text-xs font-semibold ${row.val > 0 ? "text-red-500" : "text-slate-400"}`}>
+                          {fmt(row.val)}
+                          {row.val > 0 && (
+                            <span className="text-slate-400 font-normal ml-1">
+                              ({pct(row.val, row.total)}%)
                             </span>
                           )}
-                        </div>
-                      </div>
-                    </div>
-                    <Button 
-                      size="sm" 
-                      className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap w-full sm:w-auto"
-                    >
-                      Review
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Button>
-                  </div>
-                ))
-                })()}
-                
-                {recentSignups.length > 5 && (
-                  <Button 
-                    variant="ghost" 
-                    className="w-full text-orange-600 hover:bg-orange-50 font-bold rounded-xl text-base py-3 border-2 border-dashed border-orange-300"
-                    onClick={() => router.push('/admin/landlord-verification')}
-                  >
-                    View All {recentSignups.length} Recent Signups
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {recentSignups.length === 0 && !recentSignupsLoading && (
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-orange-300 rounded-2xl shadow-2xl mb-8 sm:mb-12 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-t-2xl pb-4">
-              <CardTitle className="flex items-center gap-3 text-orange-900 font-bold text-lg">
-                <Building className="w-5 h-5" />
-                Recent Landlord Signups
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6 text-center py-12">
-              <div className="flex flex-col items-center gap-4">
-                {recentSignupsError ? (
-                  <>
-                    <AlertCircle className="w-12 h-12 text-orange-400" />
-                    <p className="text-orange-700 font-medium">{recentSignupsError}</p>
-                  </>
-                ) : (
-                  <>
-                    <Building className="w-12 h-12 text-slate-300" />
-                    <p className="text-slate-600 font-medium">No recent landlord signups yet</p>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ✅ RECENT TENANT SIGNUPS - Complementary to Landlord Signups */}
-        {recentTenantSignups.length > 0 && !recentSignupsLoading && (
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-purple-300 rounded-2xl shadow-2xl mb-8 sm:mb-12 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-t-2xl pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-3 text-purple-900 font-bold text-lg">
-                  <Users className="w-5 h-5" />
-                  Recent Tenant Signups
-                </CardTitle>
-                <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 font-bold text-base px-3 py-1">
-                  {recentTenantSignups.length}
-                </Badge>
-              </div>
-              <CardDescription className="text-purple-700 font-medium text-sm mt-1">
-                Latest tenants who joined in the last 7 days
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                {recentTenantSignups.map((tenant, index) => (
-                  <div
-                    key={index}
-                    className="p-4 bg-gradient-to-r from-purple-50 to-slate-50 rounded-xl border-2 border-purple-200 hover:border-purple-400 hover:shadow-lg transition-all duration-300 flex items-center justify-between"
-                  >
-                    <div className="flex-1">
-                      <p className="font-bold text-slate-900 text-base">
-                        {tenant.full_name || 'Unknown Tenant'}
-                      </p>
-                      <p className="text-slate-600 text-sm mt-1">{tenant.email}</p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs font-bold px-2 py-1 ${
-                            tenant.verification_status === 'pending' 
-                              ? 'bg-yellow-100 text-yellow-700 border-yellow-300'
-                              : tenant.verification_status === 'approved'
-                              ? 'bg-green-100 text-green-700 border-green-300'
-                              : 'bg-slate-100 text-slate-700 border-slate-300'
-                          }`}
-                        >
-                          {tenant.verification_status || 'pending'}
-                        </Badge>
-                        <span className="text-xs text-slate-500">
-                          {tenant.created_at ? new Date(tenant.created_at).toLocaleDateString() : 'N/A'}
                         </span>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Onboarding funnel card */}
+            <Card className="border-amber-200 bg-white/90 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <TrendingUp className="w-4 h-4 text-amber-500" />
+                  Onboarding Funnel
+                </CardTitle>
+                <CardDescription>Landlord lifecycle stages</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {[
+                  { stage: "Signed up",       val: s?.landlords.total ?? 0,                icon: "1", color: "bg-slate-200 text-slate-700" },
+                  { stage: "In onboarding",   val: s?.landlords.pending_onboarding ?? 0,   icon: "2", color: "bg-amber-200 text-amber-800" },
+                  { stage: "Submitted docs",  val: s?.onboarding?.completed_submissions ?? 0, icon: "3", color: "bg-orange-200 text-orange-800" },
+                  { stage: "Under review",    val: s?.onboarding?.in_review ?? 0,           icon: "4", color: "bg-blue-200 text-blue-800" },
+                  { stage: "Approved",        val: s?.landlords.verified ?? 0,             icon: "5", color: "bg-green-200 text-green-800" },
+                ].map((row) => (
+                  <div key={row.stage} className="flex items-center gap-3">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${row.color}`}>
+                      {row.icon}
+                    </span>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-xs text-slate-600">{row.stage}</span>
+                        <span className="text-xs font-bold text-slate-900">{fmt(row.val)}</span>
+                      </div>
+                      <Bar value={row.val} max={s?.landlords.total ?? 1} color="bg-orange-300" />
                     </div>
-                    <Link href={`/admin/user-details?userId=${tenant.id}`}>
-                      <Button 
-                        size="sm" 
-                        className="ml-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg"
-                      >
-                        View
-                      </Button>
-                    </Link>
                   </div>
                 ))}
-              </div>
-              {recentTenantSignups.length > 5 && (
-                <Button
-                  variant="outline"
-                  className="w-full text-purple-600 hover:bg-purple-50 font-bold rounded-xl text-base py-3 border-2 border-dashed border-purple-300 mt-4"
-                  onClick={() => router.push('/admin/tenant-management')}
-                >
-                  View All {recentTenantSignups.length} Recent Signups
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        )}
+              </CardContent>
+            </Card>
 
-        {recentTenantSignups.length === 0 && !recentSignupsLoading && (
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-purple-300 rounded-2xl shadow-2xl mb-8 sm:mb-12 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-t-2xl pb-4">
-              <CardTitle className="flex items-center gap-3 text-purple-900 font-bold text-lg">
-                <Users className="w-5 h-5" />
-                Recent Tenant Signups
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6 text-center py-12">
-              <div className="flex flex-col items-center gap-4">
-                <Users className="w-12 h-12 text-slate-300" />
-                <p className="text-slate-600 font-medium">No recent tenant signups yet</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+          </div>
+        </div>
 
-        {/* ✅ VERIFICATION SUMMARY */}
-        {dashboardStats && (
-          <Card className="bg-white/80 backdrop-blur-lg border-2 border-orange-300 rounded-2xl shadow-2xl hover:shadow-xl transition-all duration-300 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-t-2xl pb-4">
-              <CardTitle className="flex items-center gap-3 text-orange-900 font-bold text-lg">
-                <CheckCircle className="w-5 h-5" />
-                Verification Summary
-              </CardTitle>
-              <CardDescription className="text-orange-700 font-medium text-sm mt-1">
-                Complete overview of all verification statuses across the platform
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-                <div className="text-center p-4 bg-slate-50 rounded-xl border-2 border-slate-300 hover:border-slate-400 transition-all hover:shadow-lg">
-                  <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Total</p>
-                  <p className="text-3xl font-bold text-slate-900">{adminDashboardAPI.getTotalPendingVerifications(dashboardStats)}</p>
-                </div>
-                <div className="text-center p-4 bg-orange-50 rounded-xl border-2 border-orange-300 hover:border-orange-400 transition-all hover:shadow-lg">
-                  <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Pending</p>
-                  <p className="text-3xl font-bold text-orange-600">{adminDashboardAPI.getTotalPendingVerifications(dashboardStats)}</p>
-                </div>
-                <div className="text-center p-4 bg-yellow-50 rounded-xl border-2 border-yellow-300 hover:border-yellow-400 transition-all hover:shadow-lg">
-                  <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Onboarding</p>
-                  <p className="text-3xl font-bold text-yellow-600">{dashboardStats?.landlords?.pending_onboarding || 0}</p>
-                </div>
-                <div className="text-center p-4 bg-green-50 rounded-xl border-2 border-green-300 hover:border-green-400 transition-all hover:shadow-lg">
-                  <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Verified</p>
-                  <p className="text-3xl font-bold text-green-600">{adminDashboardAPI.getTotalVerifiedUsers(dashboardStats)}</p>
-                </div>
-                <div className="text-center p-4 bg-red-50 rounded-xl border-2 border-red-300 hover:border-red-400 transition-all hover:shadow-lg">
-                  <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Rejected</p>
-                  <p className="text-3xl font-bold text-red-600">{dashboardStats?.landlords?.rejected + dashboardStats?.tenants?.rejected || 0}</p>
-                </div>
+        {/* ── RECENT SIGNUPS TABLE ─────────────────────────────────────── */}
+        <Card className="border-orange-200 bg-white/90 shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <UserCheck className="w-4 h-4 text-orange-500" />
+                  Recent Signups
+                </CardTitle>
+                <CardDescription className="mt-0.5">
+                  Latest users across all types — last 7 days
+                </CardDescription>
               </div>
-              <div className="mt-6 p-4 bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl border-2 border-orange-200">
-                <p className="text-sm font-semibold text-slate-700 mb-2">🎯 Quick Actions:</p>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Button 
-                    size="sm"
-                    className="flex-1 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold rounded-lg transition-all duration-300 hover:scale-105"
-                    onClick={() => router.push('/admin/landlord-verification')}
-                  >
-                    Review Landlords
-                  </Button>
-                  <Button 
-                    size="sm"
-                    className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold rounded-lg transition-all duration-300 hover:scale-105"
-                    onClick={() => router.push('/admin/property-verification')}
-                  >
-                    Review Properties
-                  </Button>
-                </div>
+              <div className="flex items-center gap-2">
+                {signupsLoading && (
+                  <RefreshCw className="w-3.5 h-3.5 text-slate-400 animate-spin" />
+                )}
+                <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-xs">
+                  {recentSignups.length} users
+                </Badge>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {signupsLoading ? (
+              <div className="p-4 space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-11 w-full rounded" />
+                ))}
+              </div>
+            ) : recentSignups.length === 0 ? (
+              <div className="py-12 text-center">
+                <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm text-slate-500">No signups in the last 7 days</p>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50">
+                        <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Name</th>
+                        <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Email</th>
+                        <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
+                        <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                        <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Joined</th>
+                        <th className="py-2.5 px-4" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {recentSignups.slice(0, 10).map((u) => (
+                        <tr key={u.id} className="hover:bg-orange-50/30 transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                u.user_type === "landlord"
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "bg-purple-100 text-purple-700"
+                              }`}>
+                                {(u.full_name ?? "?").charAt(0).toUpperCase()}
+                              </div>
+                              <span className="font-medium text-slate-900 truncate max-w-[120px]">
+                                {u.full_name || "—"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 text-xs hidden sm:table-cell truncate max-w-[180px]">
+                            {u.email}
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge className={`text-xs border ${
+                              u.user_type === "landlord"
+                                ? "bg-orange-100 text-orange-700 border-orange-200"
+                                : "bg-purple-100 text-purple-700 border-purple-200"
+                            }`}>
+                              {u.user_type === "landlord" ? "Landlord" : "Tenant"}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4">
+                            <StatusPill status={u.verification_status} />
+                          </td>
+                          <td className="py-3 px-4 text-xs text-slate-400 hidden md:table-cell whitespace-nowrap">
+                            {timeAgo(u.created_at)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-orange-600 hover:bg-orange-50 hover:text-orange-700 px-2"
+                              onClick={() => router.push(
+                                u.user_type === "landlord"
+                                  ? "/admin/landlord-verification"
+                                  : "/admin/tenant-verification"
+                              )}
+                            >
+                              <Eye className="w-3 h-3 mr-1" />
+                              View
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {recentSignups.length > 0 && (
+                      <tfoot>
+                        <tr className="border-t-2 border-orange-200 bg-orange-50/60">
+                          <td className="py-2.5 px-4 text-xs font-semibold text-slate-600">
+                            Showing {Math.min(10, recentSignups.length)} of {recentSignups.length}
+                          </td>
+                          <td colSpan={5} className="py-2.5 px-4 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-orange-600 hover:bg-orange-100"
+                              onClick={() => router.push("/admin/users/landlords")}
+                            >
+                              View all users <ChevronRight className="w-3 h-3 ml-0.5" />
+                            </Button>
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── QUICK NAV GRID ───────────────────────────────────────────── */}
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Quick navigation</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              { label: "Landlord Verification", href: "/admin/landlord-verification", icon: Building,  color: "text-orange-600", bg: "bg-orange-50 hover:bg-orange-100 border-orange-200", badge: s?.landlords.pending_verification },
+              { label: "Tenant Verification",   href: "/admin/tenant-verification",   icon: Users,     color: "text-purple-600", bg: "bg-purple-50 hover:bg-purple-100 border-purple-200", badge: s?.tenants.pending_verification },
+              { label: "Property Review",       href: "/admin/property-verification", icon: Home,      color: "text-green-600",  bg: "bg-green-50 hover:bg-green-100 border-green-200",   badge: s?.properties.pending_verification },
+              { label: "All Landlords",         href: "/admin/users/landlords",       icon: Building2, color: "text-orange-600", bg: "bg-white hover:bg-orange-50 border-slate-200", badge: null },
+              { label: "All Tenants",           href: "/admin/users/tenants",         icon: Users,     color: "text-purple-600", bg: "bg-white hover:bg-purple-50 border-slate-200", badge: null },
+              { label: "Settings",              href: "/admin/settings",              icon: Shield,    color: "text-slate-600",  bg: "bg-white hover:bg-slate-50 border-slate-200",  badge: null },
+            ].map((item) => (
+              <button
+                key={item.href}
+                onClick={() => router.push(item.href)}
+                className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all text-center group ${item.bg}`}
+              >
+                {item.badge !== null && item.badge !== undefined && item.badge > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center z-10">
+                    {item.badge > 9 ? "9+" : item.badge}
+                  </span>
+                )}
+                <item.icon className={`w-5 h-5 ${item.color} group-hover:scale-110 transition-transform`} />
+                <span className="text-xs font-medium text-slate-700 leading-tight">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
       </div>
     </div>

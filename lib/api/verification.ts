@@ -78,6 +78,9 @@ export interface LandlordVerification {
   nin?: string
   nin_document_url?: string
   nin_verified?: boolean
+  proof_of_address_url?: string
+  company_registration_url?: string
+  property_ownership_proof?: string
   bvn?: string
   bvn_verified?: boolean
   // Bank verification

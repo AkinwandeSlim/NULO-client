@@ -1454,3 +1454,14 @@ body.has-navbar > div > div:first-child {
   margin-top: 0 !important;
   padding-top: 0 !important;
 }
+
+/* Hide native number input spinner for better UX with currency values */
+.hide-spinner::-webkit-outer-spin-button,
+.hide-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.hide-spinner {
+  -moz-appearance: textfield;
+}

@@ -39,7 +39,8 @@ import {
   Square,
   Car,
   Wifi,
-  Tv
+  Tv,
+  Trash2
 } from "lucide-react"
 
 // Import our new API client
@@ -85,7 +86,7 @@ export default function PropertyVerification() {
   
   // Filter state
   const [searchQuery, setSearchQuery] = useState("")
-  const [verificationFilter, setVerificationFilter] = useState<string>("pending")
+  const [verificationFilter, setVerificationFilter] = useState<string>("all")
   const [propertyTypeFilter, setPropertyTypeFilter] = useState<string>("all")
   const [cityFilter, setCityFilter] = useState<string>("all")
   
@@ -102,6 +103,11 @@ export default function PropertyVerification() {
   const [actionDialogOpen, setActionDialogOpen] = useState(false)
   const [pendingAction, setPendingAction] = useState<'approve' | 'reject' | null>(null)
   const [isActionInProgress, setIsActionInProgress] = useState(false)
+
+  // Delete dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [propertyToDelete, setPropertyToDelete] = useState<Property | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // ✅ TRACK INITIAL LOAD - Smart loading condition
   const [hasInitialLoad, setHasInitialLoad] = useState(false)
@@ -239,6 +245,43 @@ export default function PropertyVerification() {
     }
   }
 
+  // ==================== DELETE ACTIONS ====================
+  const openDeleteDialog = (property: Property) => {
+    setPropertyToDelete(property)
+    setDeleteDialogOpen(true)
+  }
+
+  const closeDeleteDialog = () => {
+    if (isDeleting) return
+    setDeleteDialogOpen(false)
+    setPropertyToDelete(null)
+  }
+
+  const handleDelete = async () => {
+    if (!propertyToDelete || isDeleting) return
+
+    try {
+      setIsDeleting(true)
+      await propertyVerificationAPI.deleteProperty(propertyToDelete.id)
+      toast.success(`"${propertyToDelete.title}" has been deleted.`)
+
+      // Close dialog and clear state
+      setDeleteDialogOpen(false)
+      setPropertyToDelete(null)
+
+      // Invalidate dashboard cache and refetch stats + properties
+      invalidateCache()
+      await Promise.all([
+        fetchProperties(),
+        fetchStats()
+      ])
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete property')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   // ==================== EFFECTS ====================
   useEffect(() => {
     setMounted(true)
@@ -282,7 +325,7 @@ export default function PropertyVerification() {
       }
       
       if (user.user_type !== 'admin') {
-        router.push('/dashboard')
+        router.push('/admin')
         return
       }
     }
@@ -592,7 +635,7 @@ export default function PropertyVerification() {
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
-                            
+
                             {property.verification_status === 'pending' && (
                               <>
                                 <Button
@@ -612,6 +655,16 @@ export default function PropertyVerification() {
                                 </Button>
                               </>
                             )}
+
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openDeleteDialog(property)}
+                              className="border-red-200 text-red-700 hover:bg-red-50"
+                              title="Delete property"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -864,6 +917,73 @@ export default function PropertyVerification() {
                     }}
                     className="border-gray-200 text-gray-700 hover:bg-gray-50"
                     disabled={isActionInProgress}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialogOpen} onOpenChange={(open) => !open && closeDeleteDialog()}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-700">
+                <Trash2 className="h-5 w-5" />
+                Delete Property
+              </DialogTitle>
+            </DialogHeader>
+
+            {propertyToDelete && (
+              <div className="space-y-4">
+                <div>
+                  <p className="font-medium text-gray-900">{propertyToDelete.title}</p>
+                  <p className="text-sm text-gray-500">{formatAddress(propertyToDelete)}</p>
+                </div>
+
+                <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                  <p className="text-sm text-red-800">
+                    This will <strong>soft-delete</strong> the property. It will be:
+                  </p>
+                  <ul className="text-sm text-red-800 list-disc list-inside mt-2 space-y-1">
+                    <li>Hidden from the public marketplace</li>
+                    <li>Removed from the landlord's listings</li>
+                    <li>Removed from the admin verification queue</li>
+                  </ul>
+                </div>
+
+                <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                  <p className="text-xs text-amber-800">
+                    <strong>Note:</strong> This action is blocked if the property has any active or signed
+                    tenant agreements. You can recover the property later from the database if needed.
+                  </p>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    onClick={handleDelete}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete Property
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={closeDeleteDialog}
+                    className="border-gray-200 text-gray-700 hover:bg-gray-50"
+                    disabled={isDeleting}
                   >
                     Cancel
                   </Button>

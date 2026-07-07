@@ -20,25 +20,31 @@ export default function SignInPage() {
   const callbackUrl = redirectFromUrl || redirectFromStorage || '/properties'
   const error = searchParams?.get('error')
   const errorMessage = searchParams?.get('message')
+  const isReset = searchParams?.get('reset') === 'true'
   const { signIn, signInWithGoogle, loading, user } = useAuth()
   const supabase = createClient()
   
   console.log('🔐 [SIGNIN] Loaded with redirect_to from URL:', redirectFromUrl)
   console.log('🔐 [SIGNIN] Loaded with redirect_to from storage:', redirectFromStorage)
   console.log('🔐 [SIGNIN] Using callback URL:', callbackUrl)
+  console.log('🔐 [SIGNIN] Is reset password mode:', isReset)
   
   const [formData, setFormData] = useState({
     email: "",
-    password: ""
+    password: "",
+    confirmPassword: ""
   })
   const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [apiError, setApiError] = useState<string | null>(null)
+  const [passwordResetSuccess, setPasswordResetSuccess] = useState(false)
 
   // Redirect authenticated users away from signin page
   const [verifyingOnboarding, setVerifyingOnboarding] = useState(false)
-  
+  const [verifyingTenantActivity, setVerifyingTenantActivity] = useState(false)
+
   useEffect(() => {
     if (!loading && user) {
       console.log('🔄 [SIGNIN] User already authenticated, redirecting...')
@@ -48,9 +54,9 @@ export default function SignInPage() {
         } else if (!user.onboarding_completed) {
           // FIX: For established users with unreliable network, verify in database
           // Only redirect to onboarding if database confirms it's incomplete
-          const isNewUser = user.created_at && 
+          const isNewUser = user.created_at &&
             (Date.now() - new Date(user.created_at).getTime()) < 5 * 60 * 1000; // Created less than 5 min ago
-          
+
           if (isNewUser) {
             // New user - go to onboarding
             console.log('👤 [SIGNIN] New landlord user, redirecting to onboarding...')
@@ -59,7 +65,7 @@ export default function SignInPage() {
             // Established user with potentially stale session metadata - verify in database
             console.log('⏳ [SIGNIN] Established landlord user, verifying onboarding status in database...')
             setVerifyingOnboarding(true)
-            
+
             const verifyOnboarding = async () => {
               try {
                 const supabase = createClient()
@@ -68,9 +74,9 @@ export default function SignInPage() {
                   .select('all_steps_completed, submitted_for_review')
                   .eq('landlord_id', user.id)
                   .single()
-                
+
                 console.log('📊 [SIGNIN] Database check result:', data)
-                
+
                 // If onboarding is truly incomplete, go to step 1
                 if (!data?.all_steps_completed || !data?.submitted_for_review) {
                   console.log('🎓 [SIGNIN] Onboarding incomplete, redirecting to step 1...')
@@ -89,7 +95,7 @@ export default function SignInPage() {
                 setVerifyingOnboarding(false)
               }
             }
-            
+
             verifyOnboarding()
           }
         } else {
@@ -99,7 +105,42 @@ export default function SignInPage() {
         if (!user.email_verified) {
           router.replace('/signup/tenant/confirmation')
         } else {
-          router.replace('/tenant')
+          // ✅ FIX: Match the smart redirect logic in AuthContext.signIn() so
+          // both paths agree on the destination and we don't flash between
+          // /tenant and /properties. Returning tenants (have applications
+          // or viewings) → /tenant. New tenants (no activity) → /properties.
+          setVerifyingTenantActivity(true)
+          const checkTenantActivity = async () => {
+            try {
+              const [applicationsResponse, viewingsResponse] = await Promise.allSettled([
+                import('@/lib/api/applications').then(({ applicationsAPI }) => applicationsAPI.getMyApplicationsFast()),
+                import('@/lib/api/viewingRequestsTenant').then(({ viewingRequestsAPI }) => viewingRequestsAPI.getMyRequests())
+              ])
+
+              const hasApplications = applicationsResponse.status === 'fulfilled' &&
+                applicationsResponse.value.success &&
+                applicationsResponse.value.applications.length > 0
+
+              const hasViewings = viewingsResponse.status === 'fulfilled' &&
+                viewingsResponse.value.success &&
+                viewingsResponse.value.data.length > 0
+
+              if (hasApplications || hasViewings) {
+                console.log('🏠 [SIGNIN] Returning tenant (has activity), redirecting to /tenant')
+                router.replace('/tenant')
+              } else {
+                console.log('🏠 [SIGNIN] New tenant (no activity), redirecting to /properties')
+                router.replace('/properties')
+              }
+            } catch (error) {
+              console.warn('⚠️ [SIGNIN] Tenant activity check failed, defaulting to /properties:', error)
+              router.replace('/properties')
+            } finally {
+              setVerifyingTenantActivity(false)
+            }
+          }
+
+          checkTenantActivity()
         }
       } else if (user.user_type === 'admin') {
         router.replace('/admin')
@@ -198,6 +239,61 @@ export default function SignInPage() {
     }
   }
 
+  const validatePasswordResetForm = () => {
+    const newErrors: Record<string, string> = {}
+    
+    if (!formData.password) {
+      newErrors.password = "Password is required"
+    } else if (formData.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters"
+    }
+
+    if (!formData.confirmPassword) {
+      newErrors.confirmPassword = "Confirm password is required"
+    } else if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match"
+    }
+    
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  const handlePasswordResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!validatePasswordResetForm()) return
+    
+    setIsLoading(true)
+    setApiError(null)
+    
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: formData.password
+      })
+
+      if (error) throw error
+
+      console.log('✅ [SIGNIN] Password updated successfully')
+      toast.success('Password updated!', {
+        description: 'You can now sign in with your new password.',
+      })
+      setPasswordResetSuccess(true)
+
+      // Wait a bit and redirect
+      setTimeout(() => {
+        router.replace('/signin')
+      }, 2000)
+    } catch (error: any) {
+      console.error('❌ Password reset error:', error)
+      setApiError(error?.message || 'Failed to update password')
+      toast.error('Password Update Failed', {
+        description: error?.message || 'Please try again.',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -257,6 +353,44 @@ export default function SignInPage() {
     }
   }
 
+  if (passwordResetSuccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden">
+        {/* Background Elements */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-20 left-20 w-64 h-64 bg-orange-200/30 rounded-full blur-3xl animate-pulse"></div>
+          <div className="absolute bottom-20 right-20 w-48 h-48 bg-slate-300/30 rounded-full blur-2xl animate-bounce" style={{animationDelay: '2s', animationDuration: '4s'}}></div>
+        </div>
+
+        <div className="w-full max-w-md relative z-10">
+          <Card className="border-0 shadow-2xl rounded-2xl bg-white">
+            <CardContent className="p-8 text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <CheckCircle className="h-8 w-8 text-green-600" />
+              </div>
+              <h1 className="text-2xl font-bold text-slate-900 mb-2">Password updated!</h1>
+              <p className="text-slate-600 mb-6">You can now sign in with your new password. Redirecting you to sign in...</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
+  // ✅ FIX: While we're checking onboarding/activity before redirecting an
+  // already-authenticated user, show a full-screen loader. Prevents the
+  // flash of the signin form before the redirect fires.
+  if (verifyingOnboarding || verifyingTenantActivity) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-slate-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Signing you in…</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden">
       {/* Background Elements - MATCHING role-selection page */}
@@ -281,8 +415,12 @@ export default function SignInPage() {
               <span className="text-orange-600">Africa</span>
             </div>
           </Link>
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Welcome back</h1>
-          <p className="text-slate-600">Sign in to your account to continue</p>
+          <h1 className="text-3xl font-bold text-slate-900 mb-2">
+            {isReset ? "Reset your password" : "Welcome back"}
+          </h1>
+          <p className="text-slate-600">
+            {isReset ? "Enter your new password below" : "Sign in to your account to continue"}
+          </p>
         </div>
 
           {/* Sign In Form */}
@@ -298,40 +436,42 @@ export default function SignInPage() {
                 </div>
               )}
               
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Email Field */}
-                <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
-                    Email Address
-                  </label>
-            <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="email"
-                      id="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className={`w-full h-12 pl-10 pr-4 rounded-xl border-2 transition-all duration-300 ${
-                        errors.email 
-                          ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-4 focus:ring-red-500/20' 
-                          : 'border-slate-300 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20'
-                      } focus:outline-none text-slate-800 placeholder:text-slate-400`}
-                      placeholder="Enter your email"
-                    />
+              <form onSubmit={isReset ? handlePasswordResetSubmit : handleSubmit} className="space-y-6">
+                {!isReset && (
+                  /* Email Field - Only shown on sign in form */
+                  <div>
+                    <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleInputChange}
+                        className={`w-full h-12 pl-10 pr-4 rounded-xl border-2 transition-all duration-300 ${
+                          errors.email 
+                            ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-4 focus:ring-red-500/20' 
+                            : 'border-slate-300 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20'
+                        } focus:outline-none text-slate-800 placeholder:text-slate-400`}
+                        placeholder="Enter your email"
+                      />
+                    </div>
+                    {errors.email && (
+                      <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
+                        <span className="w-1 h-1 bg-red-600 rounded-full"></span>
+                        {errors.email}
+                      </p>
+                    )}
                   </div>
-                  {errors.email && (
-                    <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
-                      <span className="w-1 h-1 bg-red-600 rounded-full"></span>
-                      {errors.email}
-                    </p>
-                  )}
-              </div>
+                )}
 
                 {/* Password Field */}
                 <div>
                   <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-2">
-                    Password
+                    {isReset ? "New Password" : "Password"}
                   </label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
@@ -362,24 +502,64 @@ export default function SignInPage() {
                       {errors.password}
                     </p>
                   )}
-            </div>
-
-                {/* Remember Me & Forgot Password */}
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 text-orange-600 border-slate-300 rounded focus:ring-orange-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-600">Remember me</span>
-                  </label>
-                  <Link 
-                    href="/forgot-password" 
-                    className="text-sm text-orange-600 hover:text-orange-700 transition-colors duration-200"
-                  >
-                    Forgot password?
-                  </Link>
                 </div>
+
+                {isReset && (
+                  /* Confirm Password Field - Only shown on reset form */
+                  <div>
+                    <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-700 mb-2">
+                      Confirm New Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        value={formData.confirmPassword}
+                        onChange={handleInputChange}
+                        className={`w-full h-12 pl-10 pr-12 rounded-xl border-2 transition-all duration-300 ${
+                          errors.confirmPassword 
+                            ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-4 focus:ring-red-500/20' 
+                            : 'border-slate-300 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20'
+                        } focus:outline-none text-slate-800 placeholder:text-slate-400`}
+                        placeholder="Confirm your new password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors duration-200"
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
+                    {errors.confirmPassword && (
+                      <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
+                        <span className="w-1 h-1 bg-red-600 rounded-full"></span>
+                        {errors.confirmPassword}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {!isReset && (
+                  /* Remember Me & Forgot Password - Only shown on sign in form */
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-orange-600 border-slate-300 rounded focus:ring-orange-500 focus:ring-2"
+                      />
+                      <span className="text-sm text-slate-600">Remember me</span>
+                    </label>
+                    <Link 
+                      href="/forgot-password" 
+                      className="text-sm text-orange-600 hover:text-orange-700 transition-colors duration-200"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
+                )}
 
                 {/* Sign In Button */}
                 <Button
@@ -390,55 +570,74 @@ export default function SignInPage() {
                   {isLoading ? (
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Signing in...
+                      {isReset ? "Updating..." : "Signing in..."}
                     </div>
                   ) : (
-                    "Sign In"
+                    isReset ? "Reset password" : "Sign In"
                   )}
                 </Button>
 
-                {/* Divider */}
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-slate-300"></div>
+                {!isReset && (
+                  <>
+                    {/* Divider */}
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-slate-300"></div>
+                      </div>
+                      <div className="relative flex justify-center text-sm">
+                        <span className="px-2 bg-white text-slate-500">Or continue with</span>
+                      </div>
                   </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-white text-slate-500">Or continue with</span>
-                  </div>
-              </div>
 
-                {/* Social Sign In */}
-                <div className="grid grid-cols-1 gap-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleGoogleSignIn}
-                    disabled={isLoading}
-                    className="h-12 border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl transition-all duration-300"
-                  >
-                    <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                    </svg>
-                    Sign in with Google
-                  </Button>
-                </div>
+                    {/* Social Sign In */}
+                    <div className="grid grid-cols-1 gap-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleGoogleSignIn}
+                        disabled={isLoading}
+                        className="h-12 border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl transition-all duration-300"
+                      >
+                        <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        Sign in with Google
+                      </Button>
+                    </div>
+                  </>
+                )}
             </form>
 
-              {/* Sign Up Link */}
-              <div className="mt-8 text-center">
-                <p className="text-slate-600">
-              Don't have an account?{" "}
-                  <Link 
-                    href="/signup" 
-                    className="text-orange-600 hover:text-orange-700 font-semibold transition-colors duration-200"
-                  >
-                    Sign up for free
-              </Link>
-            </p>
-              </div>
+              {!isReset ? (
+                /* Sign Up Link - Only shown on sign in form */
+                <div className="mt-8 text-center">
+                  <p className="text-slate-600">
+                    Don't have an account?{" "}
+                    <Link 
+                      href="/signup" 
+                      className="text-orange-600 hover:text-orange-700 font-semibold transition-colors duration-200"
+                    >
+                      Sign up for free
+                    </Link>
+                  </p>
+                </div>
+              ) : (
+                /* Sign In Link - Only shown on reset form */
+                <div className="mt-8 text-center">
+                  <p className="text-slate-600">
+                    Remember your password?{" "}
+                    <Link 
+                      href="/signin" 
+                      className="text-orange-600 hover:text-orange-700 font-semibold transition-colors duration-200"
+                    >
+                      Sign in here
+                    </Link>
+                  </p>
+                </div>
+              )}
           </CardContent>
         </Card>
 

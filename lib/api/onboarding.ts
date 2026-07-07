@@ -22,6 +22,12 @@ export interface CompleteOnboardingPayload {
   bank_name: string
   account_number: string
   account_name: string
+  id_document_url?: string
+  selfie_url?: string
+  nin_document_url?: string
+  bank_statement_url?: string
+  guarantor_id_url?: string
+  insurance_document_url?: string
 }
 
 export interface OnboardingResponse {
@@ -55,6 +61,108 @@ export interface AdminQueueApplication {
 }
 
 // ============================================================================
+// FEATURE FLAGS
+// ============================================================================
+
+export interface FeatureFlags {
+  enable_property_step: boolean
+  total_steps: number
+  skipped_steps: number[]
+  active_steps: number[]
+}
+
+/**
+ * Get feature flags from backend
+ * Used by frontend to determine which onboarding steps to show
+ */
+export const getFeatureFlags = async (): Promise<FeatureFlags> => {
+  try {
+    console.log('📤 [API] Fetching onboarding feature flags...')
+    const response = await apiClient.get('/api/v1/onboarding/feature-flags')
+
+    console.log('✅ [API] Feature flags received:', response.data)
+    return {
+      enable_property_step: response.data.data?.enable_property_step ?? true,
+      total_steps: response.data.data?.total_steps ?? 4,
+      skipped_steps: response.data.data?.skipped_steps ?? [],
+      active_steps: response.data.data?.active_steps ?? [1, 2, 3, 4]
+    }
+  } catch (error: any) {
+    console.warn('⚠️ [API] Failed to fetch feature flags, using defaults:', error.message)
+    // Default to property step disabled based on previous config
+    return {
+      enable_property_step: false,
+      total_steps: 3,
+      skipped_steps: [3],
+      active_steps: [1, 2, 4]
+    }
+  }
+}
+
+/**
+ * Upload onboarding document to backend storage
+ * Fallback to direct Supabase upload if backend fails
+ */
+export const uploadOnboardingDocument = async (
+  file: File
+): Promise<{ success: boolean; path: string; filename: string; size: number; content_type: string }> => {
+  try {
+    console.log('📤 [API] Uploading onboarding document:', file.name)
+    
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const response = await apiClient.post('/api/v1/onboarding/upload-document', formData)
+    
+    console.log('✅ [API] Document uploaded successfully:', response.data)
+    return response.data
+  } catch (error: any) {
+    console.error('❌ [API] Error uploading onboarding document (backend), trying Supabase directly:', error)
+    
+    // Fallback to direct Supabase upload
+    try {
+      console.log('📤 [API] Falling back to direct Supabase upload')
+      const supabase = createClient()
+      
+      // Generate a unique file path
+      const randomId = Math.random().toString(36).substring(2, 14)
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const filePath = `onboarding/${Date.now()}-${randomId}-${safeFileName}`
+      
+      console.log('📤 [API] Uploading to Supabase path:', filePath)
+      
+      const { data, error } = await supabase.storage
+        .from('landlord-verification')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+      
+      if (error) {
+        console.error('❌ [API] Supabase upload failed:', error)
+        throw error
+      }
+      
+      console.log('✅ [API] Document uploaded to Supabase successfully:', data)
+      
+      return {
+        success: true,
+        path: data.path,
+        filename: safeFileName,
+        size: file.size,
+        content_type: file.type
+      }
+    } catch (supabaseError: any) {
+      console.error('❌ [API] All upload methods failed:', supabaseError)
+      throw new Error(
+        supabaseError.message || 
+        'Failed to upload document'
+      )
+    }
+  }
+}
+
+// ============================================================================
 // API FUNCTIONS
 // ============================================================================
 
@@ -83,7 +191,13 @@ export const submitCompleteOnboarding = async (
       company_address: payload.company_address || null,
       bank_name: payload.bank_name,
       account_number: payload.account_number,
-      account_name: payload.account_name
+      account_name: payload.account_name,
+      id_document_url: payload.id_document_url || null,
+      selfie_url: payload.selfie_url || null,
+      nin_document_url: payload.nin_document_url || null,
+      bank_statement_url: payload.bank_statement_url || null,
+      guarantor_id_url: payload.guarantor_id_url || null,
+      insurance_document_url: payload.insurance_document_url || null
     })
     
     console.log(' [API] Backend response:', response.data)

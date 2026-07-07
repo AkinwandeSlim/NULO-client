@@ -24,7 +24,7 @@ import { getOnboardingStatus } from "@/lib/api/onboarding"
 
 export default function VerificationPending() {
   const router = useRouter()
-  const { user, loading } = useAuth()
+  const { user, loading, refreshUserData } = useAuth()
 
   const [isChecking, setIsChecking] = useState(false)
   const [verificationStatus, setVerificationStatus] = useState<'pending' | 'in_review' | 'approved' | 'rejected'>('pending')
@@ -92,6 +92,19 @@ export default function VerificationPending() {
     } finally {
       setIsChecking(false)
     }
+  }
+
+  // ── Navigate to dashboard with fresh user data ──
+  const navigateToDashboard = async () => {
+    console.log('🔄 [VERIFICATION] Refreshing user data before navigation...')
+    try {
+      // Refresh user data to get latest verification_status from database
+      await refreshUserData()
+      console.log('✅ [VERIFICATION] User data refreshed, navigating to dashboard')
+    } catch (error) {
+      console.warn('⚠️ [VERIFICATION] Failed to refresh user data, navigating anyway:', error)
+    }
+    router.push('/landlord/overview')
   }
 
   if (loading) {
@@ -291,7 +304,7 @@ export default function VerificationPending() {
                     <FileText className="h-4 w-4 mr-2" />
                     Reapply
                   </Button>
-                  <Button variant="outline" onClick={() => router.push('/landlord/overview')} className="flex-1 border-slate-300 text-slate-700 hover:border-slate-500 hover:bg-slate-50">
+                  <Button variant="outline" onClick={navigateToDashboard} className="flex-1 border-slate-300 text-slate-700 hover:border-slate-500 hover:bg-slate-50">
                     <Home className="h-4 w-4 mr-2" />
                     Dashboard
                   </Button>
@@ -305,7 +318,7 @@ export default function VerificationPending() {
                       <><RefreshCw className="h-4 w-4 mr-2" />Check Status</>
                     )}
                   </Button>
-                  <Button variant="outline" onClick={() => router.push('/landlord/overview')} className="flex-1 border-orange-300 text-orange-700 hover:border-orange-500 hover:bg-orange-50">
+                  <Button variant="outline" onClick={navigateToDashboard} className="flex-1 border-orange-300 text-orange-700 hover:border-orange-500 hover:bg-orange-50">
                     <Home className="h-4 w-4 mr-2" />
                     Go to Dashboard
                   </Button>

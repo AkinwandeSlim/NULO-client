@@ -36,8 +36,9 @@ import { useAuth } from "@/contexts/AuthContext"
 import { applicationsAPI, type Application } from "@/lib/api/applications"
 import { agreementsAPI } from "@/lib/api/agreements"
 import { propertiesAPI } from "@/lib/api/properties"
-import { formatNGN, calculateRentalBreakdown } from "@/lib/utils/rentalCalculations"
+import { formatNGN, calculateRentalBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { toast } from "sonner"
+import { normalizeAppStatus } from "@/lib/utils/applicationStatus"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed='
@@ -134,6 +135,12 @@ export default function LandlordApplicationDetailPage() {
   const [showRejectPanel, setShowRejectPanel] = useState(false)
   const [rejectionReason, setRejectionReason] = useState("")
   const [hasMarkedViewed, setHasMarkedViewed] = useState(false)
+  // BUG-025 FIX: state for lazily fetching a signed URL when the server's
+  // initial enrichment didn't produce one (e.g. legacy row, or signed URL
+  // generation failed at fetch time).
+  const [signingPath, setSigningPath] = useState<string | null>(null)
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
+  const [signedUrlErrors, setSignedUrlErrors] = useState<Record<string, string>>({})
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -148,7 +155,12 @@ export default function LandlordApplicationDetailPage() {
       try {
         setIsLoading(true)
         const app = await applicationsAPI.getById(applicationId)
-        setApplication(app)
+        // Normalize server-side status to UI-friendly "pending"
+        const normalizedApp = {
+          ...app,
+          status: normalizeAppStatus(app.status),
+        }
+        setApplication(normalizedApp)
         // Mark as viewed on backend via the getById call
         setHasMarkedViewed(true)
       } catch (error) {
@@ -173,7 +185,11 @@ export default function LandlordApplicationDetailPage() {
     try {
       // 1. Approve the application
       const updated = await applicationsAPI.approve(application.id)
-      setApplication(updated)
+      const normalizedUpdated = {
+        ...updated,
+        status: normalizeAppStatus(updated.status),
+      }
+      setApplication(normalizedUpdated)
       setShowApproveConfirm(false)
       
       // 2. Fetch the linked agreement
@@ -199,7 +215,12 @@ export default function LandlordApplicationDetailPage() {
       }
     } catch (error: any) {
       console.error("Failed to approve application:", error)
-      toast.error(error.response?.data?.detail || "Failed to approve application")
+      const detail =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message ||
+        "Failed to approve application"
+      toast.error(detail)
     } finally {
       setIsApproving(false)
     }
@@ -212,13 +233,41 @@ export default function LandlordApplicationDetailPage() {
     setIsRejecting(true)
     try {
       const updated = await applicationsAPI.reject(application.id, rejectionReason)
-      setApplication(updated)
+      const normalizedUpdated = {
+        ...updated,
+        status: normalizeAppStatus(updated.status),
+      }
+      setApplication(normalizedUpdated as any)
       setShowRejectPanel(false)
       setRejectionReason("")
-      toast.success(`Application rejected for ${application.user?.full_name || 'tenant'}`)
+      // If the backend reports the application was already rejected (idempotent
+      // path), surface that as an info toast rather than a misleading success.
+      const wasAlreadyRejected = (updated as any)?.already_rejected === true
+      toast[wasAlreadyRejected ? 'info' : 'success'](
+        wasAlreadyRejected
+          ? `Application was already rejected for ${application.user?.full_name || 'tenant'}`
+          : `Application rejected for ${application.user?.full_name || 'tenant'}`
+      )
     } catch (error: any) {
-      console.error("Failed to reject application:", error)
-      toast.error(error.response?.data?.detail || "Failed to reject application")
+      // Verbose log so the backend's actual response is visible in console.
+      console.error("❌ [REJECT] Full axios error:", {
+        message: error?.message,
+        status: error?.response?.status,
+        statusText: error?.response?.statusText,
+        responseData: error?.response?.data,
+        responseHeaders: error?.response?.headers,
+        applicationId: application?.id,
+        applicationStatus: application?.status,
+        rejectionReason,
+      })
+      // Surface the actual backend detail when present, otherwise fall back.
+      const detail =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        "Failed to reject application"
+      toast.error(detail)
     } finally {
       setIsRejecting(false)
     }
@@ -265,9 +314,61 @@ export default function LandlordApplicationDetailPage() {
 
   const tenant = application.user
   const property = application.property
-  const incomeRatio = application.monthly_income && property?.price 
-    ? application.monthly_income / property.price 
+  const incomeRatio = application.monthly_income && property?.price
+    ? application.monthly_income / property.price
     : 0
+
+  // BUG-025 FIX: produce a human-friendly label for a document entry.
+  // We look at the filename returned by the server and try to match it
+  // against the four document fields the application form uses:
+  //   idDocument, proofOfIncome, bankStatement, employmentLetter
+  // (the upload endpoint writes `{ts}-{uuid12}-{safeName}` so the
+  // original name is still recoverable from the path).
+  const getDocumentLabel = (doc: any, fallbackIndex: number): string => {
+    const filename: string =
+      (typeof doc === "object" && doc.filename) ||
+      (typeof doc === "string" ? doc.split("/").pop() : "") ||
+      `Document ${fallbackIndex + 1}`
+
+    const lc = filename.toLowerCase()
+    if (lc.includes("id") || lc.includes("passport") || lc.includes("license") || lc.includes("jamb")) {
+      return "ID / Passport"
+    }
+    if (lc.includes("income") || lc.includes("payroll") || lc.includes("salary") || lc.includes("payslip")) {
+      return "Proof of Income"
+    }
+    if (lc.includes("bank") || lc.includes("statement")) {
+      return "Bank Statement"
+    }
+    if (lc.includes("employment") || lc.includes("letter") || lc.includes("offer")) {
+      return "Employment Letter"
+    }
+    // Strip noisy prefix `{ts}-{uuid12}-` so the user sees a clean name
+    return filename.replace(/^\d+-[a-f0-9]{12}-/, "")
+  }
+
+  // BUG-025 FIX: request a fresh signed URL for a path that came back
+  // without one. Used as a fallback in the Documents section.
+  const handleFetchSignedUrl = async (path: string) => {
+    if (!application || !path) return
+    setSigningPath(path)
+    try {
+      const { url } = await applicationsAPI.getDocumentSignedUrl(application.id, path)
+      setSignedUrls((prev) => ({ ...prev, [path]: url }))
+      setSignedUrlErrors((prev) => {
+        const next = { ...prev }
+        delete next[path]
+        return next
+      })
+      // Open in new tab immediately so the landlord doesn't need a second click
+      window.open(url, "_blank", "noopener,noreferrer")
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.message || "Could not generate download link"
+      setSignedUrlErrors((prev) => ({ ...prev, [path]: detail }))
+    } finally {
+      setSigningPath(null)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
@@ -577,26 +678,98 @@ export default function LandlordApplicationDetailPage() {
               </DetailSection>
             )}
 
-            {/* Documents */}
+            {/* Documents — BUG-025 FIX: render with friendly labels + signed-URL fallback */}
             {application.documents && application.documents.length > 0 && (
               <DetailSection title="Documents Provided">
-                <div className="flex flex-wrap gap-2">
-                  {application.documents.map((url, idx) => {
-                    const filename = url.split('/').pop() || `Document ${idx + 1}`
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {application.documents.map((doc, idx) => {
+                    // Server may return either:
+                    //   - a string (legacy placeholder URL or already-signed URL)
+                    //   - an object { path, url, filename }
+                    const isObject = doc && typeof doc === "object"
+                    const rawPath: string | null = isObject
+                      ? (doc as any).path
+                      : null
+                    const initialUrl: string | null | undefined = isObject
+                      ? (doc as any).url
+                      : (doc as string)
+                    const friendlyLabel = getDocumentLabel(doc, idx)
+                    // Lazily fetched signed URL (if user clicked the fallback button)
+                    const fallbackUrl = rawPath ? signedUrls[rawPath] : undefined
+                    const viewableUrl = initialUrl || fallbackUrl || null
+
+                    if (!viewableUrl && rawPath) {
+                      // Path exists but we couldn't sign it — show a button to retry
+                      const isLoading = signingPath === rawPath
+                      const errorMsg = signedUrlErrors[rawPath]
+                      return (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg"
+                        >
+                          <span className="inline-flex items-center gap-2 min-w-0">
+                            <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                            <span className="text-xs text-slate-700 truncate">{friendlyLabel}</span>
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleFetchSignedUrl(rawPath)}
+                            disabled={isLoading}
+                            className="text-xs h-7"
+                          >
+                            {isLoading ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                Loading
+                              </>
+                            ) : (
+                              <>
+                                <Download className="h-3 w-3 mr-1" />
+                                {errorMsg ? "Retry" : "Open"}
+                              </>
+                            )}
+                          </Button>
+                          {errorMsg && (
+                            <span className="text-[10px] text-red-500 truncate max-w-[140px]" title={errorMsg}>
+                              {errorMsg}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    }
+
+                    if (!viewableUrl) {
+                      // No path AND no URL — likely a legacy placeholder row
+                      return (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-500"
+                          title="Document is no longer available"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          <span className="text-xs truncate max-w-[150px]">{friendlyLabel} (unavailable)</span>
+                        </span>
+                      )
+                    }
+
                     return (
                       <a
                         key={idx}
-                        href={url}
+                        href={viewableUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition"
                       >
-                        <Download className="h-3.5 w-3.5 text-slate-500" />
-                        <span className="text-xs text-slate-600 truncate max-w-[150px]">{filename}</span>
+                        <Download className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                        <span className="text-xs text-slate-600 truncate">{friendlyLabel}</span>
                       </a>
                     )
                   })}
                 </div>
+                <p className="text-[11px] text-slate-400 mt-3">
+                  Signed links expire after 1 hour for security. Click again to refresh.
+                </p>
               </DetailSection>
             )}
 
@@ -660,7 +833,8 @@ export default function LandlordApplicationDetailPage() {
                     <p className="text-blue-600 font-semibold text-sm mb-2">Rental Breakdown</p>
                     {(() => {
                       const breakdown = calculateRentalBreakdown(property)
-                      const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
+                      const { monthlyRent, annualRent, periodRent, cautionFee, platformFee, serviceCharge, totalDue, periodLabel, paymentFrequency } = breakdown
+                      const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
                       return (
                         <div className="space-y-1 text-xs">
                           <div className="flex justify-between">
@@ -668,8 +842,8 @@ export default function LandlordApplicationDetailPage() {
                             <span className="font-semibold">{formatNGN(monthlyRent)}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span>Annual Rent (12 months):</span>
-                            <span className="font-semibold">{formatNGN(annualRent)}</span>
+                            <span>{periodLabel}:</span>
+                            <span className="font-semibold">{formatNGN(periodRent)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Security Deposit (2 months):</span>

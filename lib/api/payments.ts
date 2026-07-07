@@ -1,380 +1,334 @@
 /**
- * Payments API Module
- * Handles all payment-related API calls to FastAPI backend
- * Uses the same pattern as applications.ts with apiClient
+ * Payments API Module -- Nomba-backed
+ * ====================================
+ * Replaces the Paystack-backed module of the same name.
+ * All Paystack endpoints are now 410 Gone on the backend (see
+ * `server/app/routes/payments.py` shim). This client only exposes
+ * the Nomba virtual-account flow + manual landlord release.
+ *
+ * Backend endpoints used (all under /api/v1):
+ *   - GET    /agreements/tenant/my-agreements   (list tenant agreements w/ VA)
+ *   - GET    /agreements/{id}                  (agreement detail + VA + history)
+ *   - POST   /nomba/provision-nomba            (create a NUBAN for an agreement)
+ *   - GET    /nomba/payment_status              (transfer history for one VA)
+ *   - POST   /agreements/{id}/disburse         (release funds to landlord)
+ *   - GET    /disbursements/{merchant_tx_ref}  (check payout status)
+ *   - GET    /landlord/overview                (landlord dashboard data incl. payments)
  */
 
-import apiClient from './client';
+import apiClient from './client'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type PaymentStatus = "pending" | "held" | "released" | "refunded" | "failed"
-
-export interface Transaction {
-  id: string
-  tenant_id: string
-  landlord_id: string
+/**
+ * AgreementPaymentRow is the unit displayed on the tenant payments list and
+ * the landlord received-payments list. It's a JOIN-shaped view of:
+ *   agreements  ⟕  virtual_account_transfers  ⟕  transactions (disbursements)
+ */
+export interface AgreementPaymentRow {
+  agreement_id: string
   property_id: string
-  agreement_id: string | null
-  application_id: string | null
-  amount: number           // NGN
-  currency: string
-  status: PaymentStatus
-  transaction_type: "rent_payment" | "security_deposit" | "guarantee_contribution"
-  payment_gateway: string
-  paystack_ref: string
-  paystack_access_code: string | null
-  held_at: string | null
-  released_at: string | null
-  refunded_at: string | null
-  notes: string | null
+  property_title: string
+  property_city: string | null
+  property_state: string | null
+  property_image: string | null
+  tenant_id: string
+  tenant_name: string
+  landlord_id: string
+  landlord_name: string
+  landlord_bank_account_number: string | null
+  landlord_bank_name: string | null
+  landlord_account_name: string | null
+  landlord_bank_code: string | null
+  rent_amount: number
+  expected_payment_amount: number
+  total_received_amount: number
+  payment_frequency: "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL" | null
+  status: "DRAFT" | "SIGNED" | "ACTIVE" | "EXPIRED" | "TERMINATED"
+  reconciliation_status: "PENDING" | "FULL_PAYMENT" | "UNDERPAYMENT" | "OVERPAYMENT" | null
+  // Virtual account details
+  virtual_account_number: string | null
+  virtual_account_name: string | null
+  nomba_account_ref: string | null
+  // Disbursement
+  disbursement_status: "pending" | "released" | "failed" | "not_started" | null
+  disbursement_merchant_tx_ref: string | null
+  disbursement_amount: number | null
+  // Timestamps
+  lease_start_date: string | null
+  lease_end_date: string | null
   created_at: string
   updated_at: string
-  // joined
-  property?: {
-    id: string
-    title: string
-    city: string | null
-    state: string | null
-    images: string[] | null
-  }
-  tenant?: {
-    id: string
-    full_name: string
-    email: string
-    phone_number: string | null
-    avatar_url?: string | null
-  }
 }
 
-export interface InitiatePaymentResponse {
+export interface TransferHistoryEntry {
+  id: string
+  account_ref: string
+  account_number: string | null
+  amount_received: number
+  currency: string
+  sender_name: string | null
+  sender_bank: string | null
+  reconciliation_result: "FULL_PAYMENT" | "UNDERPAYMENT" | "OVERPAYMENT" | null
+  transaction_type: string | null
+  event_type: string | null
+  nomba_request_id: string | null
+  nomba_transaction_id: string | null
+  created_at: string
+}
+
+export interface ProvisionResponse {
   success: boolean
-  authorization_url: string
-  reference: string
-  transaction_id: string
+  account_number: string
+  account_name: string
+  account_ref: string
+  error?: string
+}
+
+export interface DisburseRequest {
+  source_transfer_id: string
+  force?: boolean
+  retry_count?: number
+}
+
+export interface DisburseResponse {
+  status: "pending" | "released" | "failed"
+  merchant_tx_ref: string
   amount_ngn: number
-  error?: string
+  nomba_status: string
+  transaction_id: string
 }
 
-export interface PaymentStatusResponse {
-  success: boolean
-  payment: Transaction
-  error?: string
+export interface DisbursementStatus {
+  merchant_tx_ref: string
+  status: string
+  amount_ngn: number
+  nomba_transfer_id: string | null
+  source_transfer_id: string | null
+  agreement_id: string
+  created_at: string | null
+  released_at: string | null
+  refunded_at: string | null
 }
 
 export interface PaymentsListResponse {
   success: boolean
-  payments: Transaction[]
+  payments: AgreementPaymentRow[]
   error?: string
 }
 
-// 🔐 Webhook Testing Types (QA Admin Only)
-export interface WebhookLog {
-  timestamp: string
-  signature_header_received: string
-  signature_valid: boolean
-  event_type: string
-  paystack_ref: string
-  reason: string
+export interface AgreementDetailResponse {
+  success: boolean
+  agreement: AgreementPaymentRow
+  transfer_history: TransferHistoryEntry[]
+  error?: string
 }
 
-export interface WebhookLogsResponse {
-  success: boolean
-  total_attempts: number
-  logs: WebhookLog[]
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenant API
+// ─────────────────────────────────────────────────────────────────────────────
 
-export interface WebhookTestResponse {
-  success: boolean
-  message: string
-  details: {
-    signature_header_received: string
-    expected: string
-    match: boolean
-    test_type?: 'valid' | 'invalid'
-    event_type?: string
-    paystack_ref?: string
+/**
+ * List the signed tenant agreements with their NUBAN + payment state.
+ * The backend endpoint is /agreements/tenant/my-agreements (no auth scope on
+ * the prefix; tenant identity comes from the Supabase JWT).
+ */
+// ─────────────────────────────────────────────────────────────────────────────
+// Normalizer: agreement row → AgreementPaymentRow
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The backend `GET /api/v1/agreements/` returns enriched agreement rows whose
+// top-level columns come straight from the `agreements` table (id,
+// rent_amount, expected_payment_amount, total_received_amount,
+// reconciliation_status, nomba_account_ref, virtual_account_number,
+// virtual_account_name, payment_frequency, status, lease_start_date,
+// lease_end_date, created_at, updated_at — see database/newupdateDB.csv) plus
+// nested `tenant`/`landlord`/`property` objects. Property fields (title, city,
+// state) are NOT top-level — they live on `row.property`.
+//
+// The UI historically consumes a JOIN-shaped `AgreementPaymentRow`
+// (agreement_id, property_title, tenant_name, etc.), so we normalize here so
+// every consumer can keep reading those flattened field names. This is also
+// why `key={row.agreement_id}` and `router.push(\`/tenant/payments/${id}\)`
+// previously resolved to `undefined` → the rows had no `agreement_id`.
+
+function normalizeAgreementRow(a: any): AgreementPaymentRow {
+  const property = a?.property ?? null
+  const tenant = a?.tenant ?? null
+  const landlord = a?.landlord ?? null
+  return {
+    agreement_id: a?.id ?? a?.agreement_id ?? '',
+    property_id: a?.property_id ?? '',
+    property_title: property?.title ?? a?.property_title ?? '',
+    property_city: property?.city ?? a?.property_city ?? null,
+    property_state: property?.state ?? a?.property_state ?? null,
+    property_image: property?.images?.[0] ?? property?.image_url ?? a?.property_image ?? null,
+    tenant_id: a?.tenant_id ?? '',
+    tenant_name: tenant?.full_name ?? a?.tenant_name ?? '',
+    landlord_id: a?.landlord_id ?? '',
+    landlord_name: landlord?.full_name ?? a?.landlord_name ?? '',
+    landlord_bank_account_number: landlord?.bank_account_number ?? a?.landlord_bank_account_number ?? null,
+    landlord_bank_name: landlord?.bank_name ?? a?.landlord_bank_name ?? null,
+    landlord_account_name: landlord?.account_name ?? a?.landlord_account_name ?? null,
+    landlord_bank_code: landlord?.bank_code ?? a?.landlord_bank_code ?? null,
+    rent_amount: Number(a?.rent_amount ?? 0),
+    expected_payment_amount: Number(a?.expected_payment_amount ?? 0),
+    total_received_amount: Number(a?.total_received_amount ?? 0),
+    payment_frequency: (a?.payment_frequency ?? null) as AgreementPaymentRow['payment_frequency'],
+    status: (a?.status ?? 'DRAFT') as AgreementPaymentRow['status'],
+    reconciliation_status: (a?.reconciliation_status ?? null) as AgreementPaymentRow['reconciliation_status'],
+    virtual_account_number: a?.virtual_account_number ?? null,
+    virtual_account_name: a?.virtual_account_name ?? null,
+    nomba_account_ref: a?.nomba_account_ref ?? null,
+    disbursement_status: (a?.disbursement_status ?? null) as AgreementPaymentRow['disbursement_status'],
+    disbursement_merchant_tx_ref: a?.disbursement_merchant_tx_ref ?? null,
+    disbursement_amount: a?.disbursement_amount ? Number(a.disbursement_amount) : null,
+    lease_start_date: a?.lease_start_date ?? null,
+    lease_end_date: a?.lease_end_date ?? null,
+    created_at: a?.created_at ?? '',
+    updated_at: a?.updated_at ?? '',
   }
 }
 
-export interface WebhookClearResponse {
-  success: boolean
-  message: string
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// API methods
-// ─────────────────────────────────────────────────────────────────────────────
-
 export const paymentsAPI = {
   /**
-   * Initiate a Paystack payment for a signed agreement.
-   * Returns authorization_url — redirect the tenant there immediately.
-   * Called from /tenant/payments/new
+   * Get the current tenant's payment list (one row per active agreement).
+   * Each row carries the NUBAN, expected amount, and disbursement state.
+   *
+   * Backend: GET /api/v1/agreements/ (JWT-scoped — tenants see their own).
    */
-  initiate: async (agreementId: string): Promise<InitiatePaymentResponse> => {
-    const response = await apiClient.post<InitiatePaymentResponse>('/api/v1/payments/initiate', {
-      agreement_id: agreementId,
-    });
-    return response.data;
+  async getMyPayments(): Promise<PaymentsListResponse> {
+    const { data } = await apiClient.get('/api/v1/agreements/', {
+      timeout: 15000 // 15 seconds - fail fast for better UX
+    })
+    const agreements = data.agreements ?? data.payments ?? []
+    // Normalize enriched agreement rows into the flattened AgreementPaymentRow
+    // shape the UI consumes (agreement_id, property_title, tenant_name, ...).
+    // Without this, `row.agreement_id` is undefined → React key warnings and
+    // `/tenant/payments/undefined` navigation.
+    return { success: true, payments: agreements.map(normalizeAgreementRow) }
   },
 
   /**
-   * Poll payment status by Paystack reference.
-   * Called from /tenant/payments/callback after Paystack redirects back.
-   * status === "released" means webhook has confirmed payment.
-   * status === "pending"  means webhook hasn't fired yet — poll again.
-   * status === "failed"   means payment failed.
+   * Get the landlord's received payments list.
+   * Same /api/v1/agreements/ endpoint — landlord scope comes from the JWT,
+   * so the backend returns agreements for their properties.
+   * Slow endpoint — needs 60s timeout like getMyPayments.
    */
-  getStatusByReference: async (reference: string): Promise<PaymentStatusResponse> => {
-    const response = await apiClient.get<PaymentStatusResponse>(`/api/v1/payments/status?reference=${encodeURIComponent(reference)}`);
-    return response.data;
+  async getReceived(): Promise<PaymentsListResponse> {
+    const { data } = await apiClient.get('/api/v1/agreements/', {
+      timeout: 60000 // 60 seconds - slow endpoint
+    })
+    const agreements = data.agreements ?? data.payments ?? []
+    return { success: true, payments: agreements.map(normalizeAgreementRow) }
   },
 
   /**
-   * Tenant's full payment history.
-   * Called from /tenant/payments
+   * Alias for getReceived — accepts an optional limit (ignored; the backend
+   * returns the full landlord-scoped list) for callers that pass one.
    */
-  getMyPayments: async (): Promise<PaymentsListResponse> => {
-    const response = await apiClient.get<PaymentsListResponse>('/api/v1/payments/my-payments');
-    return response.data;
+  async getReceivedPayments(_limit?: number): Promise<PaymentsListResponse> {
+    return this.getReceived()
   },
 
   /**
-   * Landlord's received payments.
-   * Called from /landlord/payments
+   * Get full detail for a single agreement including NUBAN + transfer history.
+   * Backend: GET /api/v1/agreements/{agreement_id}
    */
-  getReceivedPayments: async (limit: number = 50): Promise<PaymentsListResponse> => {
-    const response = await apiClient.get<PaymentsListResponse>(`/api/v1/payments/received?limit=${limit}`, {
-      timeout: 60000, // allow a bit more time for dashboard data fetching
-    });
-    return response.data;
-  },
-
-  /**
-   * Single transaction detail by ID.
-   * Accessible by the tenant or landlord on the transaction.
-   */
-  getById: async (transactionId: string): Promise<Transaction> => {
-    const response = await apiClient.get<PaymentStatusResponse>(`/api/v1/payments/${transactionId}`);
-    return response.data.payment;
-  },
-
-  /**
-   * Dev only: Manually confirm a payment by triggering webhook simulation.
-   * Used for localhost testing since Paystack webhooks can't reach localhost.
-   * POST /api/v1/payments/confirm-webhook-manually?reference=NULO-...
-   */
-  confirmWebhookManually: async (reference: string): Promise<{ success: boolean; message?: string; detail?: string }> => {
-    const response = await apiClient.post<{ success: boolean; message?: string; detail?: string }>(
-      `/api/v1/payments/confirm-webhook-manually?reference=${encodeURIComponent(reference)}`,
-      {}
-    );
-    return response.data;
-  },
-
-  /**
-   * Confirm payment immediately for live server callback.
-   * Used when tenant clicks "Confirm Payment" button on callback page.
-   * Works on both dev and live servers (backend checks auth + user ownership).
-   * POST /api/v1/payments/confirm-webhook-manually?reference=NULO-...
-   */
-  confirmPaymentImmediately: async (reference: string): Promise<PaymentStatusResponse> => {
-    const response = await apiClient.post<any>(
-      `/api/v1/payments/confirm-webhook-manually?reference=${encodeURIComponent(reference)}`,
-      {}
-    );
-    
-    // The backend only returns success/message, so we need to re-fetch the transaction
-    if (response.data.success) {
-      // Fetch updated transaction status
-      const statusResponse = await apiClient.get<PaymentStatusResponse>(
-        `/api/v1/payments/status?reference=${encodeURIComponent(reference)}`
-      );
-      return statusResponse.data;
-    }
-    
-    throw new Error(response.data.message || response.data.detail || 'Failed to confirm payment');
-  },
-
-  // ───────────────────────────────────────────────────────────────────────────────
-  // 🔐 Webhook Testing (QA Admin Only)
-  // ───────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Get recent webhook test attempts with HMAC validation results
-   * Admin-only endpoint for QA testing
-   * 
-   * @returns Array of webhook log entries with signature validation details
-   */
-  getWebhookLogs: async (): Promise<WebhookLog[]> => {
-    console.log('📤 [PAYMENTS API] Fetching webhook test logs...');
-    
-    try {
-      const response = await apiClient.get<WebhookLogsResponse>(
-        '/api/v1/payments/webhook-logs'
-      );
-      
-      console.log('✅ [PAYMENTS API] Webhook logs retrieved:', {
-        total_attempts: response.data.total_attempts,
-        logs_count: response.data.logs.length
-      });
-      
-      return response.data.logs;
-    } catch (error: any) {
-      console.error('❌ [PAYMENTS API] Error fetching webhook logs:', error);
-      
-      // Provide better error messages
-      if (error.response?.status === 401) {
-        throw new Error('Unauthorized. Please log in again.');
-      }
-      if (error.response?.status === 403) {
-        throw new Error('Access denied. Admin privileges required.');
-      }
-      
-      throw new Error(
-        error.response?.data?.detail || 
-        error.response?.data?.message ||
-        'Failed to fetch webhook logs'
-      );
+  async getAgreementDetail(agreementId: string): Promise<AgreementDetailResponse> {
+    const { data } = await apiClient.get(`/api/v1/agreements/${agreementId}`)
+    const rawAgreement = data.agreement ?? data
+    return {
+      success: true,
+      // Normalize so the detail page can read flattened fields
+      // (property_title, property_city, landlord_name, agreement_id, ...)
+      // instead of the nested property/landlord objects the router returns.
+      agreement: normalizeAgreementRow(rawAgreement),
+      transfer_history: data.transfer_history ?? [],
     }
   },
 
   /**
-   * Test webhook signature validation with invalid signature
-   * Sends a test webhook that will be rejected and logged
-   * Admin-only endpoint for QA testing
-   * 
-   * @returns Test result with signature comparison details
+   * Provision a NUBAN for an agreement if one does not already exist.
+   * Idempotent on the backend -- safe to retry.
+   * Backend: POST /api/v1/agreements/{agreement_id}/provision-nomba
    */
-  testWebhookSignature: async (
-    eventType: string = 'charge.success',
-    invalidSignature: string = 'FAKE_INVALID_SIGNATURE_FOR_QA_TESTING'
-  ): Promise<WebhookTestResponse> => {
-    console.log('📤 [PAYMENTS API] Testing webhook with INVALID signature...');
-    
-    try {
-      const response = await apiClient.post<WebhookTestResponse>(
-        '/api/v1/payments/test-webhook?test_type=invalid',
-        {
-          event: eventType,
-          signature: invalidSignature,
-        }
-      );
-      
-      console.log('✅ [PAYMENTS API] Invalid signature test completed:', {
-        success: response.data.success,
-        message: response.data.message,
-        match: response.data.details?.match
-      });
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ [PAYMENTS API] Error testing invalid signature:', error);
-      
-      // Provide better error messages
-      if (error.response?.status === 401) {
-        throw new Error('Unauthorized. Please log in again.');
-      }
-      if (error.response?.status === 403) {
-        throw new Error('Access denied. Admin privileges required.');
-      }
-      
-      throw new Error(
-        error.response?.data?.detail || 
-        error.response?.data?.message ||
-        'Failed to test webhook signature'
-      );
-    }
+  async provisionNomba(agreementId: string): Promise<ProvisionResponse> {
+    const { data } = await apiClient.post(
+      `/api/v1/agreements/${agreementId}/provision-nomba`,
+    )
+    return data
   },
 
   /**
-   * Test webhook signature validation with a VALID signature
-   * Backend generates the correct HMAC-SHA512 signature and verifies it
-   * Admin-only endpoint for QA testing
-   * 
-   * @returns Test result confirming valid signature acceptance
+   * Pull the live transfer history for an agreement's NUBAN from Nomba.
+   * Used to render the "Recent payments" table on the agreement detail page.
+   *
+   * Backend: GET /api/v1/agreements/{agreement_id}/payment-status
+   * The backend looks up the (suffixed) account_ref server-side from the
+   * agreement row, so callers should pass the AGREEMENT ID, not the raw
+   * account_ref. (Legacy callers that pass a "{uuid}-SUB" ref still work
+   * because the backend regex-strips the UUID — but prefer the agreement id.)
    */
-  testWebhookValidSignature: async (
-    eventType: string = 'charge.success'
-  ): Promise<WebhookTestResponse> => {
-    console.log('📤 [PAYMENTS API] Testing webhook with VALID signature...');
-    
-    try {
-      const response = await apiClient.post<WebhookTestResponse>(
-        '/api/v1/payments/test-webhook?test_type=valid',
-        {
-          event: eventType,
-          data: {
-            reference: 'NULO-TEST-VALID-' + Date.now(),
-            status: 'success',
-            amount: 50000,
-          }
-        }
-      );
-      
-      console.log('✅ [PAYMENTS API] Valid signature test completed:', {
-        success: response.data.success,
-        message: response.data.message,
-        match: response.data.details?.match
-      });
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ [PAYMENTS API] Error testing valid signature:', error);
-      
-      // Provide better error messages
-      if (error.response?.status === 401) {
-        throw new Error('Unauthorized. Please log in again.');
-      }
-      if (error.response?.status === 403) {
-        throw new Error('Access denied. Admin privileges required.');
-      }
-      
-      throw new Error(
-        error.response?.data?.detail || 
-        error.response?.data?.message ||
-        'Failed to test webhook signature'
-      );
-    }
+  async getTransferHistory(agreementIdOrRef: string): Promise<TransferHistoryEntry[]> {
+    const { data } = await apiClient.get(
+      `/api/v1/agreements/${agreementIdOrRef}/payment-status`,
+    )
+    return data.transfer_history ?? data.history ?? data.data ?? []
   },
 
   /**
-   * Clear all webhook test logs
-   * Removes all logged webhook attempts from memory
-   * Admin-only endpoint for QA testing
-   * 
-   * @returns Confirmation message
+   * Trigger a landlord payout for a specific inbound transfer.
+   * Backend auto-routes to the sub-account wallet when the agreement VA
+   * has the -SUB suffix (so live fund availability is preserved).
+   *
+   * Backend: POST /api/v1/agreements/{agreement_id}/disburse
+   * Body: { source_transfer_id, force?, retry_count? }
+   *
+   * NOTE: This call can take up to 60s — it does a bank re-verify + Nomba
+   * transfer call, both of which are synchronous HTTP calls on the backend.
+   * We use a 90s timeout to avoid a false "Network Error" from Axios cutting
+   * the connection before the server responds.
    */
-  clearWebhookLogs: async (): Promise<WebhookClearResponse> => {
-    console.log('📤 [PAYMENTS API] Clearing webhook test logs...');
-    
-    try {
-      const response = await apiClient.delete<WebhookClearResponse>(
-        '/api/v1/payments/webhook-logs'
-      );
-      
-      console.log('✅ [PAYMENTS API] Webhook logs cleared');
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ [PAYMENTS API] Error clearing webhook logs:', error);
-      
-      // Provide better error messages
-      if (error.response?.status === 401) {
-        throw new Error('Unauthorized. Please log in again.');
-      }
-      if (error.response?.status === 403) {
-        throw new Error('Access denied. Admin privileges required.');
-      }
-      
-      throw new Error(
-        error.response?.data?.detail || 
-        error.response?.data?.message ||
-        'Failed to clear webhook logs'
-      );
-    }
+  async releaseFunds(
+    agreementId: string,
+    req: DisburseRequest,
+  ): Promise<DisburseResponse> {
+    const { data } = await apiClient.post(
+      `/api/v1/agreements/${agreementId}/disburse`,
+      req,
+      { timeout: 90000 }, // 90s — bank re-verify + Nomba transfer can be slow
+    )
+    return data
   },
-};
+
+  /**
+   * Poll the status of a previously initiated payout.
+   * Backend: GET /api/v1/disbursements/{merchant_tx_ref}
+   */
+  async getDisbursementStatus(merchantTxRef: string): Promise<DisbursementStatus> {
+    const { data } = await apiClient.get(`/api/v1/disbursements/${merchantTxRef}`)
+    return data
+  },
+
+  /**
+   * DEMO ONLY: Simulate a payout_success webhook for testing.
+   * This allows testing the complete disbursement flow without waiting
+   * for the actual Nomba webhook.
+   * Backend: POST /api/v1/agreements/{agreement_id}/simulate-payout-webhook
+   */
+  async simulatePayoutWebhook(
+    agreementId: string,
+    merchantTxRef: string,
+  ): Promise<{ success: boolean; message: string; transaction_id: string; status: string }> {
+    const { data } = await apiClient.post(
+      `/api/v1/agreements/${agreementId}/simulate-payout-webhook`,
+      { merchant_tx_ref: merchantTxRef },
+    )
+    return data
+  },
+}
+
+export default paymentsAPI

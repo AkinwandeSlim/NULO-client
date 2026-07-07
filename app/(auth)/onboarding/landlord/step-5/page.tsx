@@ -23,6 +23,7 @@ export default function LandlordOnboardingStep5() {
     step3Data,
     step4Data,
     isProcessing,
+    featureFlags, // Added this!
   } = useOnboarding()
 
   const navigateToStep = (step: number) => {
@@ -32,10 +33,18 @@ export default function LandlordOnboardingStep5() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Guard: all 4 steps must have data before submitting
-    if (!step1Data || !step2Data || !step3Data || !step4Data) {
+    // Guard: check required steps
+    if (!step1Data || !step2Data || !step4Data) {
       toast.error('❌ Please complete all previous steps first')
       router.push('/onboarding/landlord/step-1')
+      return
+    }
+    // Only require step3 if feature flag enables it
+    // If feature flags haven't loaded yet, use conservative default (skip property step)
+    const propertyStepEnabled = featureFlags?.enable_property_step ?? false
+    if (propertyStepEnabled && !step3Data) {
+      toast.error('❌ Please complete property details first')
+      router.push('/onboarding/landlord/step-3')
       return
     }
 
@@ -242,44 +251,46 @@ export default function LandlordOnboardingStep5() {
             </CardContent>
           </Card>
 
-          {/* Property Summary */}
-          <Card className="shadow-lg border-2 border-slate-200">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-xl flex items-center gap-2">
-                  <Home className="h-5 w-5 text-orange-600" />
-                  Property Details
-                </CardTitle>
-                <Button type="button" variant="outline" size="sm" onClick={() => navigateToStep(3)} className="text-orange-600 border-orange-200 hover:border-orange-500">
-                  <Edit className="h-4 w-4 mr-1" />
-                  Edit
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <span className="text-sm font-medium text-slate-700">Property Address:</span>
-                  <p className="text-slate-900">{step3Data?.property_address || 'Not provided'}</p>
+          {/* Property Summary (only if step 3 is enabled) */}
+          {featureFlags.enable_property_step && (
+            <Card className="shadow-lg border-2 border-slate-200">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    <Home className="h-5 w-5 text-orange-600" />
+                    Property Details
+                  </CardTitle>
+                  <Button type="button" variant="outline" size="sm" onClick={() => navigateToStep(3)} className="text-orange-600 border-orange-200 hover:border-orange-500">
+                    <Edit className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
                 </div>
-                <div className="space-y-1">
-                  <span className="text-sm font-medium text-slate-700">Property Type:</span>
-                  <p className="text-slate-900 capitalize">{step3Data?.property_type || 'Not provided'}</p>
-                </div>
-                {/* <div className="space-y-1">
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium text-slate-700">Property Address:</span>
+                    <p className="text-slate-900">{step3Data?.property_address || 'Not provided'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium text-slate-700">Property Type:</span>
+                    <p className="text-slate-900 capitalize">{step3Data?.property_type || 'Not provided'}</p>
+                  </div>
+                  {/* <div className="space-y-1">
                   <span className="text-sm font-medium text-slate-700">Property Images:</span>
                   <p className="text-slate-900">{step3Data?.property_images?.length || 0} images uploaded</p>
                 </div> */}
-                <div className="space-y-1">
-                  <span className="text-sm font-medium text-slate-700">Ownership Proof:</span>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span className="text-green-600">Uploaded</span>
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium text-slate-700">Ownership Proof:</span>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-green-600">Uploaded</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Bank Details Summary */}
           <Card className="shadow-lg border-2 border-slate-200">

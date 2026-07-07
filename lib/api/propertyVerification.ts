@@ -215,20 +215,47 @@ export const verifyProperty = async (
 ): Promise<{ success: boolean; message: string; property: Property }> => {
   try {
     console.log(`📤 [PROPERTY-VERIFICATION] ${action.action}ing property: ${propertyId}`);
-    
+
     const response = await apiClient.post(
       `/api/v1/admin/properties/${propertyId}/verify`,
       action,
       { timeout: TIMEOUTS.FAST }
     );
-    
+
     console.log(`✅ [PROPERTY-VERIFICATION] Property ${action.action}ed successfully`);
     return response.data;
   } catch (error: any) {
     console.error('❌ [PROPERTY-VERIFICATION] Error verifying property:', error);
     throw new Error(
-      error.response?.data?.detail || 
+      error.response?.data?.detail ||
       `Failed to ${action.action} property`
+    );
+  }
+};
+
+/**
+ * Soft-delete a property as admin.
+ * Hides the property from the marketplace and the landlord's listings.
+ * Returns 409 if the property has any active/signed agreements.
+ */
+export const deleteProperty = async (
+  propertyId: string
+): Promise<{ success: boolean; message: string; property_id: string; deleted_at: string }> => {
+  try {
+    console.log(`🗑️ [PROPERTY-VERIFICATION] Deleting property: ${propertyId}`);
+
+    const response = await apiClient.delete(
+      `/api/v1/admin/properties/${propertyId}`,
+      { timeout: TIMEOUTS.FAST }
+    );
+
+    console.log(`✅ [PROPERTY-VERIFICATION] Property ${propertyId} deleted`);
+    return response.data;
+  } catch (error: any) {
+    console.error('❌ [PROPERTY-VERIFICATION] Error deleting property:', error);
+    throw new Error(
+      error.response?.data?.detail ||
+      'Failed to delete property'
     );
   }
 };
@@ -348,8 +375,9 @@ const propertyVerificationAPI = {
   getPropertyStats,
   getPropertyById,
   verifyProperty,
+  deleteProperty,
   bulkPropertyAction,
-  
+
   // Helper functions
   formatPrice,
   getVerificationStatusBadge,

@@ -19,22 +19,19 @@ import { Application } from './applications'
 export interface TenantFavorite {
   id: string
   property_id: string
-  property_title?: string
-  title?: string
-  property_address?: string
-  address?: string
-  property_city?: string
-  city?: string
-  property_image?: string
-  images?: string[]
-  price?: number
-  beds?: number
-  bedrooms?: number
-  baths?: number
-  bathrooms?: number
-  sqft?: number
-  square_feet?: number
-  location?: string
+  /** Canonical property display name (matches backend column) */
+  property_title: string
+  /** Canonical property address (matches backend column) */
+  property_address: string
+  /** Canonical property city (matches backend column) */
+  property_city: string
+  /** Canonical cover image URL (matches backend column) */
+  property_image: string
+  price: number
+  beds: number
+  baths: number
+  sqft: number
+  location: string
   rating?: number
   avatar?: string
   landlord_name?: string

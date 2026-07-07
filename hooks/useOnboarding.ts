@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
-import { submitCompleteOnboarding as apiSubmitOnboarding } from '@/lib/api/onboarding'
+import { submitCompleteOnboarding as apiSubmitOnboarding, getFeatureFlags } from '@/lib/api/onboarding'
 import { useDashboard } from '@/contexts/DashboardContext'
 
 // ============================================================================
@@ -32,6 +32,7 @@ export interface OnboardingStep2Data {
   proof_of_address: string
   cac_certificate: string
   selfie: string
+  nin_document?: string
 }
 
 export interface OnboardingStep3Data {
@@ -47,6 +48,8 @@ export interface OnboardingStep4Data {
   bank_account_name: string
   bank_verification_number?: string
   bank_statement_url?: string
+  guarantor_id_url?: string
+  insurance_document_url?: string
 }
 
 // ============================================================================
@@ -130,6 +133,38 @@ export function useOnboarding() {
   const [step2Data, setStep2Data] = useState<OnboardingStep2Data | null>(null)
   const [step3Data, setStep3Data] = useState<OnboardingStep3Data | null>(null)
   const [step4Data, setStep4Data] = useState<OnboardingStep4Data | null>(null)
+
+  // ── Feature Flags ──
+  const [featureFlags, setFeatureFlags] = useState({
+    enable_property_step: true,
+    total_steps: 4,
+    skipped_steps: [] as number[],
+    active_steps: [1, 2, 3, 4]
+  })
+
+  // ── Fetch feature flags on mount ──
+  useEffect(() => {
+    const fetchFlags = async () => {
+      try {
+        const flags = await getFeatureFlags()
+        setFeatureFlags(flags)
+        console.log('✅ [HOOK] Feature flags loaded:', flags)
+      } catch (error) {
+        console.warn('⚠️ [HOOK] Failed to load feature flags, using defaults:', error)
+      }
+    }
+    fetchFlags()
+  }, [])
+
+  // ── Helper: Get next step number based on feature flags ──
+  const getNextStep = useCallback((currentStep: number): number => {
+    // If property step is disabled and we're at step 2, skip to step 4
+    if (!featureFlags.enable_property_step && currentStep === 2) {
+      console.log('⏭️ [HOOK] Property step disabled - skipping from Step 2 to Step 4')
+      return 4
+    }
+    return currentStep + 1
+  }, [featureFlags.enable_property_step])
 
   // Load data on mount
   useEffect(() => {
@@ -400,6 +435,7 @@ export function useOnboarding() {
         proof_of_address: data.proof_of_address || '',
         cac_certificate: data.cac_certificate || '',
         selfie: data.selfie || '',
+        nin_document: data.nin_document || '',
         uploaded: true,
       }
 
@@ -407,8 +443,13 @@ export function useOnboarding() {
       if (!saved) throw new Error('Failed to save to localStorage')
 
       setStep2Data(data)
-      storage.save(STORAGE_KEYS.CURRENT_STEP, 3)
-      setCurrentStep(3)
+
+      // ── OPTIONAL STEP 3: Check feature flag ──
+      const nextStep = getNextStep(2)
+      console.log(`📍 [STEP 2] Next step determined: ${nextStep} (property_step_enabled=${featureFlags.enable_property_step})`)
+
+      storage.save(STORAGE_KEYS.CURRENT_STEP, nextStep)
+      setCurrentStep(nextStep)
 
       console.log('✅ [STEP 2] Data saved successfully')
       toast.success('Documents uploaded!')
@@ -420,7 +461,7 @@ export function useOnboarding() {
     } finally {
       setIsProcessing(false)
     }
-  }, [])
+  }, [getNextStep, featureFlags.enable_property_step])
 
   // SAVE STEP 3 - localStorage only (fast!)
   const saveStep3 = useCallback(async (data: OnboardingStep3Data) => {
@@ -485,17 +526,24 @@ export function useOnboarding() {
       const s3 = storage.load(STORAGE_KEYS.STEP_3)
       const s4 = storage.load(STORAGE_KEYS.STEP_4)
 
-      if (!s1 || !s2 || !s3 || !s4) {
+      if (!s1 || !s2 || !s4) {
         throw new Error('Please complete all steps first')
+      }
+
+      // ── OPTIONAL STEP 3: Only require if enabled ──
+      // If feature flags haven't loaded yet, use conservative default (skip property step)
+      const propertyStepEnabled = featureFlags?.enable_property_step ?? false
+      if (propertyStepEnabled && !s3) {
+        throw new Error('Please complete property step first')
       }
 
       console.log('📦 [SUBMIT] Collected data from localStorage')
 
       // 2. Prepare payload for backend API
-      const payload = {
+      const payload: any = {
         landlord_id: userId,
         email: email,
-        
+
         // Step 1 - Basic info
         full_name: s1.full_name,
         phone: s1.phone,
@@ -503,15 +551,23 @@ export function useOnboarding() {
         landlord_type: s1.landlord_type,
         company_name: s1.company_name,
         company_address: s1.company_address,
-        
-        // Step 3 - Property
-        property_address: s3.property_address,
-        property_type: s3.property_type,
-        
+
+        // Step 2 - Documents
+        id_document_url: s2.id_document,
+        selfie_url: s2.selfie,
+        nin_document_url: s2.nin_document,
+
+        // Step 3 - Property (optional, only include if exists)
+        property_address: s3?.property_address || null,
+        property_type: s3?.property_type || null,
+
         // Step 4 - Bank details
         bank_name: s4.bank_name,
         account_number: s4.bank_account_number,
         account_name: s4.bank_account_name,
+        bank_statement_url: s4.bank_statement_url,
+        guarantor_id_url: s4.guarantor_id_url,
+        insurance_document_url: s4.insurance_document_url,
       }
 
       console.log('📤 [SUBMIT] Payload prepared:', payload)
@@ -558,7 +614,7 @@ export function useOnboarding() {
     } finally {
       setIsProcessing(false)
     }
-  }, [router, invalidateLandlordCache])
+  }, [router, invalidateLandlordCache, featureFlags.enable_property_step])
 
   const clearData = useCallback(() => {
     storage.clearAll()
@@ -589,11 +645,12 @@ export function useOnboarding() {
     step2Data,
     step3Data,
     step4Data,
+    featureFlags, // Added this!
     saveStep1,
     saveStep2,
     saveStep3,
     saveStep4,
-    submitCompleteOnboarding, // ✅ This is the hook's function
+    submitCompleteOnboarding,
     clearData,
     exportData,
   }

@@ -9,28 +9,42 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuth } from "@/contexts/AuthContext"
 import { useOnboarding } from "@/hooks/useOnboarding"
-import { generateMockDocumentUrl, generateMockSelfieUrl, simulateUploadDelay } from '@/lib/utils/mock-upload'
+import { uploadOnboardingDocument } from '@/lib/api/onboarding'
 
 export default function LandlordOnboardingStep2() {
   const router = useRouter()
   const { user } = useAuth()
   // useOnboarding handles all auth/redirect guards — including the OAuth fix.
   // isReady is true only after those checks pass. No need for a separate guard here.
-  const { isReady, saveStep2, isProcessing, step1Data, step2Data } = useOnboarding()
+  const { isReady, saveStep2, isProcessing, step1Data, step2Data, currentStep } = useOnboarding()
 
   const [documents, setDocuments] = useState({
     id_document: null as File | null,
-    proof_of_address: null as File | null,
+    nin_document: null as File | null,
+    selfie: null as File | null,
     cac_certificate: null as File | null,
   })
 
-  const [selfie, setSelfie] = useState<File | null>(null)
-
   const [uploadedFiles, setUploadedFiles] = useState({
     id_document: false,
-    proof_of_address: false,
-    cac_certificate: false,
+    nin_document: false,
     selfie: false,
+    cac_certificate: false,
+  })
+
+  const [uploadedUrls, setUploadedUrls] = useState({
+    id_document_url: '',
+    nin_document_url: '',
+    selfie_url: '',
+    cac_certificate_url: '',
+  })
+
+  // Track upload status (optimistic - file selected but upload in progress)
+  const [uploadStatus, setUploadStatus] = useState({
+    id_document: 'idle' as 'idle' | 'uploading' | 'complete' | 'error',
+    nin_document: 'idle' as 'idle' | 'uploading' | 'complete' | 'error',
+    selfie: 'idle' as 'idle' | 'uploading' | 'complete' | 'error',
+    cac_certificate: 'idle' as 'idle' | 'uploading' | 'complete' | 'error',
   })
 
   // ── Restore previously uploaded file status on mount ────────────────────────
@@ -40,13 +54,24 @@ export default function LandlordOnboardingStep2() {
     if (autoSaved) {
       try {
         const data = JSON.parse(autoSaved)
-        setUploadedFiles(data.uploadedFiles || {
-          id_document: !!data.id_document,
-          proof_of_address: !!data.proof_of_address,
-          cac_certificate: !!data.cac_certificate,
-          selfie: !!data.selfie,
-        })
-        return
+        const newUploadedFiles = {
+          id_document: data.uploadedFiles?.id_document || !!data.id_document_url,
+          nin_document: data.uploadedFiles?.nin_document || !!data.nin_document_url,
+          selfie: data.uploadedFiles?.selfie || !!data.selfie_url,
+          cac_certificate: data.uploadedFiles?.cac_certificate || !!data.cac_certificate_url,
+        }
+        setUploadedFiles(newUploadedFiles)
+        if (data.id_document_url) setUploadedUrls(prev => ({ ...prev, id_document_url: data.id_document_url }))
+        if (data.nin_document_url) setUploadedUrls(prev => ({ ...prev, nin_document_url: data.nin_document_url }))
+        if (data.selfie_url) setUploadedUrls(prev => ({ ...prev, selfie_url: data.selfie_url }))
+        if (data.cac_certificate_url) setUploadedUrls(prev => ({ ...prev, cac_certificate_url: data.cac_certificate_url }))
+        // Also restore upload status
+        if (data.uploadStatus) {
+          setUploadStatus(prev => ({
+            ...prev,
+            ...data.uploadStatus
+          }))
+        }
       } catch { /* ignore */ }
     }
     // Fallback: check hook storage key
@@ -54,12 +79,17 @@ export default function LandlordOnboardingStep2() {
     if (savedStep2) {
       try {
         const data = JSON.parse(savedStep2)
-        setUploadedFiles({
+        const newUploadedFiles = {
           id_document: !!data.id_document,
-          proof_of_address: !!data.proof_of_address,
+          nin_document: !!data.nin_document,
+          selfie: !!data.selfie,
           cac_certificate: !!data.cac_certificate,
-          selfie: data.uploaded || false,
-        })
+        }
+        setUploadedFiles(newUploadedFiles)
+        if (data.id_document) setUploadedUrls(prev => ({ ...prev, id_document_url: data.id_document }))
+        if (data.nin_document) setUploadedUrls(prev => ({ ...prev, nin_document_url: data.nin_document }))
+        if (data.selfie) setUploadedUrls(prev => ({ ...prev, selfie_url: data.selfie }))
+        if (data.cac_certificate) setUploadedUrls(prev => ({ ...prev, cac_certificate_url: data.cac_certificate }))
       } catch { /* ignore */ }
     }
   }, [])
@@ -67,84 +97,117 @@ export default function LandlordOnboardingStep2() {
   // ── Autosave upload status on every change ───────────────────────────────────
   useEffect(() => {
     const autoSaveData = {
-      id_document: documents.id_document?.name || '',
-      proof_of_address: documents.proof_of_address?.name || '',
-      cac_certificate: documents.cac_certificate?.name || '',
-      selfie: selfie?.name || '',
+      id_document_url: uploadedUrls.id_document_url || '',
+      nin_document_url: uploadedUrls.nin_document_url || '',
+      selfie_url: uploadedUrls.selfie_url || '',
+      cac_certificate_url: uploadedUrls.cac_certificate_url || '',
       uploadedFiles,
+      uploadStatus,
     }
     localStorage.setItem('onboarding_step2_autosave', JSON.stringify(autoSaveData))
-  }, [documents, selfie, uploadedFiles])
+  }, [uploadedUrls, uploadedFiles, uploadStatus])
 
-  // ── Handlers ─────────────────────────────────────────────────────────────────
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, docType: 'id_document' | 'proof_of_address' | 'cac_certificate') => {
+  // ── Handlers (Non-blocking background upload) ────────────────────────────────────
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, docType: 'id_document' | 'nin_document' | 'selfie' | 'cac_certificate') => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (file.size > 10 * 1024 * 1024) { toast.error('File size must be less than 10MB'); return }
+    if (docType === 'selfie' && file.size > 5 * 1024 * 1024) {
+      toast.error('Selfie file size must be less than 5MB')
+      return
+    } else if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size must be less than 10MB')
+      return
+    }
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
-    if (!validTypes.includes(file.type)) { toast.error('Only JPG, PNG, and PDF files are allowed'); return }
+    if (!validTypes.includes(file.type) && docType !== 'selfie') {
+      toast.error('Only JPG, PNG, and PDF files are allowed')
+      return
+    }
+    if (!file.type.startsWith('image/') && docType === 'selfie') {
+      toast.error('Selfie must be an image file')
+      return
+    }
 
+    // Optimistic UI update - show file selected immediately
     setDocuments(prev => ({ ...prev, [docType]: file }))
     setUploadedFiles(prev => ({ ...prev, [docType]: true }))
-    toast.success(`${file.name} selected`)
-  }
+    setUploadStatus(prev => ({ ...prev, [docType]: 'uploading' }))
+    toast.success(`${file.name} selected - uploading in background`)
 
-  const handleSelfieChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    if (file.size > 5 * 1024 * 1024) { toast.error('Selfie file size must be less than 5MB'); return }
-    if (!file.type.startsWith('image/')) { toast.error('Selfie must be an image file'); return }
-
-    setSelfie(file)
-    setUploadedFiles(prev => ({ ...prev, selfie: true }))
-    toast.success('Selfie captured!')
+    // Fire upload in background (fire-and-forget)
+    uploadOnboardingDocument(file)
+      .then((uploadResult) => {
+        const urlFieldMap: Record<string, string> = {
+          id_document: 'id_document_url',
+          nin_document: 'nin_document_url',
+          selfie: 'selfie_url',
+          cac_certificate: 'cac_certificate_url',
+        }
+        const urlField = urlFieldMap[docType]
+        setUploadedUrls(prev => ({
+          ...prev,
+          [urlField]: uploadResult.path
+        }))
+        setUploadStatus(prev => ({ ...prev, [docType]: 'complete' }))
+        console.log(`✅ [STEP 2] Background upload complete for ${docType}`)
+      })
+      .catch((uploadError) => {
+        console.error(`❌ [STEP 2] Background upload failed for ${docType}:`, uploadError)
+        // Re-enable the file input to allow retry
+        setUploadedFiles(prev => ({ ...prev, [docType]: false }))
+        setUploadStatus(prev => ({ ...prev, [docType]: 'error' }))
+        toast.error(`Failed to upload ${file.name}. Click to retry.`)
+      })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Skip if already submitted
+    // Skip if already submitted (check actual URLs, not just uploadedFiles flag)
     if (step2Data?.id_document && step2Data?.selfie) {
       toast.success('Documents already submitted!')
-      router.push('/onboarding/landlord/step-3')
+      // ── Optional Step 3: Check if property step is enabled ──
+      const nextStep = currentStep === 2 ? 4 : currentStep
+      const nextRoute = nextStep === 4 ? '/onboarding/landlord/step-4' : '/onboarding/landlord/step-3'
+      console.log(`⏭️ [STEP 2] Navigating to ${nextRoute} (property_step_skipped=${nextStep === 4})`)
+      router.push(nextRoute)
       return
     }
 
-    if (!documents.id_document) { toast.error('Please upload your ID document'); return }
-    if (!documents.proof_of_address) { toast.error('Please upload proof of address'); return }
-    if (!selfie) { toast.error('Please upload a selfie for verification'); return }
-    if (step1Data?.landlord_type === 'company' && !documents.cac_certificate) {
-      toast.error('Please upload company registration document'); return
-    }
+    // Check that we have actual URLs before allowing navigation
+    // The files might be marked uploaded but upload still in progress
+    const hasIdDoc = uploadedUrls.id_document_url
+    const hasNinDoc = uploadedUrls.nin_document_url
+    const hasSelfie = uploadedUrls.selfie_url
+    const hasCac = step1Data?.landlord_type !== 'company' || uploadedUrls.cac_certificate_url
+
+    // NIN document is optional - many ID documents (National ID) already contain NIN
+    if (!hasIdDoc) { toast.error('Please wait for ID document upload to complete'); return }
+    // NIN document removed from required check - optional for users whose ID already shows NIN
+    if (!hasSelfie) { toast.error('Please wait for selfie upload to complete'); return }
+    if (step1Data?.landlord_type === 'company' && !hasCac) { toast.error('Please wait for company registration upload to complete'); return }
 
     try {
-      await simulateUploadDelay(1500)
-
-      const mockUrls = {
-        id_document: generateMockDocumentUrl(documents.id_document!.name, user!.id),
-        proof_of_address: generateMockDocumentUrl(documents.proof_of_address!.name, user!.id),
-        selfie: generateMockSelfieUrl(user!.id),
-        cac_certificate: step1Data?.landlord_type === 'company' && documents.cac_certificate
-          ? generateMockDocumentUrl(documents.cac_certificate.name, user!.id)
-          : '',
-      }
-
       const success = await saveStep2({
-        id_document: mockUrls.id_document,
-        proof_of_address: mockUrls.proof_of_address,
-        cac_certificate: mockUrls.cac_certificate,
-        selfie: mockUrls.selfie,
+        id_document: uploadedUrls.id_document_url,
+        proof_of_address: '',
+        cac_certificate: uploadedUrls.cac_certificate_url || '',
+        selfie: uploadedUrls.selfie_url,
+        nin_document: uploadedUrls.nin_document_url,
       })
 
       if (success) {
         toast.success('Step 2 completed!')
-        router.push('/onboarding/landlord/step-3')
+        // ── Optional Step 3: Check if property step is enabled ──
+        const nextStep = currentStep === 2 ? 4 : currentStep
+        const nextRoute = nextStep === 4 ? '/onboarding/landlord/step-4' : '/onboarding/landlord/step-3'
+        console.log(`⏭️ [STEP 2] After save, navigating to ${nextRoute} (property_step_skipped=${nextStep === 4})`)
+        router.push(nextRoute)
       }
     } catch (error: any) {
       console.error('❌ [STEP 2] Error:', error)
-      toast.error(error.message || 'Failed to upload documents')
+      toast.error(error.message || 'Failed to save documents')
     }
   }
 
@@ -250,38 +313,76 @@ export default function LandlordOnboardingStep2() {
                       {uploadedFiles.id_document ? 'Change File' : 'Choose File'}
                     </label>
                     {(documents.id_document || uploadedFiles.id_document) && (
-                      <div className="mt-3 text-sm text-green-600 flex items-center justify-center gap-2">
-                        <Check className="h-4 w-4" />
-                        {documents.id_document?.name || 'Previously uploaded'}
+                      <div className="mt-3 text-sm flex items-center justify-center gap-2">
+                        {uploadStatus.id_document === 'uploading' ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
+                            <span className="text-orange-600">Uploading...</span>
+                          </>
+                        ) : uploadStatus.id_document === 'complete' ? (
+                          <>
+                            <Check className="h-4 w-4 text-green-600" />
+                            <span className="text-green-600">{documents.id_document?.name || 'Uploaded'}</span>
+                          </>
+                        ) : uploadStatus.id_document === 'error' ? (
+                          <>
+                            <AlertCircle className="h-4 w-4 text-red-600" />
+                            <span className="text-red-600">Upload failed - click to retry</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="h-4 w-4 text-green-600" />
+                            <span className="text-green-600">{documents.id_document?.name || 'Previously uploaded'}</span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Proof of Address */}
+                {/* NIN Document - Optional (many ID documents already show NIN) */}
                 <div className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
-                  uploadedFiles.proof_of_address || documents.proof_of_address
+                  uploadedFiles.nin_document || documents.nin_document
                     ? 'border-green-400 bg-green-50/30'
                     : 'border-slate-300 hover:border-orange-400'
                 }`}>
                   <div className="text-center">
-                    {uploadedFiles.proof_of_address || documents.proof_of_address
+                    {uploadedFiles.nin_document || documents.nin_document
                       ? <Check className="h-12 w-12 text-green-600 mx-auto mb-3" />
                       : <Upload className="h-12 w-12 text-slate-400 mx-auto mb-3" />
                     }
-                    <h3 className="text-lg font-semibold text-slate-800 mb-2">Proof of Address *</h3>
+                    <h3 className="text-lg font-semibold text-slate-800 mb-2">NIN Document <span className="text-slate-500 font-normal">(Optional)</span></h3>
                     <p className="text-sm text-slate-600 mb-4">
-                      Upload a recent utility bill, bank statement, or tenancy agreement
+                      Upload your NIN slip/card only if your ID document doesn't show your NIN
                     </p>
-                    <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileChange(e, 'proof_of_address')} className="hidden" id="proof_of_address" />
-                    <label htmlFor="proof_of_address" className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 cursor-pointer transition-colors">
+                    <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileChange(e, 'nin_document')} className="hidden" id="nin_document" />
+                    <label htmlFor="nin_document" className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 cursor-pointer transition-colors">
                       <Upload className="h-4 w-4 mr-2" />
-                      {uploadedFiles.proof_of_address ? 'Change File' : 'Choose File'}
+                      {uploadedFiles.nin_document ? 'Change File' : 'Choose File'}
                     </label>
-                    {(documents.proof_of_address || uploadedFiles.proof_of_address) && (
-                      <div className="mt-3 text-sm text-green-600 flex items-center justify-center gap-2">
-                        <Check className="h-4 w-4" />
-                        {documents.proof_of_address?.name || 'Previously uploaded'}
+                    {(documents.nin_document || uploadedFiles.nin_document) && (
+                      <div className="mt-3 text-sm flex items-center justify-center gap-2">
+                        {uploadStatus.nin_document === 'uploading' ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
+                            <span className="text-orange-600">Uploading...</span>
+                          </>
+                        ) : uploadStatus.nin_document === 'complete' ? (
+                          <>
+                            <Check className="h-4 w-4 text-green-600" />
+                            <span className="text-green-600">{documents.nin_document?.name || 'Uploaded'}</span>
+                          </>
+                        ) : uploadStatus.nin_document === 'error' ? (
+                          <>
+                            <AlertCircle className="h-4 w-4 text-red-600" />
+                            <span className="text-red-600">Upload failed - click to retry</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="h-4 w-4 text-green-600" />
+                            <span className="text-green-600">{documents.nin_document?.name || 'Previously uploaded'}</span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -289,30 +390,49 @@ export default function LandlordOnboardingStep2() {
 
                 {/* Selfie */}
                 <div className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
-                  uploadedFiles.selfie || selfie
+                  uploadedFiles.selfie || documents.selfie
                     ? 'border-green-400 bg-green-50/30'
                     : 'border-orange-300 bg-orange-50/30 hover:border-orange-400'
                 }`}>
                   <div className="text-center">
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 ${
-                      uploadedFiles.selfie || selfie ? 'bg-green-100' : 'bg-orange-100'
+                      uploadedFiles.selfie || documents.selfie ? 'bg-green-100' : 'bg-orange-100'
                     }`}>
-                      {uploadedFiles.selfie || selfie
+                      {uploadedFiles.selfie || documents.selfie
                         ? <Check className="h-6 w-6 text-green-600" />
                         : <Camera className="h-6 w-6 text-orange-600" />
                       }
                     </div>
                     <h3 className="text-lg font-semibold text-slate-800 mb-2">Selfie Verification *</h3>
                     <p className="text-sm text-slate-600 mb-4">Take a clear selfie for identity verification</p>
-                    <input type="file" accept="image/*" capture="user" onChange={handleSelfieChange} className="hidden" id="selfie" />
+                    <input type="file" accept="image/*" capture="user" onChange={(e) => handleFileChange(e, 'selfie')} className="hidden" id="selfie" />
                     <label htmlFor="selfie" className="inline-flex items-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 cursor-pointer transition-colors">
                       <Camera className="h-4 w-4 mr-2" />
                       {uploadedFiles.selfie ? 'Retake Selfie' : 'Take/Upload Selfie'}
                     </label>
-                    {(selfie || uploadedFiles.selfie) && (
-                      <div className="mt-3 text-sm text-green-600 flex items-center justify-center gap-2">
-                        <Check className="h-4 w-4" />
-                        {selfie?.name || 'Previously uploaded'}
+                    {(documents.selfie || uploadedFiles.selfie) && (
+                      <div className="mt-3 text-sm flex items-center justify-center gap-2">
+                        {uploadStatus.selfie === 'uploading' ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
+                            <span className="text-orange-600">Uploading...</span>
+                          </>
+                        ) : uploadStatus.selfie === 'complete' ? (
+                          <>
+                            <Check className="h-4 w-4 text-green-600" />
+                            <span className="text-green-600">{documents.selfie?.name || 'Uploaded'}</span>
+                          </>
+                        ) : uploadStatus.selfie === 'error' ? (
+                          <>
+                            <AlertCircle className="h-4 w-4 text-red-600" />
+                            <span className="text-red-600">Upload failed - click to retry</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="h-4 w-4 text-green-600" />
+                            <span className="text-green-600">{documents.selfie?.name || 'Previously uploaded'}</span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -340,9 +460,28 @@ export default function LandlordOnboardingStep2() {
                         {uploadedFiles.cac_certificate ? 'Change File' : 'Choose File'}
                       </label>
                       {(documents.cac_certificate || uploadedFiles.cac_certificate) && (
-                        <div className="mt-3 text-sm text-green-600 flex items-center justify-center gap-2">
-                          <Check className="h-4 w-4" />
-                          {documents.cac_certificate?.name || 'Previously uploaded'}
+                        <div className="mt-3 text-sm flex items-center justify-center gap-2">
+                          {uploadStatus.cac_certificate === 'uploading' ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
+                              <span className="text-orange-600">Uploading...</span>
+                            </>
+                          ) : uploadStatus.cac_certificate === 'complete' ? (
+                            <>
+                              <Check className="h-4 w-4 text-green-600" />
+                              <span className="text-green-600">{documents.cac_certificate?.name || 'Uploaded'}</span>
+                            </>
+                          ) : uploadStatus.cac_certificate === 'error' ? (
+                            <>
+                              <AlertCircle className="h-4 w-4 text-red-600" />
+                              <span className="text-red-600">Upload failed - click to retry</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="h-4 w-4 text-green-600" />
+                              <span className="text-green-600">{documents.cac_certificate?.name || 'Previously uploaded'}</span>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -367,13 +506,24 @@ export default function LandlordOnboardingStep2() {
                 </div>
               </div>
 
-              <Button
-                type="submit"
-                className="w-full bg-orange-600 hover:bg-orange-700 text-white"
-                disabled={isProcessing}
-              >
-                {isProcessing ? 'Saving...' : 'Continue to Step 3'}
-              </Button>
+              {/* Check if any uploads are still in progress */}
+              {(() => {
+                const uploadsInProgress = Object.values(uploadStatus).some(s => s === 'uploading')
+                return (
+                  <Button
+                    type="submit"
+                    className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                    disabled={isProcessing || uploadsInProgress}
+                  >
+                    {uploadsInProgress
+                      ? 'Waiting for uploads...'
+                      : isProcessing
+                        ? 'Saving...'
+                        : 'Continue to Step 3'
+                    }
+                  </Button>
+                )
+              })()}
             </form>
           </CardContent>
         </Card>

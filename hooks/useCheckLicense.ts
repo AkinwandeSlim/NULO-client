@@ -38,7 +38,7 @@ export function useCheckLicense() {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
         const response = await axios.get(
           `${apiUrl}/api/v1/license/status`,
-          { timeout: 2000 }
+          { timeout: 10000 } // Increased timeout to 10s to account for first-request cache warming
         )
 
         console.log('✅ [LICENSE] Status check response:', response.data)
@@ -59,7 +59,13 @@ export function useCheckLicense() {
           setLicenseError(null)
         }
       } catch (error) {
-        console.warn('⚠️ [LICENSE] Check failed:', axios.isAxiosError(error) ? error.message : 'Unknown error')
+        // License check failed - this is non-critical, let the app continue
+        // The global interceptor will catch any actual license expiry errors from API calls
+        if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
+          console.warn('⚠️ [LICENSE] Check timed out (non-critical - using fallback detection)')
+        } else {
+          console.warn('⚠️ [LICENSE] Check failed (non-critical):', axios.isAxiosError(error) ? error.message : 'Unknown error')
+        }
         // Don't mark as expired if check fails - let interceptor/event handler handle it
         setIsLoading(false)
         return

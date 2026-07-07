@@ -15,9 +15,9 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
-import { paymentsAPI, type Transaction } from "@/lib/api/payments"
+import { paymentsAPI, type AgreementPaymentRow } from "@/lib/api/payments"
 import { toast } from "sonner"
-import { formatNGN, calculateAgreementBreakdown } from "@/lib/utils/rentalCalculations"
+import { formatNGN, calculateAgreementBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { AIBadge } from "@/components/ui/ai-badge"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -167,7 +167,7 @@ export default function TenantAgreementDetailPage() {
 
   const [agreement, setAgreement] = useState<AgreementWithDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [existingPayments, setExistingPayments] = useState<Transaction[]>([])
+  const [existingPayments, setExistingPayments] = useState<AgreementPaymentRow[]>([])
   const [checkingPayments, setCheckingPayments] = useState(false)
   const [isSigning, setIsSigning] = useState(false)
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
@@ -185,7 +185,7 @@ export default function TenantAgreementDetailPage() {
       
       if (response.success && response.payments) {
         // Filter payments for this specific agreement
-        const agreementPayments = response.payments.filter((payment: Transaction) => 
+        const agreementPayments = response.payments.filter((payment: AgreementPaymentRow) => 
           payment.agreement_id === agreementId
         )
         setExistingPayments(agreementPayments)
@@ -296,7 +296,8 @@ export default function TenantAgreementDetailPage() {
     !agreement?.tenant_signed_at
 
   const breakdown = calculateAgreementBreakdown(agreement || {})
-  const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
+  const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue, periodRent, periodLabel, paymentFrequency } = breakdown
+  const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
   const signaturesCount =
     (agreement?.tenant_signed_at ? 1 : 0) + (agreement?.landlord_signed_at ? 1 : 0)
 
@@ -485,7 +486,7 @@ export default function TenantAgreementDetailPage() {
               <CardContent>
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
                   <FinancialRow label="Monthly Rent" amount={monthlyRent} />
-                  <FinancialRow label="Annual Rent (×12)" amount={annualRent} highlight />
+                  <FinancialRow label={periodLabel} amount={periodRent} highlight />
                   <FinancialRow label="Caution Fee (Security Deposit)" amount={cautionFee} />
                   <FinancialRow label="Platform Fee" amount={platformFee} />
                   {/* service_charge is nullable — only render if set */}
@@ -495,7 +496,7 @@ export default function TenantAgreementDetailPage() {
                   <FinancialRow label="Total Due on Move-in" amount={totalDue} isTotal />
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  * Rent is payable annually in advance per Nigerian tenancy convention.
+                  * Rent is payable in advance per the property's payment frequency ({paymentFrequency}, ×{frequencyMultiplier} months).
                   No agency fee — NuloAfrica charges only the platform fee above.
                 </p>
               </CardContent>
@@ -708,61 +709,66 @@ export default function TenantAgreementDetailPage() {
             {(effectiveStatus === "SIGNED" || effectiveStatus === "ACTIVE") && (
               <Card className="border-green-200 bg-green-50/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
                 <CardContent className="pt-5 pb-5 space-y-4">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-green-800 text-sm">Agreement Fully Signed</p>
-                      <p className="text-xs text-green-600 mt-0.5">
-                        Both parties have signed. Your tenancy can now proceed to payment.
-                      </p>
-                    </div>
-                  </div>
-
                   {/* Check for existing payments */}
                   {checkingPayments ? (
                     <div className="text-center py-4">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3 text-orange-500" />
                       <p className="text-slate-600">Checking payment status...</p>
                     </div>
+                  ) : (agreement.reconciliation_status === "FULL_PAYMENT" || 
+                    (agreement.total_received_amount && agreement.total_received_amount >= (agreement.expected_payment_amount || 0))) ? (
+                    /* Payment is complete */
+                    <div className="text-center py-4">
+                      <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-3" />
+                      <h3 className="text-lg font-semibold text-green-800 mb-2">Payment Completed</h3>
+                      <p className="text-slate-600 mb-4">
+                        Your payment has been received and confirmed. Your tenancy is now active.
+                      </p>
+                      <Link href="/tenant/payments">
+                        <Button variant="outline" className="border-green-300 text-green-700 hover:bg-green-50">
+                          <Eye className="mr-2 h-4 w-4" />
+                          View Payment History
+                        </Button>
+                      </Link>
+                    </div>
                   ) : existingPayments.length > 0 ? (
+                    /* Payment in progress (has payments but not complete) */
                     <div className="space-y-3">
-                      {/* Show existing payment status */}
-                      {existingPayments.some(payment => 
-                        payment.agreement_id === agreement.id && 
-                        (payment.status === 'released' || payment.status === 'held')
-                      ) ? (
-                        <div className="text-center py-4">
-                          <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-3" />
-                          <h3 className="text-lg font-semibold text-green-800 mb-2">Payment Completed</h3>
-                          <p className="text-slate-600 mb-4">
-                            This agreement has already been paid. You can view your payment history for more details.
+                      <div className="flex items-start gap-3">
+                        <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold text-green-800 text-sm">Agreement Fully Signed</p>
+                          <p className="text-xs text-green-600 mt-0.5">
+                            Both parties have signed. Your tenancy can now proceed to payment.
                           </p>
-                          <Link href="/tenant/payments">
-                            <Button variant="outline" className="border-green-300 text-green-700 hover:bg-green-50">
-                              <Eye className="mr-2 h-4 w-4" />
-                              View Payment History
-                            </Button>
-                          </Link>
                         </div>
-                      ) : (
-                        <div className="text-center py-4">
-                          <AlertCircle className="h-12 w-12 text-orange-600 mx-auto mb-3" />
-                          <h3 className="text-lg font-semibold text-orange-800 mb-2">Payment In Progress</h3>
-                          <p className="text-slate-600 mb-4">
-                            A payment for this agreement is currently being processed. Please check your payment history for status updates.
-                          </p>
-                          <Link href="/tenant/payments">
-                            <Button variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50">
-                              <Eye className="mr-2 h-4 w-4" />
-                              Check Payment Status
-                            </Button>
-                          </Link>
-                        </div>
-                      )}
+                      </div>
+                      <div className="text-center py-4">
+                        <AlertCircle className="h-12 w-12 text-orange-600 mx-auto mb-3" />
+                        <h3 className="text-lg font-semibold text-orange-800 mb-2">Payment In Progress</h3>
+                        <p className="text-slate-600 mb-4">
+                          A payment for this agreement is currently being processed. Please check your payment history for status updates.
+                        </p>
+                        <Link href="/tenant/payments">
+                          <Button variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50">
+                            <Eye className="mr-2 h-4 w-4" />
+                            Check Payment Status
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
                   ) : (
                     /* No existing payments - show payment button */
                     <div>
+                      <div className="flex items-start gap-3 mb-4">
+                        <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold text-green-800 text-sm">Agreement Fully Signed</p>
+                          <p className="text-xs text-green-600 mt-0.5">
+                            Both parties have signed. Your tenancy can now proceed to payment.
+                          </p>
+                        </div>
+                      </div>
                       <p className="text-sm text-slate-600 mb-4">
                         Click below to initiate your secure payment through Paystack.
                       </p>
@@ -786,7 +792,12 @@ export default function TenantAgreementDetailPage() {
                   <CardTitle className="text-sm font-semibold text-slate-700">Agreement Document</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {agreement.document_url ? (
+                  {/* Check if URL is real (Supabase CDN + correct bucket) vs old/broken URL.
+                      Older rows in the agreements table may still carry URLs from the
+                      'property-images' bucket, which AGMT-08 marks as 404. Force a
+                      regenerate in that case so the tenant can download a fresh PDF
+                      from the correct 'ownership-docs' bucket. */}
+                  {agreement.document_url && agreement.document_url.includes("supabase.co") && agreement.document_url.includes("/ownership-docs/") ? (
                     <a href={agreement.document_url} target="_blank" rel="noopener noreferrer">
                       <Button variant="outline" className="w-full border-green-300 text-green-700 hover:bg-green-50">
                         <Download className="mr-2 h-4 w-4" />

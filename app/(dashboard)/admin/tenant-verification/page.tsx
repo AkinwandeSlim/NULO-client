@@ -88,7 +88,7 @@ export default function TenantVerificationPage() {
       }
       
       if (user.user_type !== 'admin') {
-        window.location.href = '/dashboard'
+        window.location.href = '/admin'
         return
       }
       

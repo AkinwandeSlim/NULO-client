@@ -27,7 +27,7 @@ import SearchBar from '@/components/properties/SearchBar'
 import ViewModeToggle, { ViewMode } from '@/components/properties/ViewModeToggle'
 import PaginationControls from '@/components/properties/PaginationControls'
 import PropertyCardGrid from '@/components/properties/PropertyCardGrid'
-import { PropertyFiltersModal } from '@/components/PropertyFiltersModal'
+import PropertyFiltersSidebar, { FILTER_PRICE_MAX } from '@/components/properties/PropertyFiltersSidebar'
 import SaveFavoriteModal from '@/components/SaveFavoriteModal'
 import PropertyCard from '@/components/properties/PropertyCard'
 import { Button } from '@/components/ui/button'
@@ -107,7 +107,7 @@ export default function PropertiesPage() {
   const [priceRange, setPriceRange] = useState<[number, number]>(() => {
     const min = searchParams?.get('min_price')
     const max = searchParams?.get('max_price')
-    return [min ? parseInt(min) : 0, max ? parseInt(max) : 10000000]
+    return [min ? parseInt(min) : 0, max ? parseInt(max) : FILTER_PRICE_MAX]
   })
   const [selectedType, setSelectedType] = useState(() => searchParams?.get('type') || 'all')
   const [minBeds, setMinBeds] = useState(() => { const b = searchParams?.get('beds'); return b ? parseInt(b) : 0 })
@@ -115,9 +115,11 @@ export default function PropertiesPage() {
   const [sortBy, setSortBy] = useState(() => searchParams?.get('sort') || 'featured')
 
   // Modals
-  const [showFilterModal, setShowFilterModal] = useState(false)
+  const [showMobileFilters, setShowMobileFilters] = useState(false)
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false)
   const [pendingFavoriteId, setPendingFavoriteId] = useState<string | null>(null)
+  // Desktop-only: collapsed sidebar state (persisted in localStorage)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // Favorites
   const [favorites, setFavorites] = useState<string[]>([])
@@ -132,6 +134,19 @@ export default function PropertiesPage() {
   // the effect to avoid a redundant state-set → re-render → double-fetch.
   const isFirstUrlParamRender = useRef(true)
 
+  // Persist sidebar collapse state in localStorage so it survives reloads
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('nulo_filter_sidebar_collapsed')
+      if (stored !== null) setSidebarCollapsed(stored === 'true')
+    } catch {}
+  }, [])
+  useEffect(() => {
+    try {
+      localStorage.setItem('nulo_filter_sidebar_collapsed', String(sidebarCollapsed))
+    } catch {}
+  }, [sidebarCollapsed])
+
   // ============================================================================
   // API FUNCTIONS
   // ============================================================================
@@ -145,7 +160,7 @@ export default function PropertiesPage() {
       const filters: SearchFilters = {
         location: searchQuery || undefined,
         min_price: priceRange[0] > 0 ? priceRange[0] : undefined,
-        max_price: priceRange[1] < 10000000 ? priceRange[1] : undefined,
+        max_price: priceRange[1] < FILTER_PRICE_MAX ? priceRange[1] : undefined,
         bedrooms: minBeds > 0 ? minBeds : undefined,
         bathrooms: minBaths > 0 ? minBaths : undefined,
         property_type: selectedType !== 'all' ? selectedType : undefined,
@@ -255,7 +270,7 @@ export default function PropertiesPage() {
 
   const clearAllFilters = useCallback(() => {
     setSearchQuery('')
-    setPriceRange([0, 10000000])
+    setPriceRange([0, FILTER_PRICE_MAX])
     setSelectedType('all')
     setMinBeds(0)
     setMinBaths(0)
@@ -430,14 +445,39 @@ export default function PropertiesPage() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <ViewModeToggle viewMode={viewMode} onViewModeChange={setViewMode} />
+                {/* Desktop: re-open the collapsed sidebar */}
+                {sidebarCollapsed && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSidebarCollapsed(false)}
+                    className="hidden md:flex items-center gap-2 border-slate-300 rounded-full px-4"
+                    aria-label="Show filters"
+                    title="Show filters"
+                  >
+                    <Filter className="h-3.5 w-3.5" />
+                    <span className="text-sm">Filters</span>
+                    {(priceRange[0] > 0 || priceRange[1] < FILTER_PRICE_MAX || selectedType !== 'all' || minBeds > 0 || minBaths > 0) && (
+                      <span className="bg-orange-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                        {[
+                          priceRange[0] > 0,
+                          priceRange[1] < FILTER_PRICE_MAX,
+                          selectedType !== 'all',
+                          minBeds > 0,
+                          minBaths > 0,
+                        ].filter(Boolean).length}
+                      </span>
+                    )}
+                  </Button>
+                )}
                 {(searchQuery || priceRange[0] > 0 || selectedType !== 'all') && (
                   <Button variant="ghost" size="sm" onClick={clearAllFilters}
                     className="text-slate-500 hover:text-slate-900 text-sm px-2">
                     Clear
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={() => setShowFilterModal(true)}
-                  className="flex items-center gap-2 border-slate-300 rounded-full px-4">
+                <Button variant="outline" size="sm" onClick={() => setShowMobileFilters(true)}
+                  className="md:hidden flex items-center gap-2 border-slate-300 rounded-full px-4">
                   <Filter className="h-3.5 w-3.5" />
                   <span className="text-sm">Filters</span>
                   {(priceRange[0] > 0 || selectedType !== 'all' || minBeds > 0 || minBaths > 0) && (
@@ -451,8 +491,33 @@ export default function PropertiesPage() {
           </div>
         </div>
 
-        {/* ── Inline error banner — map stays mounted ────────────────────── */}
-        {renderState === 'error' && (
+        {/* ── Main layout: persistent filter sidebar (desktop) + content ─── */}
+        <div className="flex items-start">
+
+          {/* Sidebar — desktop: sticky left column, always visible.
+              Mobile: hidden here, the same component renders a slide-up
+              sheet at the bottom of the page (controlled by showMobileFilters). */}
+          <PropertyFiltersSidebar
+            filters={{ priceRange, propertyType: selectedType, bedrooms: minBeds, bathrooms: minBaths }}
+            onFiltersChange={(next) => {
+              if (next.priceRange) setPriceRange(next.priceRange)
+              if (next.propertyType !== undefined) setSelectedType(next.propertyType)
+              if (next.bedrooms !== undefined) setMinBeds(next.bedrooms)
+              if (next.bathrooms !== undefined) setMinBaths(next.bathrooms)
+              setCurrentPage(1)
+            }}
+            onClearAll={clearAllFilters}
+            mobileOpen={showMobileFilters}
+            onMobileClose={() => setShowMobileFilters(false)}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(v => !v)}
+          />
+
+          {/* Content area: split view or grid view */}
+          <div className="flex-1 min-w-0">
+
+          {/* ── Inline error banner — map stays mounted ────────────────────── */}
+          {renderState === 'error' && (
           <div className="bg-red-50 border-b border-red-200 px-4 py-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
@@ -806,21 +871,10 @@ export default function PropertiesPage() {
           </div>
         )}
 
+          </div>{/* /flex-1 content wrapper */}
+        </div>{/* /flex items-start outer wrapper */}
+
         {/* ── Modals ──────────────────────────────────────────────────────── */}
-        {showFilterModal && (
-          <PropertyFiltersModal
-            isOpen={showFilterModal}
-            onClose={() => setShowFilterModal(false)}
-            filters={{ priceRange, propertyType: selectedType, bedrooms: minBeds, bathrooms: minBaths }}
-            onFiltersChange={(filters) => {
-              setPriceRange(filters.priceRange || [0, 10000000])
-              setSelectedType(filters.propertyType || 'all')
-              setMinBeds(filters.bedrooms || 0)
-              setMinBaths(filters.bathrooms || 0)
-              setCurrentPage(1)
-            }}
-          />
-        )}
         {showSaveFavoriteModal && (
           <SaveFavoriteModal
             isOpen={showSaveFavoriteModal}

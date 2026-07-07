@@ -16,7 +16,7 @@ export default function LandlordOnboardingStep4() {
   // useOnboarding handles ALL auth/redirect guards internally, including the
   // OAuth fix. isReady is true only after those checks pass.
   // DO NOT add a separate auth guard useEffect here.
-  const { isReady, saveStep4, isProcessing } = useOnboarding()
+  const { isReady, saveStep4, isProcessing, featureFlags } = useOnboarding()
 
   const [formData, setFormData] = useState({
     bank_account_number: '',
@@ -90,8 +90,8 @@ export default function LandlordOnboardingStep4() {
         <div className="absolute top-1/2 left-1/2 w-32 h-32 bg-orange-100/40 rounded-full blur-xl animate-pulse" style={{animationDelay: '1s', animationDuration: '3s'}}></div>
       </div>
 
-      {/* Back Button */}
-      <Link href="/onboarding/landlord/step-3" className="absolute top-6 left-6 z-50 inline-flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-orange-600 transition-colors duration-300 rounded-lg hover:bg-slate-100 cursor-pointer">
+      {/* Back Button - use conservative default if feature flags not loaded */}
+      <Link href={`/onboarding/landlord/step-${(featureFlags?.enable_property_step ?? false) ? 3 : 2}`} className="absolute top-6 left-6 z-50 inline-flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-orange-600 transition-colors duration-300 rounded-lg hover:bg-slate-100 cursor-pointer">
         <ArrowLeft className="h-4 w-4" />
         <span className="font-medium">Back</span>
       </Link>

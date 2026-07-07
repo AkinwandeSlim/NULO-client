@@ -287,6 +287,226 @@ class AdminDashboardAPI {
     if (pendingTotal > 5) return 'high';
     return 'low';
   }
+
+  // ============================================================================
+  // ANALYTICS - wired to real /api/v1/admin/dashboard/analytics endpoint
+  // ============================================================================
+
+  /**
+   * Get platform-wide payment analytics.
+   * Backend aggregates from:
+   *   - virtual_account_transfers  → GMV (inbound rent payments)
+   *   - transactions/nomba_disbursement → outbound disbursements
+   *   - agreements.platform_fee    → revenue / take-rate
+   *   - nomba_client.fetch_sub_account_balance() → live wallet balance
+   *
+   * Period: "7d" | "30d" | "90d" | "1y"
+   */
+  async getAdminAnalyticsSummary(
+    period: "7d" | "30d" | "90d" | "1y" = "30d",
+  ): Promise<AdminAnalyticsSummary> {
+    const { data } = await apiClient.get('/api/v1/admin/dashboard/analytics', {
+      params: { period },
+      timeout: 60000, // balance fetch + aggregations can be slow
+    })
+    return data
+  }
+
+  // ============================================================================
+  // ADMIN TRANSACTIONS - proxy to /api/v1/admin/transactions/* endpoints
+  // These call the Nomba API directly via nomba_client.py
+  // ============================================================================
+
+  /**
+   * All sub-account transactions (inbound + outbound) for a date range.
+   * Backend: GET /api/v1/admin/transactions/account
+   */
+  async getAccountTransactions(opts: {
+    date_from?: string
+    date_to?: string
+    limit?: number
+    page?: number
+  } = {}): Promise<NombaTransactionPage> {
+    const { data } = await apiClient.get('/api/v1/admin/transactions/account', {
+      params: opts,
+      timeout: 30000,
+    })
+    return data
+  }
+
+  /**
+   * Transactions for a specific virtual account (NUBAN).
+   * Backend: GET /api/v1/admin/transactions/virtual/{virtual_account}
+   */
+  async getVirtualAccountTransactions(
+    virtualAccount: string,
+    opts: { date_from?: string; date_to?: string; limit?: number; page?: number } = {},
+  ): Promise<NombaTransactionPage> {
+    const { data } = await apiClient.get(
+      `/api/v1/admin/transactions/virtual/${virtualAccount}`,
+      { params: opts, timeout: 30000 },
+    )
+    return data
+  }
+
+  /**
+   * Bank (debit/credit) transactions on the sub-account — disbursements.
+   * Backend: GET /api/v1/admin/transactions/bank
+   */
+  async getBankTransactions(opts: {
+    limit?: number
+    page?: number
+  } = {}): Promise<NombaTransactionPage> {
+    const { data } = await apiClient.get('/api/v1/admin/transactions/bank', {
+      params: opts,
+      timeout: 30000,
+    })
+    return data
+  }
+
+  /**
+   * Sub-account details (status, linked banks, account name).
+   * Backend: GET /api/v1/admin/transactions/sub-account/details
+   */
+  async getSubAccountDetails(subAccountId?: string): Promise<NombaSubAccountDetails> {
+    const { data } = await apiClient.get(
+      '/api/v1/admin/transactions/sub-account/details',
+      { params: subAccountId ? { sub_account_id: subAccountId } : {}, timeout: 15000 },
+    )
+    return data
+  }
+
+  /**
+   * Live sub-account wallet balance from Nomba.
+   * Backend: GET /api/v1/admin/transactions/sub-account/balance
+   */
+  async getSubAccountBalance(subAccountId?: string): Promise<NombaSubAccountBalance> {
+    const { data } = await apiClient.get(
+      '/api/v1/admin/transactions/sub-account/balance',
+      { params: subAccountId ? { sub_account_id: subAccountId } : {}, timeout: 15000 },
+    )
+    return data
+  }
+}
+
+// ============================================================================
+// ANALYTICS TYPES — matching /api/v1/admin/dashboard/analytics response
+// ============================================================================
+
+export interface GmvTrendPoint {
+  /** Date bucket: "YYYY-MM-DD" (7d/30d), "YYYY-WW" (90d), "YYYY-MM" (1y) */
+  period: string
+  amount_ngn: number
+}
+
+export interface TopLandlord {
+  landlord_id: string
+  full_name: string
+  email: string
+  total_disbursed_ngn: number
+}
+
+export interface AdminAnalyticsSummary {
+  period: "7d" | "30d" | "90d" | "1y"
+  period_days: number
+  generated_at: string
+
+  /** Gross Merchandise Value — total inbound rent collected */
+  gmv: {
+    total_ngn: number
+    payment_count: number
+    trend: GmvTrendPoint[]
+  }
+
+  /** Outbound disbursements to landlords */
+  disbursements: {
+    total_ngn: number
+    count: number
+    released_ngn: number
+    pending_ngn: number
+  }
+
+  /** Platform revenue */
+  revenue: {
+    platform_fee_ngn: number
+    /** platform_fee / GMV × 100 */
+    take_rate_pct: number
+  }
+
+  /** Payment health */
+  health: {
+    active_agreements: number
+    failed_payment_rate_pct: number
+    failed_count: number
+    total_transfers: number
+  }
+
+  /** Top 5 landlords ranked by disbursed volume in the period */
+  top_landlords_by_volume: TopLandlord[]
+
+  /** Live Nomba sub-account wallet balance */
+  live_balance: {
+    amount_ngn: number | null
+    error: string | null
+    source: "nomba_sub_account"
+  }
+}
+
+// ============================================================================
+// NOMBA TRANSACTION TYPES — matching /api/v1/admin/transactions/* responses
+// ============================================================================
+
+export interface NombaTransaction {
+  transactionId?: string
+  amount?: number
+  currency?: string
+  type?: string
+  status?: string
+  time?: string
+  narration?: string
+  reference?: string
+  senderName?: string
+  senderBank?: string
+  [key: string]: unknown
+}
+
+export interface NombaTransactionPage {
+  success: boolean
+  message: string
+  data: {
+    content: NombaTransaction[]
+    pageable?: {
+      pageNumber: number
+      pageSize: number
+      totalElements: number
+      totalPages: number
+    }
+  }
+}
+
+export interface NombaSubAccountDetails {
+  success: boolean
+  message: string
+  data: {
+    accountId: string
+    accountHolderId: string
+    accountRef: string
+    status: string
+    type: string
+    accountName: string
+    currency: string
+    banks?: Array<{ bankCode: string; bankName: string; accountNumber: string }>
+  }
+}
+
+export interface NombaSubAccountBalance {
+  success: boolean
+  message: string
+  data: {
+    amount: string
+    currency: string
+    timeCreated: string
+  }
 }
 
 // ============================================================================

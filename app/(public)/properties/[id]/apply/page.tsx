@@ -16,7 +16,7 @@ import { createClient } from "@/utils/supabase/client"
 import Link from "next/link"
 import { applicationsAPI, CreateApplicationData } from "@/lib/api/applications"
 import { getErrorMessage } from "@/lib/api/client"
-import { formatNGN, calculateRentalBreakdown } from "@/lib/utils/rentalCalculations"
+import { formatNGN, calculateRentalBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 
 // Import step components
 import PersonalInfoStep from "@/components/application/PersonalInfoStep"
@@ -97,11 +97,12 @@ export default function ApplicationPage() {
   const viewingIdFromUrl = searchParams?.get("viewing_id") || null
 
   const [currentStep,      setCurrentStep]      = useState(1)
-  const [isSubmitting,     setIsSubmitting]      = useState(false)
-  const [duplicateError,   setDuplicateError]    = useState(false)
-  const [property,         setProperty]          = useState<any>(null)
-  const [loadingProperty,  setLoadingProperty]   = useState(true)
-  const [errors,           setErrors]            = useState<Record<string, string>>({})
+  const [isSubmitting,     setIsSubmitting]     = useState(false)
+  const [duplicateError,   setDuplicateError]   = useState(false)
+  const [property,         setProperty]         = useState<any>(null)
+  const [loadingProperty,  setLoadingProperty]  = useState(true)
+  const [loadingExistingApp, setLoadingExistingApp] = useState(true)
+  const [errors,           setErrors]           = useState<Record<string, string>>({})
 
   const [formData, setFormData] = useState<ApplicationData>({
     // Pre-populate with user profile data (only fields that exist in TenantProfile)
@@ -169,6 +170,29 @@ export default function ApplicationPage() {
     }
     fetchProperty()
   }, [propertyId])
+  // ── Check for existing application ────────────────────────────────────────────
+  useEffect(() => {
+    const checkExistingApplication = async () => {
+      if (!user || !propertyId) return
+      try {
+        const res = await applicationsAPI.getMyApplications()
+        if (res.success && res.applications) {
+          const existing = res.applications.find(
+            (app: any) => app.property_id === propertyId
+          )
+          if (existing) {
+            toast.info("You've already applied for this property!")
+            router.push("/tenant/applications")
+          }
+        }
+      } catch (err) {
+        console.warn("Could not check for existing applications", err)
+      } finally {
+        setLoadingExistingApp(false)
+      }
+    }
+    checkExistingApplication()
+  }, [user, propertyId, router])
 
   // ── Form handlers ──────────────────────────────────────────────────────────
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -254,17 +278,29 @@ export default function ApplicationPage() {
     setIsSubmitting(true)
 
     try {
-      // MVP: Use hardcoded placeholder document URLs
-      const documentUrls: string[] = [
-        "https://placeholder-documents.com/id-document.pdf",
-        "https://placeholder-documents.com/proof-of-income.pdf",
-        "https://placeholder-documents.com/bank-statement.pdf",
-        "https://placeholder-documents.com/employment-letter.pdf"
-      ].filter((_, index) => {
-        // Only include URLs for documents that were actually uploaded
-        const fields = ["idDocument", "proofOfIncome", "bankStatement", "employmentLetter"] as const
-        return formData[fields[index]] !== null
-      })
+      // BUG-025 FIX: Upload each document to Supabase Storage via the
+      // server endpoint (uses service-role, bypasses RLS). Storing the
+      // returned *path* (not a URL) lets the landlord view request
+      // signed URLs at render time.
+      const documentFields = ["idDocument", "proofOfIncome", "bankStatement", "employmentLetter"] as const
+      const documentUrls: string[] = []
+
+      for (const field of documentFields) {
+        const file = formData[field] as File | null
+        if (!file) continue
+
+        try {
+          const uploaded = await applicationsAPI.uploadDocument(file)
+          documentUrls.push(uploaded.path)
+        } catch (uploadErr: any) {
+          console.error("[APPLY] Document upload failed", { field, uploadErr })
+          const detail =
+            uploadErr?.response?.data?.detail ||
+            uploadErr?.message ||
+            "Unknown upload error"
+          throw new Error(`Failed to upload ${field}: ${detail}`)
+        }
+      }
 
       // Build references as JSONB object (database schema: references jsonb)
       const referencesData: Record<string, any> = {
@@ -751,7 +787,8 @@ export default function ApplicationPage() {
                       <p className="text-blue-600 font-semibold text-sm mb-2">Move-in Cost Breakdown</p>
                       {(() => {
                         const breakdown = calculateRentalBreakdown(property)
-                        const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
+                        const { monthlyRent, annualRent, periodRent, cautionFee, platformFee, serviceCharge, totalDue, periodLabel, paymentFrequency } = breakdown
+                        const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
                         return (
                           <div className="space-y-1 text-xs">
                             <div className="flex justify-between">
@@ -759,8 +796,8 @@ export default function ApplicationPage() {
                               <span className="font-semibold">{formatNGN(monthlyRent)}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span>Annual Rent (12 months):</span>
-                              <span className="font-semibold">{formatNGN(annualRent)}</span>
+                              <span>{periodLabel}:</span>
+                              <span className="font-semibold">{formatNGN(periodRent)}</span>
                             </div>
                             <div className="flex justify-between">
                               <span>Security Deposit (2 months):</span>

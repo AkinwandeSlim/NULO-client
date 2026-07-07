@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
+import {
+  FILTER_PRICE_MAX,
+  PROPERTY_TYPES,
+} from "@/lib/filters/constants"
 
 interface SearchBarCompactProps {
   location: string
@@ -47,16 +51,7 @@ const CITY_LOCATIONS: Record<string, LocationSuggestion[]> = {
   ]
 }
 
-const PROPERTY_TYPES = [
-  { value: 'all', label: 'All Properties' },
-  { value: 'apartment', label: 'Apartment' },
-  { value: 'house', label: 'House' },
-  { value: 'duplex', label: 'Duplex' },
-  { value: 'bungalow', label: 'Bungalow' },
-  { value: 'flat', label: 'Flat' },
-  { value: 'villa', label: 'Villa' },
-  { value: 'penthouse', label: 'Penthouse' },
-]
+const PROPERTY_TYPES_LOCAL = PROPERTY_TYPES // re-export so the JSX below reads naturally
 
 interface LocationSuggestion {
   location: string
@@ -168,7 +163,7 @@ export function SearchBarCompact({
     if (location?.trim()) params.append('location', location.trim())
     if (propertyType && propertyType !== 'all') params.append('property_type', propertyType)
     if (priceRange[0] > 0) params.append('min_price', priceRange[0].toString())
-    if (priceRange[1] < 10000000) params.append('max_price', priceRange[1].toString())
+    if (priceRange[1] < FILTER_PRICE_MAX) params.append('max_price', priceRange[1].toString())
     params.append('sort', 'newest')
     params.append('page', '1')
     params.append('limit', '20')
@@ -180,39 +175,50 @@ export function SearchBarCompact({
       {/* Main Search Card */}
       <Card className="relative bg-white/98 backdrop-blur-sm border-0 rounded-2xl shadow-2xl">
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-2">
+          <div className="flex flex-col md:flex-row gap-2 md:gap-3">
             {/* Location Input */}
             <div className="flex-1 relative">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10">
-                {loadingLocations ? (
-                  <Loader2 className="h-4 w-4 text-orange-500 animate-spin" />
-                ) : (
-                  <MapPin className="h-4 w-4 text-slate-400" />
+              <label
+                htmlFor={inputId}
+                className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block"
+              >
+                <MapPin className="inline h-3 w-3 mr-1 -mt-0.5" />
+                Location
+              </label>
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10">
+                  {loadingLocations ? (
+                    <Loader2 className="h-4 w-4 text-orange-500 animate-spin" />
+                  ) : (
+                    <MapPin className="h-4 w-4 text-slate-400" />
+                  )}
+                </div>
+
+                <input
+                  ref={locationInputRef}
+                  id={inputId}
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="City, neighborhood, or address"
+                  aria-label="Search location"
+                  className="w-full h-12 pl-10 pr-8 rounded-lg bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-orange-500 focus:border-orange-500 placeholder:text-slate-400 text-slate-900 transition-all"
+                  autoComplete="off"
+                />
+
+                {location && (
+                  <button
+                    onClick={() => setLocation('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded-full"
+                    aria-label="Clear location"
+                  >
+                    <X className="h-4 w-4 text-slate-400" />
+                  </button>
                 )}
               </div>
-
-              <input
-                ref={locationInputRef}
-                id={inputId}
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                onFocus={() => setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                onKeyDown={handleKeyDown}
-                placeholder="City, neighborhood, or address"
-                className="w-full h-12 pl-10 pr-8 rounded-lg bg-slate-50 border-0 focus:bg-white focus:ring-2 focus:ring-orange-500 placeholder:text-slate-400 text-slate-900"
-                autoComplete="off"
-              />
-
-              {location && (
-                <button
-                  onClick={() => setLocation('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded-full"
-                >
-                  <X className="h-4 w-4 text-slate-400" />
-                </button>
-              )}
 
               {/* Location Suggestions Dropdown */}
               <AnimatePresence>
@@ -221,8 +227,10 @@ export function SearchBarCompact({
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
-                    className="absolute left-0 right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-64 overflow-y-auto"
+                    transition={{ duration: 0.15 }}
+                    className="absolute left-0 right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-slate-200 z-40 max-h-64 overflow-y-auto overscroll-contain"
                     id={suggestionsId}
+                    role="listbox"
                   >
                     <div className="p-2">
                       {filteredSuggestions.map((loc, idx) => (
@@ -254,38 +262,83 @@ export function SearchBarCompact({
 
             {/* Property Type Select */}
             <div className="md:w-44 relative">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10">
-                <Home className="h-4 w-4 text-slate-400" />
-              </div>
-              <select
-                value={propertyType}
-                onChange={(e) => setPropertyType(e.target.value)}
-                className="w-full h-12 pl-10 pr-8 rounded-lg bg-slate-50 border-0 focus:bg-white focus:ring-2 focus:ring-orange-500 text-slate-900 appearance-none cursor-pointer font-medium text-sm"
+              <label
+                htmlFor="search-property-type"
+                className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block"
               >
-                {PROPERTY_TYPES.map(type => (
-                  <option key={type.value} value={type.value}>{type.label}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <Home className="inline h-3 w-3 mr-1 -mt-0.5" />
+                Property Type
+              </label>
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10">
+                  <Home className="h-4 w-4 text-slate-400" />
+                </div>
+                <select
+                  id="search-property-type"
+                  value={propertyType}
+                  onChange={(e) => setPropertyType(e.target.value)}
+                  aria-label="Property type"
+                  className="w-full h-12 pl-10 pr-8 rounded-lg bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-slate-900 appearance-none cursor-pointer font-medium text-sm transition-all"
+                >
+                  {PROPERTY_TYPES.map(type => (
+                    <option key={type.value} value={type.value}>{type.label}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
             </div>
 
             {/* Advanced Filters Button */}
-            <button
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="md:w-auto px-4 h-12 flex items-center gap-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium text-sm transition-colors border border-slate-200"
-            >
-              <Sliders className="h-4 w-4" />
-              <span className="hidden sm:inline">Filters</span>
-            </button>
+            {(() => {
+              // Count how many active filters we can detect from this component
+              // (price + propertyType). Bedroom/bath/minSize live in the parent
+              // and are surfaced via the active-filters badge inside the modal.
+              const activeCount =
+                (priceRange[0] > 0 || priceRange[1] < FILTER_PRICE_MAX ? 1 : 0) +
+                (propertyType !== 'all' ? 1 : 0)
+              return (
+                <div className="md:w-auto">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">
+                    <Sliders className="inline h-3 w-3 mr-1 -mt-0.5" />
+                    Refine
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanced(!showAdvanced)}
+                    aria-label={`Open advanced filters${activeCount ? ` (${activeCount} active)` : ''}`}
+                    aria-expanded={showAdvanced}
+                    title="More filters: price, beds, baths, size"
+                    className={`w-full h-12 px-4 flex items-center justify-center gap-2 rounded-lg font-semibold text-sm transition-all border min-w-[110px] ${
+                      activeCount > 0
+                        ? 'bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <Sliders className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                    <span>Filters</span>
+                    {activeCount > 0 && (
+                      <span className="ml-1 bg-orange-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center">
+                        {activeCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )
+            })()}
 
             {/* Search Button */}
-            <Link href={buildSearchURL()} className="md:w-auto">
-              <Button className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg">
-                <Search className="h-4 w-4 mr-2" />
-                <span className="hidden sm:inline">Search</span>
-                <span className="sm:hidden">Go</span>
-              </Button>
-            </Link>
+            <div className="md:w-auto">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block md:invisible">
+                <Search className="inline h-3 w-3 mr-1 -mt-0.5" />
+                Search
+              </label>
+              <Link href={buildSearchURL()} className="block">
+                <Button className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg shadow-md shadow-orange-500/30">
+                  <Search className="h-4 w-4 mr-2" />
+                  <span>Search</span>
+                </Button>
+              </Link>
+            </div>
           </div>
         </CardContent>
       </Card>

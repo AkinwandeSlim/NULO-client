@@ -27,6 +27,7 @@ import {
 import type { AdminDashboardStats, RecentActivityResponse } from '@/lib/api/adminDashboard'
 import type { LandlordDashboardData } from '@/lib/api/landlordDashboard'
 import type { TenantDashboardData } from '@/lib/api/tenantDashboard'
+import { normalizeAppStatus } from '@/lib/utils/applicationStatus'
 
 // ============================================================================
 // CONTEXT TYPES
@@ -283,8 +284,8 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
         setLandlordData(freshData)
         setLandlordLastRefreshTime(Date.now())
 
-        // Store in cache for 5 minutes
-        cache.set(cacheKey, freshData, 5 * 60 * 1000)
+        // Store in cache for 60 seconds (reduced from 5 min for fresher stats)
+        cache.set(cacheKey, freshData, 60 * 1000)
 
         console.log('✅ [LANDLORD DASHBOARD] Dashboard data cached successfully')
 
@@ -345,6 +346,19 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
         const freshData = forceRefresh
           ? await tenantDashboardAPI.refreshTenantDashboard(user.id)
           : await tenantDashboardAPI.getTenantDashboard(user.id)
+
+        // Normalize application statuses so the dashboard UI's
+        //   application.status === "pending"
+        // checks actually match the server's "submitted" / "under_review"
+        // values (the DB check constraint requires "submitted"). Without
+        // this, newly submitted apps show no badge in the Application
+        // Tracking section because none of the three badge branches match.
+        if (freshData?.applications && Array.isArray(freshData.applications)) {
+          freshData.applications = (freshData.applications as any[]).map((a) => ({
+            ...a,
+            status: normalizeAppStatus(a.status),
+          }))
+        }
 
         // Update state
         setTenantData(freshData)
@@ -433,16 +447,33 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
     const interval = setInterval(() => {
       console.log('🔄 [DASHBOARD] Auto-refreshing dashboard data...')
       setRefreshing(true)
-      Promise.all([
-        fetchDashboardStats(true),
-        fetchRecentActivity(7, true),
-      ]).catch(error => {
+      
+      // Only fetch admin stats if user is admin
+      const refreshPromises = []
+      if (user?.user_type === 'admin') {
+        refreshPromises.push(
+          fetchDashboardStats(true),
+          fetchRecentActivity(7, true)
+        )
+      }
+      
+      // Refresh landlord dashboard if user is landlord
+      if (user?.user_type === 'landlord') {
+        refreshPromises.push(fetchLandlordDashboard(true))
+      }
+      
+      // Refresh tenant dashboard if user is tenant
+      if (user?.user_type === 'tenant') {
+        refreshPromises.push(fetchTenantDashboard(true))
+      }
+      
+      Promise.all(refreshPromises).catch(error => {
         console.error('❌ [DASHBOARD] Auto-refresh failed:', error)
       })
     }, 5 * 60 * 1000) // 5 minutes
 
     return () => clearInterval(interval)
-  }, [fetchDashboardStats, fetchRecentActivity])
+  }, [fetchDashboardStats, fetchRecentActivity, fetchLandlordDashboard, fetchTenantDashboard, user])
 
   // ============================================================================
   // CLEANUP ON UNMOUNT

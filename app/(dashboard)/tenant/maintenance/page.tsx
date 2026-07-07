@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { maintenanceAPI, MaintenanceRequest } from "@/lib/api/maintenance"
 import { agreementsAPI } from "@/lib/api/agreements"
+import { ReportIssueModal } from "@/components/maintenance/ReportIssueModal"
 import {
-  Settings, Plus, Calendar, AlertTriangle, CheckCircle, Clock, 
-  MessageSquare, ArrowRight, Filter, Search, X, Wrench, Home
+  Settings, Plus, Calendar, AlertTriangle, CheckCircle, Clock,
+  MessageSquare, ArrowRight, Filter, Search, X, Wrench, Home,
+  Lock, FileCheck
 } from "lucide-react"
+import Link from "next/link"
 import { toast } from "sonner"
 
 const DEFAULT_PROPERTY_IMAGE = "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop"
@@ -26,6 +29,7 @@ export default function TenantMaintenancePage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [selectedProperty, setSelectedProperty] = useState<string>("all")
   const [rentedProperties, setRentedProperties] = useState<any[]>([])
+  const [reportModalOpen, setReportModalOpen] = useState(false)
 
   useEffect(() => {
     if (user?.id) {
@@ -158,11 +162,68 @@ export default function TenantMaintenancePage() {
     )
   }
 
+  // ── No active tenancy gate ─────────────────────────────────────────────────
+  // rentedProperties is populated from ACTIVE agreements. If it's empty after
+  // loading completes, the tenant has no active lease — show a friendly gate
+  // screen rather than an empty/confusing maintenance list.
+  if (rentedProperties.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-6">
+            <Link href="/tenant">
+              <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900 -ml-2">
+                <Home className="mr-2 h-4 w-4" />
+                Back to Dashboard
+              </Button>
+            </Link>
+          </div>
+          <div className="flex items-center justify-center min-h-[55vh]">
+            <div className="text-center max-w-md">
+              <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Lock className="w-10 h-10 text-orange-500" />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-3">
+                No Active Tenancy
+              </h2>
+              <p className="text-slate-600 mb-2">
+                Maintenance requests are only available once you have an active lease agreement.
+              </p>
+              <p className="text-slate-500 text-sm mb-8">
+                Sign a lease, make your first payment, and this section will unlock automatically.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Link href="/tenant/agreements">
+                  <Button className="bg-orange-500 hover:bg-orange-600 text-white w-full sm:w-auto">
+                    <FileCheck className="mr-2 h-4 w-4" />
+                    View My Agreements
+                  </Button>
+                </Link>
+                <Link href="/tenant/active-rent">
+                  <Button variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-50 w-full sm:w-auto">
+                    <Home className="mr-2 h-4 w-4" />
+                    My Rent
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
+          <Link href="/tenant">
+            <Button variant="ghost" size="sm" className="mb-4 text-slate-600 hover:text-slate-900 -ml-2">
+              <Home className="mr-2 h-4 w-4" />
+              Back to Dashboard
+            </Button>
+          </Link>
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-2">
@@ -170,7 +231,10 @@ export default function TenantMaintenancePage() {
               </h1>
               <p className="text-gray-600">Track and manage maintenance issues for all your rented properties</p>
             </div>
-            <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white">
+            <Button
+              onClick={() => setReportModalOpen(true)}
+              className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white"
+            >
               <Plus className="mr-2 h-4 w-4" />Report New Issue
             </Button>
           </div>
@@ -229,7 +293,10 @@ export default function TenantMaintenancePage() {
                     ? "No requests match your filters" 
                     : "No maintenance requests for your rented properties. Report an issue to get started."}
                 </p>
-                <Button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white">
+                <Button
+                  onClick={() => setReportModalOpen(true)}
+                  className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white"
+                >
                   <Plus className="mr-2 h-4 w-4" />Report New Issue
                 </Button>
               </div>
@@ -302,6 +369,25 @@ export default function TenantMaintenancePage() {
           </div>
         )}
       </div>
+
+      {/* Report Issue Modal */}
+      <ReportIssueModal
+        isOpen={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        rentedProperties={rentedProperties.map(agreement => ({
+          property_id: agreement.property_id,
+          property: agreement.property ? {
+            id: agreement.property.id,
+            title: agreement.property.title,
+            address: agreement.property.address ?? agreement.property.location ?? undefined,
+            city: agreement.property.city ?? undefined
+          } : undefined
+        }))}
+        onSuccess={() => {
+          // Refresh the list after a successful submission
+          fetchMaintenanceRequests()
+        }}
+      />
     </div>
   )
 }

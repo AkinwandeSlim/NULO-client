@@ -99,6 +99,7 @@ export type Database = {
           featured?: boolean
           images?: string[] | null
           amenities?: string[] | null
+          deleted_at?: string | null
         }
       }
     }

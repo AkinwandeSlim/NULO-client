@@ -39,9 +39,18 @@ const AMENITIES_OPTIONS = [
   'Elevator',
 ]
 
+// Must stay in sync with DB CHECK constraint in
+// docs/sql/migrations/001_add_payment_frequency_to_properties.sql:
+//   ('MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL')
+const PAYMENT_FREQUENCY_OPTIONS = [
+  { value: 'MONTHLY', label: 'Monthly', hint: 'Every month' },
+  { value: 'QUARTERLY', label: 'Quarterly', hint: 'Every 3 months' },
+  { value: 'SEMI_ANNUAL', label: 'Semi-Annual', hint: 'Every 6 months' },
+  { value: 'ANNUAL', label: 'Annual', hint: 'Once a year' },
+] as const
+
 export default function EditPropertyPage() {
   const [loading, setLoading] = useState(true)
-  const [mounted, setMounted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [hasInitialLoadRef] = useState({ current: false })
   const [formData, setFormData] = useState({
@@ -57,6 +66,7 @@ export default function EditPropertyPage() {
     amenities: [] as string[],
     status: 'vacant',
     availability_start: '',
+    payment_frequency: 'MONTHLY',
   })
 
   const router = useRouter()
@@ -66,46 +76,53 @@ export default function EditPropertyPage() {
   const propertyId =  (params?.id as string) || ""
 
   const fetchProperty = useCallback(async () => {
+    if (!propertyId) {
+      setLoading(false)
+      return
+    }
+
     try {
-      console.log(' [EDIT PROPERTY] Starting fetch for:', propertyId)
-      setLoading(true)
+      console.log('🔍 [EDIT PROPERTY] Starting fetch for:', propertyId)
       const data = await propertiesAPI.getById(propertyId)
-      console.log(' [EDIT PROPERTY] Property data received:', data)
+      console.log('✅ [EDIT PROPERTY] Property data received:', data)
+      
+      // Handle date formatting for availability_start (YYYY-MM-DD)
+      let formattedDate = ''
+      if (data.available_from) {
+        const dateObj = new Date(data.available_from)
+        if (!isNaN(dateObj.getTime())) {
+          formattedDate = dateObj.toISOString().split('T')[0]
+        }
+      }
       
       setFormData({
         title: data.title || '',
         description: data.description || '',
         property_type: data.property_type || '',
         location: data.location || '',
-        address: data.location || '', // Use location as address since API doesn't have address field
-        rent_amount: data.price?.toString() || '',
-        bedrooms: data.beds?.toString() || '',
-        bathrooms: data.baths?.toString() || '',
-        square_feet: data.sqft?.toString() || '',
+        address: data.full_address || data.address || data.location || '',
+        rent_amount: (data.price || 0).toString(),
+        bedrooms: (data.beds || 0).toString(),
+        bathrooms: (data.baths || 0).toString(),
+        square_feet: (data.sqft || 0).toString(),
         amenities: data.amenities || [],
         status: data.status || 'vacant',
-        availability_start: data.available_from || '',
+        availability_start: formattedDate,
+        payment_frequency: data.payment_frequency || 'MONTHLY',
       })
     } catch (error: any) {
-      console.error(' [EDIT PROPERTY] Failed to fetch property:', error)
+      console.error('❌ [EDIT PROPERTY] Failed to fetch property:', error)
       toast.error(error.message || 'Failed to load property')
     } finally {
-      console.log(' [EDIT PROPERTY] Fetch completed, setting loading to false')
+      console.log('✅ [EDIT PROPERTY] Fetch completed, setting loading to false')
       setLoading(false)
       hasInitialLoadRef.current = true
     }
   }, [propertyId])
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (mounted) {
-      setLoading(true)
-      fetchProperty()
-    }
-  }, [pathname, fetchProperty]) // Add pathname to trigger refresh on navigation
+    fetchProperty()
+  }, [fetchProperty])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -119,31 +136,100 @@ export default function EditPropertyPage() {
     try {
       setSaving(true)
 
+      // Send as JSON (backend now accepts JSON body, not FormData)
       const updateData = {
         title: formData.title,
         description: formData.description,
         property_type: formData.property_type,
         location: formData.location,
         address: formData.address,
-        price: parseInt(formData.rent_amount),
-        bedrooms: parseInt(formData.bedrooms),
-        bathrooms: parseInt(formData.bathrooms),
-        square_feet: formData.square_feet ? parseInt(formData.square_feet) : undefined,
+        price: parseInt(formData.rent_amount) || 0,
+        bedrooms: parseInt(formData.bedrooms) || 0,
+        bathrooms: parseInt(formData.bathrooms) || 0,
+        sqft: formData.square_feet ? parseInt(formData.square_feet) : undefined,
         amenities: formData.amenities,
         status: formData.status,
-        availability_start: formData.availability_start || undefined,
+        available_from: formData.availability_start || undefined,
+        payment_frequency: formData.payment_frequency,
       }
 
+      //region debug-point H1-formdata-sent
+      // Debug: Log JSON being sent
+      console.log('🔍 [EDIT-PAGE] JSON being sent:', updateData)
+
+      // Report to debug server
+      fetch('http://127.0.0.1:7778/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hypothesisId: 'H1',
+          stage: 'frontend-submit',
+          propertyId,
+          updateData,
+          timestamp: new Date().toISOString()
+        })
+      }).catch(() => {})
+      //endregion debug-point H1-formdata-sent
+
       await propertiesAPI.update(propertyId, updateData)
+
+      //region debug-point H3-cache-invalidated
+      // Debug: Verify cache invalidation happens
+      fetch('http://127.0.0.1:7778/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hypothesisId: 'H3',
+          stage: 'after-api-call',
+          propertyId,
+          message: 'API call completed, cache should be invalidated',
+          timestamp: new Date().toISOString()
+        })
+      }).catch(() => {})
+      //endregion debug-point H3-cache-invalidated
 
       toast.success('Property updated successfully!')
       router.push(`/landlord/properties/${propertyId}`)
     } catch (error: any) {
-      console.error('Failed to update property:', error)
+      console.error('❌ Failed to update property:', error)
+
+      //region debug-point H2-backend-error
+      // Debug: Log error details
+      fetch('http://127.0.0.1:7778/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hypothesisId: 'H2',
+          stage: 'update-failed',
+          propertyId,
+          error: error.message,
+          status: error.response?.status,
+          timestamp: new Date().toISOString()
+        })
+      }).catch(() => {})
+      //endregion debug-point H2-backend-error
+
       toast.error(error.message || 'Failed to update property')
     } finally {
       setSaving(false)
     }
+  }
+
+  // Handle number input formatting (remove leading zeros, no scroll)
+  const handleNumberChange = (field: keyof typeof formData, value: string) => {
+    // Remove all non-digit characters except for an optional single decimal point
+    const cleanedValue = value.replace(/[^\d]/g, '')
+    
+    // Remove leading zeros
+    let formattedValue = cleanedValue.replace(/^0+(?!$)/, '')
+    
+    // If empty, allow it
+    if (formattedValue === '') {
+      setFormData({ ...formData, [field]: '' })
+      return
+    }
+    
+    setFormData({ ...formData, [field]: formattedValue })
   }
 
   const handleAmenityToggle = (amenity: string) => {
@@ -155,7 +241,8 @@ export default function EditPropertyPage() {
     }))
   }
 
-  if (loading && !hasInitialLoadRef.current && !mounted) {
+  // Show loading state while fetching property data
+  if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 flex items-center justify-center">
         <div className="text-center">
@@ -168,6 +255,17 @@ export default function EditPropertyPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
+      {/* Hide number input scrollbars */}
+      <style>{`
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        input[type="number"] {
+          -moz-appearance: textfield;
+        }
+      `}</style>
       <div className="container mx-auto px-4 py-8 max-w-7xl">
 
         {/* Header — matches viewings and application detail page pattern */}
@@ -321,7 +419,7 @@ export default function EditPropertyPage() {
                   id="rent_amount"
                   type="number"
                   value={formData.rent_amount}
-                  onChange={(e) => setFormData({ ...formData, rent_amount: e.target.value })}
+                  onChange={(e) => handleNumberChange('rent_amount', e.target.value)}
                   placeholder="50000"
                   required
                 />
@@ -338,6 +436,43 @@ export default function EditPropertyPage() {
               </div>
             </div>
 
+            <div>
+              <Label className="text-slate-700 font-medium">Payment Frequency</Label>
+              <p className="text-xs text-slate-500 mt-1 mb-3">
+                How often do you collect rent? Tenants will see this and the FULL_PAYMENT threshold updates automatically.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {PAYMENT_FREQUENCY_OPTIONS.map((opt) => {
+                  const isSelected = formData.payment_frequency === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, payment_frequency: opt.value })}
+                      className={
+                        'p-3 rounded-xl border-2 text-left transition ' +
+                        (isSelected
+                          ? 'border-orange-500 shadow-lg bg-gradient-to-br from-orange-50 to-white'
+                          : 'border-slate-200 hover:border-orange-300 bg-white')
+                      }
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className={'text-sm font-semibold ' + (isSelected ? 'text-orange-700' : 'text-slate-700')}>
+                          {opt.label}
+                        </span>
+                        {isSelected && (
+                          <span className="text-orange-500 text-xs">✓</span>
+                        )}
+                      </div>
+                      <p className={'text-xs mt-1 ' + (isSelected ? 'text-orange-600' : 'text-slate-400')}>
+                        {opt.hint}
+                      </p>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="bedrooms">Bedrooms *</Label>
@@ -345,7 +480,7 @@ export default function EditPropertyPage() {
                   id="bedrooms"
                   type="number"
                   value={formData.bedrooms}
-                  onChange={(e) => setFormData({ ...formData, bedrooms: e.target.value })}
+                  onChange={(e) => handleNumberChange('bedrooms', e.target.value)}
                   placeholder="2"
                   required
                 />
@@ -357,7 +492,7 @@ export default function EditPropertyPage() {
                   id="bathrooms"
                   type="number"
                   value={formData.bathrooms}
-                  onChange={(e) => setFormData({ ...formData, bathrooms: e.target.value })}
+                  onChange={(e) => handleNumberChange('bathrooms', e.target.value)}
                   placeholder="1"
                   required
                 />
@@ -369,7 +504,7 @@ export default function EditPropertyPage() {
                   id="square_feet"
                   type="number"
                   value={formData.square_feet}
-                  onChange={(e) => setFormData({ ...formData, square_feet: e.target.value })}
+                  onChange={(e) => handleNumberChange('square_feet', e.target.value)}
                   placeholder="1200"
                 />
               </div>

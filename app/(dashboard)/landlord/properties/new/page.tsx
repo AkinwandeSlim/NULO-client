@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent } from "@/components/ui/card"
@@ -156,6 +156,13 @@ interface PropertyFormData {
   longitude: number | null
   // Rest of form
   price: number
+  // payment_frequency: how often the rent is collected. Drives the FULL_PAYMENT
+  // threshold in nomba.py:calculate_expected_amount (rent * frequency multiplier).
+  // Stored on properties.payment_frequency (varchar, check constraint
+  // properties_payment_frequency_check). Must match DB values:
+  //   ('MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL')
+  // Defaults to MONTHLY for back-compat.
+  payment_frequency: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL'
   bedrooms: number
   bathrooms: number
   sqft: number
@@ -184,6 +191,7 @@ export default function AddPropertyPage() {
     latitude: null,
     longitude: null,
     price: 0,
+    payment_frequency: 'MONTHLY',
     bedrooms: 1,
     bathrooms: 1,
     sqft: 0,
@@ -194,6 +202,35 @@ export default function AddPropertyPage() {
   })
 
   const totalSteps = 5
+
+  // ── Stage 3 polish: Generate NUBAN opt-in ────────────────────────────────
+  // The landlord can opt into auto-provisioning a Nomba virtual account
+  // (NUBAN) for this property the moment it's created. The flag is sent
+  // with the property payload; the backend handles the actual /provision-nomba
+  // call once the property has an id. Default is OFF so landlords who
+  // don't want auto-NUBAN can opt out.
+  const [generateNuban, setGenerateNuban] = useState(false)
+
+  // ── ONBD-09: Frontend safety net. The backend already rejects this
+  //    (properties.py create_property + DB trigger), but we also block
+  //    here so a rejected/pending landlord who navigates directly to
+  //    /landlord/properties/new sees a friendly redirect instead of an
+  //    empty form that will explode on submit.
+  useEffect(() => {
+    if (user && (user.verification_status === 'rejected' || user.verification_status !== 'approved')) {
+      const message = user.verification_status === 'rejected' 
+        ? 'Your landlord account was rejected. You cannot create new properties. Please contact support to re-verify.'
+        : 'Your verification is pending. You can list properties once your account is approved.'
+      toast.error(message)
+      router.replace('/landlord/properties')
+    }
+  }, [user, router])
+
+  // Hard guard: render nothing while we redirect rejected/pending landlords.
+  // Placed AFTER all hooks to satisfy the rules-of-hooks.
+  if (user && (user.verification_status === 'rejected' || user.verification_status !== 'approved')) {
+    return null
+  }
 
   const updateFormData = (field: keyof PropertyFormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -330,6 +367,9 @@ export default function AddPropertyPage() {
       submitData.append('address', formData.address)
       submitData.append('neighborhood', formData.neighborhood)
       submitData.append('full_address', formData.full_address)
+      // Stage 3 polish: pass the opt-in flag so the backend knows to fire
+      // /provision-nomba after the property row is created.
+      submitData.append('generate_nuban', generateNuban ? 'true' : 'false')
       
       // Only append the cover image (first image is always sent first, but we'll ensure cover is first in array)
       // In reality, the API should accept coverImageIndex or we reorder on backend
@@ -338,6 +378,7 @@ export default function AddPropertyPage() {
       if (formData.latitude !== null)  submitData.append('latitude',  String(formData.latitude))
       if (formData.longitude !== null) submitData.append('longitude', String(formData.longitude))
       submitData.append('price', String(formData.price))
+      submitData.append('payment_frequency', formData.payment_frequency)
       submitData.append('beds',  String(formData.bedrooms))
       submitData.append('baths', String(formData.bathrooms))
       if (formData.sqft)           submitData.append('sqft',           String(formData.sqft))
@@ -557,8 +598,16 @@ export default function AddPropertyPage() {
                     type="number"
                     placeholder="e.g., 500000"
                     value={formData.price || ''}
-                    onChange={e => updateFormData('price', parseInt(e.target.value) || 0)}
-                    className="pl-12 border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20"
+                    onChange={e => {
+                      // Parse the value and ensure no leading zeros
+                      const rawValue = e.target.value.replace(/^0+(?=\d)/, '')
+                      const numValue = rawValue === '' ? 0 : parseInt(rawValue) || 0
+                      updateFormData('price', numValue)
+                    }}
+                    // Remove native spinner for better UX with large values
+                    onWheel={e => e.currentTarget.blur()}
+                    className="pl-12 border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 hide-spinner"
+                    style={{ MozAppearance: 'textfield' }}
                   />
                 </div>
               </div>
@@ -571,6 +620,45 @@ export default function AddPropertyPage() {
                   onChange={e => updateFormData('available_from', e.target.value)}
                   className="mt-2 border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20"
                 />
+              </div>
+              <div>
+                <Label className="text-slate-700 font-medium">Payment Frequency</Label>
+                <p className="text-xs text-slate-500 mt-1 mb-3">
+                  How often do you collect rent? Tenants will see this and the FULL_PAYMENT threshold updates automatically.
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {([
+                    { id: 'MONTHLY',    label: 'Monthly',    hint: 'Every month' },
+                    { id: 'QUARTERLY',  label: 'Quarterly',  hint: 'Every 3 months' },
+                    { id: 'SEMI_ANNUAL',label: 'Semi-Annual',hint: 'Every 6 months' },
+                    { id: 'ANNUAL',     label: 'Annual',     hint: 'Once a year' },
+                  ] as const).map((opt) => {
+                    const isSelected = formData.payment_frequency === opt.id
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => updateFormData('payment_frequency', opt.id)}
+                        className={
+                          'p-3 rounded-xl border-2 text-left transition ' +
+                          (isSelected
+                            ? 'border-orange-500 shadow-lg bg-gradient-to-br from-orange-50 to-white'
+                            : 'border-slate-200 hover:border-orange-300 bg-white')
+                        }
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={'text-sm font-semibold ' + (isSelected ? 'text-orange-700' : 'text-slate-700')}>
+                            {opt.label}
+                          </span>
+                          {isSelected && <CheckCircle className="h-4 w-4 text-orange-500" />}
+                        </div>
+                        <p className={'text-xs mt-1 ' + (isSelected ? 'text-orange-600' : 'text-slate-400')}>
+                          {opt.hint}
+                        </p>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
               {formData.price > 0 && (
                 <div className="bg-gradient-to-r from-orange-50 to-white border-2 border-orange-200 p-6 rounded-2xl">
@@ -599,9 +687,9 @@ export default function AddPropertyPage() {
                 <Label className="text-slate-700 font-medium">Basic Features *</Label>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
                   {[
-                    { id: 'bedrooms', label: 'Bedrooms', icon: Bed, min: 0 },
-                    { id: 'bathrooms', label: 'Bathrooms', icon: Bath, min: 0 },
-                    { id: 'sqft', label: 'Square Feet', icon: Square, min: 0, placeholder: 'Optional' },
+                    { id: 'bedrooms', label: 'Bedrooms', icon: Bed, min: 1, step: 1 },
+                    { id: 'bathrooms', label: 'Bathrooms', icon: Bath, min: 1, step: 1 },
+                    { id: 'sqft', label: 'Square Feet', icon: Square, min: 0, placeholder: 'Optional', step: 100 },
                   ].map(field => {
                     const Icon = field.icon
                     return (
@@ -615,10 +703,13 @@ export default function AddPropertyPage() {
                             id={field.id}
                             type="number"
                             min={field.min}
+                            step={field.step}
                             placeholder={field.placeholder}
                             value={(formData as any)[field.id] || ''}
-                            onChange={e => updateFormData(field.id as any, parseInt(e.target.value) || 0)}
-                            className="border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20"
+                            onChange={e => updateFormData(field.id as any, parseInt(e.target.value) || (field.min === 1 ? 1 : 0))}
+                            onWheel={e => e.currentTarget.blur()}
+                            className="border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 hide-spinner"
+                            style={{ MozAppearance: 'textfield' }}
                           />
                         </div>
                       </div>

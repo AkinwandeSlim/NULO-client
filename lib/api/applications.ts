@@ -13,6 +13,20 @@ export interface ApplicationReference {
   relationship: string;
 }
 
+/**
+ * BUG-025: Documents are stored in Supabase Storage as paths.
+ * The server's GET /applications/{id} endpoint enriches each path with a
+ * short-lived signed URL before returning, producing this shape. Legacy
+ * rows may still hold raw URLs, so we keep the union open.
+ */
+export interface ApplicationDocument {
+  path: string;
+  url: string | null;
+  filename: string;
+}
+
+export type ApplicationDocumentEntry = string | ApplicationDocument
+
 // Types - Updated to match backend schema
 export interface Application {
   id: string;
@@ -33,11 +47,12 @@ export interface Application {
     reference1?: ApplicationReference;
     reference2?: ApplicationReference;
   };
-  documents?: string[];  // text array of URLs
+  documents?: ApplicationDocumentEntry[];  // BUG-025: can be raw URL string (legacy) or enriched {path,url,filename} object
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
   viewed_by_landlord?: boolean;
   viewed_at?: string;
+  rejection_reason?: string;
   created_at: string;
   updated_at: string;
   // Joined relationships
@@ -91,7 +106,7 @@ export interface CreateApplicationData {
   has_pets?: boolean;
   pet_details?: string;
   references?: any;
-  documents?: string[];
+  documents?: ApplicationDocumentEntry[];  // BUG-025: can be raw URL string (legacy) or enriched {path,url,filename} object
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
 }
@@ -121,6 +136,36 @@ export const applicationsAPI = {
   create: async (data: CreateApplicationData): Promise<Application> => {
     const response = await apiClient.post<Application>('/api/v1/applications/', data);
     return response.data;
+  },
+
+  /**
+   * BUG-025 FIX: Upload a single application document via the server
+   * (which uses the Supabase service-role key, bypassing RLS). Returns
+   * the storage path that should be stored in applications.documents[].
+   */
+  uploadDocument: async (file: File): Promise<{ path: string; filename: string; size: number; content_type?: string }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await apiClient.post(
+      '/api/v1/applications/upload-document',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    return response.data
+  },
+
+  /**
+   * BUG-025 FIX: Fetch a short-lived signed URL for a single application
+   * document. Used by the landlord view as a fallback when a document
+   * entry comes back without a usable `url` (e.g. server-side enrichment
+   * failed, or the path can't be signed because of permissions).
+   */
+  getDocumentSignedUrl: async (applicationId: string, path: string): Promise<{ url: string; expires_in: number }> => {
+    const response = await apiClient.get<{ success: boolean; url: string; expires_in: number }>(
+      `/api/v1/applications/${applicationId}/documents/signed-url`,
+      { params: { path } },
+    )
+    return response.data
   },
 
   /**

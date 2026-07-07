@@ -126,7 +126,7 @@ export default function CompleteProfilePage() {
       })
       
       // Redirect to success page or back to property
-      router.push("/tenant/dashboard")
+      router.push("/tenant")
       
     } catch (error) {
       console.error("Error completing profile:", error)

@@ -134,9 +134,10 @@ export default function TenantSignupPage() {
         return
       }
       
-      // Save email to localStorage for confirmation page
+      // Save email to localStorage for confirmation page AND verify-email page
       if (typeof window !== 'undefined') {
         localStorage.setItem('signup_email', formData.email.trim())
+        localStorage.setItem('verification_email', formData.email.trim())
       }
       
       // Redirect to confirmation page (only on success)

@@ -30,81 +30,83 @@ apiClient.interceptors.request.use(
       // Log the full URL being called
       console.log(`📍 [API CLIENT] Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
       
-      // 🔥 NEW: Try localStorage first to bypass Supabase client locks
-      const cachedToken = localStorage.getItem('sb-access-token');
-      const cachedRefreshToken = localStorage.getItem('sb-refresh-token');
+      // If we're sending FormData, delete the default Content-Type header so browser can set it with boundary
+      if (config.data instanceof FormData) {
+        delete config.headers['Content-Type'];
+      }
       
-      if (cachedToken && config.headers) {
-        // Validate token format more thoroughly
+      // ── NEW: Try localStorage first to bypass Supabase client locks ──
+      let token = localStorage.getItem("sb-access-token");
+      let validToken = null;
+      
+      if (token) {
+        // Validate token format and expiration
         try {
-          // Simple JWT structure check: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCt9
-          const parts = cachedToken.split('.');
+          const parts = token.split('.');
           if (parts.length === 3) {
-            const header = JSON.parse(atob(parts[0]));
             const payload = JSON.parse(atob(parts[1]));
-            
             // Check if token has required claims and is not expired
-            if (header.alg === 'HS256' && payload.exp && payload.exp > Date.now() / 1000) {
-              config.headers.Authorization = `Bearer ${cachedToken}`;
-              
-              // Also set token for middleware access (backup)
-              if (typeof document !== 'undefined') {
-                document.cookie = `access_token=${cachedToken}; path=/; max-age=3600; SameSite=Lax`;
-              }
-              
+            if (payload.exp && payload.exp > Date.now() / 1000) {
+              validToken = token;
               console.log('✅ [API CLIENT] Using valid cached token');
-              return config;
+            } else {
+              console.warn('⚠️ [API CLIENT] Cached token is expired, clearing...');
+              localStorage.removeItem('sb-access-token');
+              localStorage.removeItem('sb-refresh-token');
+              token = null;
             }
           }
         } catch (tokenError) {
           console.warn('⚠️ [API CLIENT] Invalid cached token, clearing...');
           localStorage.removeItem('sb-access-token');
           localStorage.removeItem('sb-refresh-token');
+          token = null;
         }
       }
       
-      // Only try Supabase client if no cached token available
-      console.log('🔍 [API CLIENT] No cached token, trying Supabase client...');
-      const supabase = createClient();
-      let session = null;
-      let retryCount = 0;
-      const maxRetries = 1; // Single attempt only
-      
-      try {
-        // Try once with a short timeout
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Session retrieval timeout')), 5000)
-        );
-        const sessionPromise = supabase.auth.getSession();
-        const result = await Promise.race([sessionPromise, timeoutPromise]);
-        session = result.data?.session;
-      } catch (error: any) {
-        // If Supabase fails, continue without token - public endpoints don't need it
-        console.warn('⚠️ [API CLIENT] Could not get session, proceeding without token:', error.message);
-      }
-      
-      if (session?.access_token && config.headers) {
-        config.headers.Authorization = `Bearer ${session.access_token}`;
+      // If no valid cached token, try Supabase client
+      if (!validToken) {
+        console.log('🔍 [API CLIENT] No valid cached token, trying Supabase client...');
+        const supabase = createClient();
+        let session = null;
         
-        // Cache the token for future requests
-        if (typeof document !== 'undefined') {
-          localStorage.setItem('sb-access-token', session.access_token);
-          if (session.refresh_token) {
-            localStorage.setItem('sb-refresh-token', session.refresh_token);
+        try {
+          // Try once with a short timeout
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Session retrieval timeout')), 5000)
+          );
+          const sessionPromise = supabase.auth.getSession();
+          const result = await Promise.race([sessionPromise, timeoutPromise]);
+          session = result.data?.session;
+          
+          if (session?.access_token) {
+            validToken = session.access_token;
+            // Cache the new token
+            localStorage.setItem('sb-access-token', session.access_token);
+            if (session.refresh_token) {
+              localStorage.setItem('sb-refresh-token', session.refresh_token);
+            }
           }
-          document.cookie = `access_token=${session.access_token}; path=/; max-age=3600; SameSite=Lax`;
+        } catch (error: any) {
+          // If Supabase fails, continue without token - public endpoints don't need it
+          console.warn('⚠️ [API CLIENT] Could not get session, proceeding without token:', error.message);
+        }
+      }
+      
+      if (validToken && config.headers) {
+        config.headers.Authorization = `Bearer ${validToken}`;
+        
+        // Also set token for middleware access (backup)
+        if (typeof document !== 'undefined') {
+          document.cookie = `access_token=${validToken}; path=/; max-age=3600; SameSite=Lax`;
         }
         
-        console.log('🔐 [API CLIENT] Token attached from Supabase:', {
-          url: config.url,
-          hasToken: !!session.access_token,
-          userId: session.user?.id
-        });
+        console.log('🔐 [API CLIENT] Token attached to request');
       } else {
-        console.warn('⚠️ [API CLIENT] No session token available after all attempts');
+        console.warn('⚠️ [API CLIENT] No valid token available, proceeding without auth header');
       }
     } catch (error) {
-      console.error('❌ [API CLIENT] Error getting Supabase session:', error);
+      console.error('❌ [API CLIENT] Error in request interceptor:', error);
     }
     
     return config;
@@ -239,9 +241,35 @@ apiClient.interceptors.response.use(
     
     // Handle 500 Server Error
     if (error.response?.status === 500) {
-      console.error('Server error:', error.response.data);
+      const data = error.response.data;
+      const hasContent = data && typeof data === 'object' && Object.keys(data).length > 0;
+      console.error('Server error (500):', {
+        url: error.config?.url,
+        method: error.config?.method?.toUpperCase(),
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: hasContent ? data : '(empty body)',
+        message: hasContent ? null : `Empty 500 response from ${error.config?.url} - check server logs for stack trace`,
+      });
     }
-    
+
+    // ── Auto-retry on transient network errors / 502 / 503 ──────────────────
+    // Only retries safe GET requests (never mutations). Up to 2 retries with
+    // exponential backoff (800ms → 1600ms). Handles backend briefly restarting.
+    const method = (error.config?.method ?? '').toUpperCase()
+    const retryCount: number = (error.config as any)?._retryCount ?? 0
+    const isNetworkError = !error.response && error.code !== 'ECONNABORTED'
+    const isRetryableStatus = error.response?.status === 503 || error.response?.status === 502
+    const isRetryableMethod = method === 'GET'
+
+    if (isRetryableMethod && (isNetworkError || isRetryableStatus) && retryCount < 2) {
+      const delay = 800 * Math.pow(2, retryCount) // 800ms then 1600ms
+      console.warn(`⚠️ [API CLIENT] Transient error on GET ${error.config?.url} — retry ${retryCount + 1}/2 in ${delay}ms`)
+      await new Promise(resolve => setTimeout(resolve, delay))
+      ;(error.config as any)._retryCount = retryCount + 1
+      return apiClient(error.config!)
+    }
+
     return Promise.reject(error);
   }
 );

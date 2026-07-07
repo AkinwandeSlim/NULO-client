@@ -15,6 +15,7 @@ import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
 import { toast } from "sonner"
 import { AIBadge } from "@/components/ui/ai-badge"
+import { getPaymentFrequencyMultiplier, getPaymentFrequencyLabel, normalizePaymentFrequency } from "@/lib/utils/rentalCalculations"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -124,6 +125,12 @@ function AgreementCard({ agreement }: { agreement: AgreementWithDetails }) {
   const effective = getEffectiveStatus(agreement)
   const cfg = STATUS_CONFIG[effective] ?? STATUS_CONFIG.DRAFT
 
+  // FIX: derive the period rent from the agreement's payment_frequency (not always 12 months)
+  const paymentFrequency = normalizePaymentFrequency((agreement as any).payment_frequency)
+  const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
+  const periodRent = (agreement.rent_amount || 0) * frequencyMultiplier
+  const periodLabel = getPaymentFrequencyLabel(paymentFrequency)
+
   return (
     <Card className={`border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 border-l-4 ${cfg.border}`}>
       <CardContent className="p-5">
@@ -183,9 +190,9 @@ function AgreementCard({ agreement }: { agreement: AgreementWithDetails }) {
             {/* Key figures */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
               <div>
-                <p className="text-xs text-slate-400 uppercase tracking-wider font-medium mb-0.5">Annual Rent</p>
-                {/* Nigeria: show annual upfront figure prominently */}
-                <p className="text-sm font-semibold text-orange-600">{formatNGN(agreement.rent_amount * 12)}</p>
+                <p className="text-xs text-slate-400 uppercase tracking-wider font-medium mb-0.5">{periodLabel}</p>
+                {/* FIX: show period rent based on agreement's payment_frequency — not always annual */}
+                <p className="text-sm font-semibold text-orange-600">{formatNGN(periodRent)}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-400 uppercase tracking-wider font-medium mb-0.5">Duration</p>

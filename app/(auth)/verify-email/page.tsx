@@ -1,20 +1,42 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
-import { Mail, ArrowLeft, Loader2, CheckCircle, RefreshCw } from "lucide-react"
+import { Mail, ArrowLeft, Loader2, CheckCircle, RefreshCw, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import apiClient from "@/lib/api/client"
 
 export default function VerifyEmailPage() {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [isResending, setIsResending] = useState(false)
   const [countdown, setCountdown] = useState(0)
+  const [storedEmail, setStoredEmail] = useState<string>("")
+  const [resendSuccess, setResendSuccess] = useState(false)
+  const [isLinkExpired, setIsLinkExpired] = useState(false)
+
+  // Check for expired link in URL params
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    // Check for expired link error in URL
+    const error = searchParams?.get('error')
+    const errorDescription = searchParams?.get('error_description')
+
+    if (error === 'LINK_EXPIRED' || (errorDescription && errorDescription.toLowerCase().includes('expired'))) {
+      setIsLinkExpired(true)
+    }
+
+    // Get stored email for resend
+    const stored = localStorage.getItem('verification_email')
+    if (stored) {
+      setStoredEmail(stored)
+    }
+  }, [searchParams])
 
   // Redirect if already verified
   useEffect(() => {
@@ -30,6 +52,11 @@ export default function VerifyEmailPage() {
     }
   }, [user, router])
 
+  // Derive role-aware features
+  const roleFeatures = user?.user_type === 'landlord'
+    ? ["Access your landlord dashboard", "List and manage your properties", "Review tenant viewing requests"]
+    : ["Access your tenant dashboard", "Browse available properties", "Apply for rental properties"]
+
   // Countdown timer for resend button
   useEffect(() => {
     if (countdown > 0) {
@@ -43,11 +70,20 @@ export default function VerifyEmailPage() {
     setCountdown(60) // 60 second cooldown
 
     try {
-      // This would call a function to resend verification email
-      // For now, we'll just show a success message
-      toast.success('Verification email resent! Please check your inbox.')
+      // BUG-001: Actually call the resend endpoint
+      const response = await apiClient.post('/api/v1/auth/resend-verification', {
+        email: storedEmail,
+      })
+
+      if (response.data?.success) {
+        toast.success('Verification email resent! Please check your inbox.')
+        setResendSuccess(true)
+      } else {
+        toast.error(response.data?.message || 'Failed to resend verification email.')
+      }
     } catch (error: any) {
-      toast.error('Failed to resend verification email. Please try again.')
+      const errorMsg = error?.response?.data?.message || error?.message || 'Failed to resend verification email.'
+      toast.error(errorMsg)
     } finally {
       setIsResending(false)
     }
@@ -55,7 +91,7 @@ export default function VerifyEmailPage() {
 
   const handleSignOut = async () => {
     try {
-      await useAuth().signOut()
+      await signOut()
       router.push('/signin')
     } catch (error) {
       toast.error('Failed to sign out')
@@ -96,29 +132,44 @@ export default function VerifyEmailPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="text-center space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Important:</strong> Please check your email and click the verification link to activate your account.
-                </p>
-              </div>
+              {isLinkExpired ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    <p className="text-sm font-semibold text-amber-800">
+                      Verification Link Expired
+                    </p>
+                  </div>
+                  <p className="text-sm text-amber-700">
+                    Verification links expire after 1 hour. No worries — just request a fresh one below and click it promptly.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>Important:</strong> Please check your email and click the verification link to activate your account.
+                  </p>
+                </div>
+              )}
+              {resendSuccess && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-sm text-green-800">
+                    A new verification email has been sent. Please check your inbox (and spam folder).
+                  </p>
+                </div>
+              )}
               
               <div className="space-y-2">
                 <p className="text-slate-600">
                   After verification, you'll be able to:
                 </p>
                 <div className="space-y-2 text-left">
-                  <div className="flex items-center gap-2 text-sm text-slate-600">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Access your tenant dashboard</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-600">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Browse available properties</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-600">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Apply for rental properties</span>
-                  </div>
+                  {roleFeatures.map((feature, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm text-slate-600">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

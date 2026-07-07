@@ -12,16 +12,17 @@ import {
   Home, Wifi, Car, Dumbbell, Shield, Wind, Tv, Coffee, Check,
   Phone, Mail, Calendar, Star, MessageCircle, Eye, Grid,
   CheckCircle2, Video, Clock, ArrowRight, FileText, Lock,
-  TrendingDown, Users, ZapIcon, AlertTriangle
+  TrendingDown, Users, ZapIcon, AlertTriangle, Sparkles
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import ViewingRequestModal from "@/components/rental/ViewingRequestModal"
 import { ChatModal } from "@/components/ChatModal"
 import { favoritesAPI } from "@/lib/api/favorites"
-import { formatNGN, calculateRentalBreakdown, RentalBreakdown } from "@/lib/utils/rentalCalculations"
+import { formatNGN, calculateRentalBreakdown, RentalBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { viewingRequestsAPI } from "@/lib/api/viewingRequestsTenant"
 import { propertiesAPI } from "@/lib/api/properties"
+import { applicationsAPI } from "@/lib/api/applications"
 import { Loader2 } from "lucide-react"
 import dynamic from "next/dynamic"
 
@@ -91,6 +92,8 @@ export default function PropertyDetailPage() {
   const [completedViewingId,  setCompletedViewingId]  = useState<string | null>(null)
   const [hasExistingViewing,  setHasExistingViewing]  = useState(false)
   const [isCheckingViewings,  setIsCheckingViewings]  = useState(false)
+  const [hasExistingApplication, setHasExistingApplication] = useState(false)
+  const [isCheckingApplications, setIsCheckingApplications] = useState(false)
 
   const router     = useRouter()
   const params     = useParams()
@@ -159,6 +162,31 @@ export default function PropertyDetailPage() {
       }
     }
     checkExistingViewings()
+    return () => { isMounted = false }
+  }, [user, propertyId])
+
+  // ── Check if user already has an application for this property ──────────
+  useEffect(() => {
+    if (!user || !propertyId) return
+    let isMounted = true
+    const checkExistingApplications = async () => {
+      setIsCheckingApplications(true)
+      try {
+        const result = await applicationsAPI.getMyApplications()
+        if (!isMounted) return
+        if (result.success && result.applications && Array.isArray(result.applications)) {
+          const found = result.applications.some(
+            (app: any) => app.property_id === propertyId
+          )
+          setHasExistingApplication(found)
+        }
+      } catch (err) {
+        console.warn("Could not check existing applications:", err)
+      } finally {
+        if (isMounted) setIsCheckingApplications(false)
+      }
+    }
+    checkExistingApplications()
     return () => { isMounted = false }
   }, [user, propertyId])
 
@@ -234,6 +262,24 @@ export default function PropertyDetailPage() {
     toast.success("Virtual tour started!")
   }
 
+  // SRCH-08 / VIEW-02: Virtual Viewing is a premium feature planned for
+  // the next phase (360° inspections). Surface a friendly "coming soon"
+  // toast instead of a dead greyed-out tab.
+  const handleVirtualComingSoon = () => {
+    toast(
+      <div className="flex items-start gap-3">
+        <Sparkles className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
+        <div>
+          <div className="font-semibold text-slate-900">Coming Soon - Premium Feature</div>
+          <div className="text-sm text-slate-600 mt-0.5">
+            360° virtual inspections are launching in the next phase. Stay tuned!
+          </div>
+        </div>
+      </div>,
+      { duration: 4500 }
+    )
+  }
+
   const handleChatLandlord = () => {
     if (!user) { authRedirect("Sign up to message the landlord."); return }
     setShowChatModal(true)
@@ -262,6 +308,11 @@ export default function PropertyDetailPage() {
     if (!user) {
       toast.info("Sign up to apply for this property.")
       router.push(`/signup/tenant?redirect_to=${encodeURIComponent(`/properties/${propertyId}/apply`)}`)
+      return
+    }
+    if (hasExistingApplication) {
+      toast.info("You've already applied for this property!")
+      router.push(`/tenant/applications`)
       return
     }
     const applyUrl = completedViewingId
@@ -516,7 +567,8 @@ export default function PropertyDetailPage() {
                 {/* Pricing breakdown — matches agreement & application pages exactly */}
                 {(() => {
                   const breakdown = calculateRentalBreakdown(propertyData)
-                  const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue } = breakdown
+                  const { monthlyRent, annualRent, periodRent, cautionFee, platformFee, serviceCharge, totalDue, periodLabel, paymentFrequency } = breakdown
+                  const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
 
                   return (
                     <div className="bg-gradient-to-r from-orange-50/70 to-blue-50/70 border border-orange-100 rounded-xl p-4 md:p-5">
@@ -527,16 +579,16 @@ export default function PropertyDetailPage() {
                       </h3>
 
                       <div className="space-y-2">
-                        {/* Monthly rent — context line, not part of upfront total */}
+                        {/* Monthly rent — context line */}
                         <div className="flex justify-between items-center text-sm">
                           <span className="text-slate-500">Monthly Rent</span>
                           <span className="font-medium text-slate-600">{formatPrice(monthlyRent)}</span>
                         </div>
 
-                        {/* Annual rent — the actual charge */}
+                        {/* Period rent — the actual charge based on payment frequency */}
                         <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-700 font-medium">Annual Rent <span className="text-slate-400 font-normal">(×12)</span></span>
-                          <span className="font-semibold text-slate-900">{formatPrice(annualRent)}</span>
+                          <span className="text-slate-700 font-medium">{periodLabel} <span className="text-slate-400 font-normal">(×{frequencyMultiplier})</span></span>
+                          <span className="font-semibold text-slate-900">{formatPrice(periodRent)}</span>
                         </div>
 
                         <div className="flex justify-between items-center text-sm">
@@ -568,7 +620,7 @@ export default function PropertyDetailPage() {
                         <div className="border-t border-slate-200 pt-2.5 mt-1 flex justify-between items-center">
                           <div className="flex flex-col">
                             <span className="font-bold text-slate-900 text-sm">Total Due on Move-In</span>
-                            <span className="text-[11px] text-slate-500">12 months rent + 2 months deposit</span>
+                            <span className="text-[11px] text-slate-500">{periodLabel.toLowerCase()} + 2 months deposit</span>
                           </div>
                           <div className="text-right">
                             <span className="text-lg font-bold text-orange-600">{formatPrice(totalDue)}</span>
@@ -883,6 +935,18 @@ export default function PropertyDetailPage() {
                         </div>
                       </div>
                     )}
+                    {/* Already-applied banner */}
+                    {hasExistingApplication && (
+                      <div className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-semibold text-emerald-800">Application Submitted</p>
+                          <p className="text-[11px] text-emerald-700 mt-0.5">
+                            You've already applied for this property! Check your applications dashboard to see its status.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Viewing type — 3-option segmented control */}
                     <div>
@@ -906,25 +970,38 @@ export default function PropertyDetailPage() {
                           Physical
                         </button>
 
-                        {/* Virtual — only if video_tour_url exists */}
+                        {/* Virtual — premium feature, show "Coming Soon" toast (SRCH-08) */}
                         <button
-                          onClick={() => !hasExistingViewing && propertyData.video_tour_url && setViewingType("VIRTUAL")}
-                          disabled={!propertyData.video_tour_url || hasExistingViewing}
-                          title={!propertyData.video_tour_url ? "No recorded tour available for this property" : undefined}
+                          onClick={() => {
+                            if (hasExistingViewing) return
+                            if (propertyData.video_tour_url) {
+                              setViewingType("VIRTUAL")
+                            } else {
+                              handleVirtualComingSoon()
+                            }
+                          }}
+                          disabled={hasExistingViewing}
+                          title={hasExistingViewing ? undefined : "360° virtual inspection - coming soon"}
                           className={`flex-1 flex flex-col items-center justify-center gap-0 h-9 text-[11px] font-bold rounded-lg transition-all ${
-                            hasExistingViewing || !propertyData.video_tour_url
+                            hasExistingViewing
                               ? "text-slate-300 cursor-not-allowed"
-                              : viewingType === "VIRTUAL"
-                                ? "bg-white text-blue-600 shadow-sm"
-                                : "text-slate-500 hover:text-slate-700"
+                              : propertyData.video_tour_url
+                                ? viewingType === "VIRTUAL"
+                                  ? "bg-white text-blue-600 shadow-sm"
+                                  : "text-slate-500 hover:text-slate-700"
+                                : "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
                           }`}
                         >
                           <div className="flex items-center gap-1">
-                            <Video className="h-3.5 w-3.5 flex-shrink-0" />
+                            {propertyData.video_tour_url ? (
+                              <Video className="h-3.5 w-3.5 flex-shrink-0" />
+                            ) : (
+                              <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
+                            )}
                             Virtual
                           </div>
-                          {!propertyData.video_tour_url && (
-                            <span className="text-[9px] font-normal leading-none -mt-0.5">(N/A)</span>
+                          {!propertyData.video_tour_url && !hasExistingViewing && (
+                            <span className="text-[9px] font-normal leading-none -mt-0.5">(Soon)</span>
                           )}
                         </button>
 
@@ -1031,11 +1108,30 @@ export default function PropertyDetailPage() {
                       )}
 
                       <Button
-                        className="w-full h-12 font-bold text-sm bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white rounded-xl shadow-md shadow-emerald-100 group transition-all hover:shadow-lg"
+                        disabled={hasExistingApplication || isCheckingApplications}
+                        className={`w-full h-12 font-bold text-sm rounded-xl shadow-md group transition-all hover:shadow-lg
+                          ${hasExistingApplication || isCheckingApplications
+                            ? "bg-slate-300 cursor-not-allowed shadow-none"
+                            : "bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white shadow-emerald-100"
+                          }`}
                         onClick={handleApply}
                       >
-                        <FileText className="h-4.5 w-4.5 mr-2 group-hover:scale-110 transition-transform" />
-                        Apply for This Property
+                        {isCheckingApplications ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Checking…
+                          </>
+                        ) : hasExistingApplication ? (
+                          <>
+                            <CheckCircle2 className="h-4.5 w-4.5 mr-2" />
+                            Applied
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="h-4.5 w-4.5 mr-2 group-hover:scale-110 transition-transform" />
+                            Apply for This Property
+                          </>
+                        )}
                       </Button>
                       <p className="text-center text-[11px] text-slate-400 mt-1.5">
                         {completedViewingId ? "Viewing linked to your application" : "Viewing recommended before applying"}
@@ -1098,19 +1194,32 @@ export default function PropertyDetailPage() {
             <Calendar className="h-3 w-3" /> Physical
           </button>
 
-          {/* Virtual */}
+          {/* Virtual — premium feature, show "Coming Soon" toast (SRCH-08) */}
           <button
-            onClick={() => !hasExistingViewing && propertyData.video_tour_url && setViewingType("VIRTUAL")}
-            disabled={!propertyData.video_tour_url || hasExistingViewing}
+            onClick={() => {
+              if (hasExistingViewing) return
+              if (propertyData.video_tour_url) {
+                setViewingType("VIRTUAL")
+              } else {
+                handleVirtualComingSoon()
+              }
+            }}
+            disabled={hasExistingViewing}
             className={`flex-1 flex items-center justify-center gap-1 h-7 text-[11px] font-bold rounded-md transition-all ${
-              hasExistingViewing || !propertyData.video_tour_url ? "text-slate-300 cursor-not-allowed"
-              : viewingType === "VIRTUAL" ? "bg-white text-blue-600 shadow-sm"
-              : "text-slate-500"
+              hasExistingViewing
+                ? "text-slate-300 cursor-not-allowed"
+                : propertyData.video_tour_url
+                  ? viewingType === "VIRTUAL"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                  : "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
             }`}
           >
-            <Video className="h-3 w-3" />
+            {propertyData.video_tour_url ? <Video className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
             Virtual
-            {!propertyData.video_tour_url && <span className="text-[9px] font-normal">(N/A)</span>}
+            {!propertyData.video_tour_url && !hasExistingViewing && (
+              <span className="text-[9px] font-normal">(Soon)</span>
+            )}
           </button>
 
           {/* Live */}
@@ -1151,11 +1260,30 @@ export default function PropertyDetailPage() {
           </Button>
 
           <Button
-            className="flex-1 h-12 text-sm font-bold bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white rounded-xl shadow-md"
+            disabled={hasExistingApplication || isCheckingApplications}
+            className={`flex-1 h-12 text-sm font-bold rounded-xl shadow-md transition-all
+              ${hasExistingApplication || isCheckingApplications
+                ? "bg-slate-300 cursor-not-allowed shadow-none"
+                : "bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white"
+              }`}
             onClick={handleApply}
           >
-            <FileText className="h-4 w-4 mr-1.5" />
-            Apply Now
+            {isCheckingApplications ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                Checking…
+              </>
+            ) : hasExistingApplication ? (
+              <>
+                <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                Applied
+              </>
+            ) : (
+              <>
+                <FileText className="h-4 w-4 mr-1.5" />
+                Apply Now
+              </>
+            )}
           </Button>
         </div>
       </div>

@@ -69,6 +69,8 @@ export interface LandlordStats {
   active_listings: number
   pending_viewings: number
   unread_messages: number
+  read_messages: number
+  total_messages: number
   total_conversations: number
   total_views: number
   occupancy_rate: number
@@ -76,8 +78,12 @@ export interface LandlordStats {
   avg_response_time: string
   applications_pending: number
   applications_approved: number
+  applications_rejected: number
   properties_vacant: number
   properties_occupied: number
+  properties_pending: number
+  properties_rejected: number
+  deleted_properties: number
 }
 
 export interface LandlordProperties {
@@ -497,6 +503,44 @@ export const formatDate = (dateString: string): string => {
 }
 
 // ============================================================================
+// STUB: Future Analytics Dashboard (Stage 3+)
+// ============================================================================
+// The backend at GET /api/v1/landlord/dashboard/analytics returns a
+// placeholder shape today. This client method gives the frontend a stable
+// contract so analytics UI can be wired up without waiting for the real
+// computation. When the backend data becomes real, the shape won't change --
+// only the values inside `data` will.
+
+// Placeholder field types -- everything is null until the analytics work lands.
+export interface LandlordAnalyticsSummary {
+  placeholder: true
+  period: "7d" | "30d" | "90d" | "1y"
+  landlord_id: string
+  data: {
+    monthly_revenue_chart: unknown | null
+    occupancy_trend: unknown | null
+    payment_reliability_score: number | null
+    disbursement_summary: unknown | null
+    tenant_engagement: unknown | null
+  }
+  _todo: string[]
+}
+
+/**
+ * STUB: Pull a placeholder analytics summary for the landlord dashboard.
+ * Returns a stable shape (placeholder: true) until the analytics endpoint
+ * is fully implemented in a later stage. Safe to call from any UI today.
+ */
+export const getAnalyticsSummary = async (
+  period: "7d" | "30d" | "90d" | "1y" = "30d",
+): Promise<LandlordAnalyticsSummary> => {
+  const { data } = await apiClient.get('/api/v1/landlord/dashboard/analytics', {
+    params: { period },
+  })
+  return data
+}
+
+// ============================================================================
 // EXPORT AS OBJECT
 // ============================================================================
 
@@ -509,10 +553,10 @@ const landlordDashboardAPI = {
   getLandlordProperties,
   getRecentActivity,
   getNotifications,
-  
+
   // Actions
   markNotificationRead,
-  
+
   // Helpers
   isLandlordVerified,
   isOnboardingCompleted,
@@ -520,7 +564,10 @@ const landlordDashboardAPI = {
   getVerificationStatusColor,
   getPropertyStatusColor,
   formatCurrency,
-  formatDate
+  formatDate,
+
+  // Stage 3+ analytics stub
+  getAnalyticsSummary,
 }
 
 export default landlordDashboardAPI

@@ -114,25 +114,85 @@ const syncUserWithBackend = async (
       console.error(`❌ [AUTH] Sync failed with status ${response.status}`);
       console.error(`❌ [AUTH] Response body: ${errorText}`);
       
+      // Parse error body — backend may send:
+      //   - {"detail": "string message"}                          (older format)
+      //   - {"detail": {"message": "...", "existing_type": ...}} (AUTH-05 structured)
+      //   - {"detail": "...message...", "existing_type": "..."}   (sometimes wrapped)
+      let errorDetail = '';
+      let existingType: string | undefined;
+      let requestedType: string | undefined;
+      let existingUserId: string | undefined;
+      let errorMessage: string | undefined;
       try {
         const error = JSON.parse(errorText);
-        console.error('❌ [AUTH] Error details:', error);
-        throw new Error(error.detail || `HTTP ${response.status}`);
+        if (typeof error.detail === 'string') {
+          errorDetail = error.detail;
+        } else if (error.detail && typeof error.detail === 'object') {
+          errorDetail = error.detail.message || `HTTP ${response.status}`;
+          existingType = error.detail.existing_type;
+          requestedType = error.detail.requested_type;
+          existingUserId = error.detail.existing_user_id;
+          errorMessage = error.detail.message;
+        } else {
+          errorDetail = `HTTP ${response.status}`;
+        }
+        // Also pick up role fields if they were set at the top level
+        existingType = existingType || error.existing_type;
+        requestedType = requestedType || error.requested_type;
+        existingUserId = existingUserId || error.existing_user_id;
+        errorMessage = errorMessage || error.message;
       } catch {
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+        errorDetail = errorText || `HTTP ${response.status}`;
       }
+
+      // ✅ AUTH-05 FIX: Detect 409 conflicts (might be wrapped in 500 error)
+      // Check for: status=409, error detail contains "409", or "already registered"
+      const isEmailConflict = 
+        response.status === 409 || 
+        errorDetail.includes('409') || 
+        errorDetail.includes('already registered') ||
+        (errorDetail.includes('Email') && errorDetail.includes('registered'));
+      
+      if (isEmailConflict) {
+        console.error('🚨 [AUTH] Email conflict detected from backend');
+        return {
+          success: false,
+          error: 'email_conflict',
+          status: 409,
+          detail: errorDetail,
+          message: errorMessage,
+          email: email,
+          userType: userType,
+          existing_type: existingType,
+          requested_type: requestedType,
+          existing_user_id: existingUserId,
+        };
+      }
+
+      // Other errors - just log them
+      return {
+        success: false,
+        error: 'sync_failed',
+        status: response.status,
+        detail: errorDetail
+      };
     }
 
     const data = await response.json();
     console.log('✅ [AUTH] User synced with backend:', data);
-    return data;
+    return {
+      success: true,
+      data: data
+    };
     
   } catch (error: any) {
     console.error('❌ [AUTH] Error syncing with backend:', error.message);
     console.error('❌ [AUTH] Full error:', error);
-    // Don't throw - we don't want to fail signup if backend sync fails
-    // User is already created in Supabase
-    return null;
+    return {
+      success: false,
+      error: 'network_error',
+      detail: error.message
+    };
   }
 };
 
@@ -335,7 +395,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Note: trust_score defaults to 50 in database schema (CHECK 0-100)
         // Prefer cache (written from DB data) over stale JWT for role fields
         const existingCache = cacheManager.getUserCache()?.user
-        const quickUser: User = {
+        const quickUser: Omit<User, 'user_type'> & { user_type: 'admin' | 'landlord' | 'tenant' | null } = {
           id: session.user.id,
           email: session.user.email || '',
           first_name: session.user.user_metadata?.first_name || '',
@@ -345,8 +405,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           password_hash: null,
           avatar_url: session.user.user_metadata?.avatar_url || null,
           trust_score: existingCache?.trust_score || session.user.user_metadata?.trust_score || 50,
-          verification_status: (existingCache?.verification_status || session.user.user_metadata?.verification_status || 'pending') as User['verification_status'],
-          user_type: (existingCache?.user_type || session.user.user_metadata?.user_type || 'tenant') as 'admin' | 'landlord' | 'tenant',
+          // ── FIX: Same stale-metadata guard as user_type above ────────────────────
+          verification_status: (existingCache?.verification_status || 'pending') as User['verification_status'],
+          // ── FIX: Don't seed user_type from stale JWT metadata ──────────────────
+          // When a user is deleted from public.users and re-registers, their
+          // auth.users row survives deletion, so session.user.user_metadata still
+          // carries the OLD user_type from the deleted account. If we read it here
+          // we'll set the wrong type for the initial render and the middleware will
+          // route them incorrectly (e.g. new landlord sent to /properties).
+          // Strategy: trust the localStorage cache if it's fresh (it was written from
+          // DB data); otherwise fall back to null and let the background DB fetch
+          // (Phase 5 below) set the correct type via setUser(resolvedUser).
+          // We also check the nulo_just_registered_type cookie as a bridge for the
+          // very first render after a Google OAuth callback.
+          user_type: (
+            existingCache?.user_type ||
+            (typeof document !== 'undefined'
+              ? (() => {
+                  const m = document.cookie.match(/nulo_just_registered_type=([^;]+)/)
+                  const v = m ? decodeURIComponent(m[1]) : null
+                  return (['admin', 'landlord', 'tenant'] as const).includes(v as any) ? v as 'admin' | 'landlord' | 'tenant' : null
+                })()
+              : null) ||
+            null  // Do NOT fall back to session metadata — it may be stale from a deleted account
+          ) as 'admin' | 'landlord' | 'tenant' | null,
           last_login_at: new Date().toISOString(),
           created_at: session.user.created_at,
           updated_at: new Date().toISOString(),
@@ -361,7 +443,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
 
         if (mounted) {
-          setUser(quickUser)
+          setUser(quickUser as User)
           setLoading(false)
           setAuthInitialized(true)
           console.log('✅ [AUTH] Initial user set from session')
@@ -369,7 +451,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // PHASE 5: Fetch fresh data in background (non-blocking)
           Promise.all([
             fetchUserFresh(session.user.id),
-            fetchProfileFresh(session.user.id, quickUser.user_type)
+            fetchProfileFresh(session.user.id, quickUser.user_type || '')
           ]).then(async ([freshUser, freshProfile]) => {
             if (mounted) {
               if (freshUser) {
@@ -565,11 +647,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!userType) return null
 
-      // Admins have no tenant_profiles or landlord_profiles row — skip the
-      // fetch entirely to avoid the 406 error on every admin page load.
-      if (userType === 'admin') return null
-
-      const table = userType === 'tenant' ? 'tenant_profiles' : 'landlord_profiles'
+      let table;
+      if (userType === 'admin') {
+        table = 'admins';
+      } else {
+        table = userType === 'tenant' ? 'tenant_profiles' : 'landlord_profiles';
+      }
+      
       const { data, error } = await supabase
         .from(table)
         .select('*')
@@ -603,11 +687,123 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setProfile(null);
         cacheManager.clearCache();
-                router.push('/');
+        // ── FIX: Also wipe raw token keys so a re-registering user
+        // doesn't accidentally reuse the deleted account's cached tokens.
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('sb-access-token');
+          localStorage.removeItem('sb-refresh-token');
+        }
+        router.push('/');
       }
     } catch (error: any) {
       console.error('❌ [AUTH] Sign out error:', error);
       toast.error('Failed to sign out');
+    }
+  };
+
+  const resetPassword = async (email: string) => {
+    try {
+      console.log('🔐 [AUTH] Starting password reset...');
+      
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/signin?reset=true')}`
+      });
+
+      if (error) throw error;
+
+      console.log('✅ [AUTH] Password reset email sent successfully');
+      toast.success('Password reset email sent! Please check your inbox.');
+      
+      return { error: null };
+    } catch (error: any) {
+      console.error('❌ [AUTH] Reset password error:', error);
+      toast.error(error.message || 'Failed to send reset email');
+      return { error };
+    }
+  };
+
+  // Helper: Check if user signed up with Google OAuth (no password)
+  const isGoogleOAuthUser = useCallback(async (): Promise<boolean> => {
+    try {
+      // First check the user object from AuthContext (has auth_provider field)
+      if ((user as any)?.auth_provider === 'google') {
+        return true;
+      }
+
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data?.user) return false;
+
+      // Check app_metadata.provider first (most reliable)
+      const appProvider = (data.user as any).app_metadata?.provider;
+      if (appProvider === 'google') {
+        return true;
+      }
+
+      // Check if user has any OAuth providers linked
+      const identities = data.user.identities || [];
+      const hasOAuthIdentity = identities.some(
+        (identity: any) => identity.provider === 'google' || identity.provider === 'google_oauth'
+      );
+
+      // If user has Google OAuth identity, they are a Google user
+      // Even if they also have email identity (e.g., they linked email later)
+      return hasOAuthIdentity;
+    } catch (err) {
+      console.error('❌ [AUTH] Error checking OAuth status:', err);
+      return false;
+    }
+  }, [user]);
+
+  // Update password (for authenticated users)
+  // For manual signup users: requires current password verification
+  // For Google OAuth users: just sets a new password (no current password needed)
+  const updatePassword = async (currentPassword: string, newPassword: string) => {
+    try {
+      if (!user?.email) {
+        throw new Error('No user logged in');
+      }
+
+      console.log('🔐 [AUTH] Updating password...');
+
+      // Check if user is a Google OAuth user
+      const isGoogleUser = await isGoogleOAuthUser();
+
+      if (!isGoogleUser) {
+        // For manual signup users: verify current password first
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: currentPassword,
+        });
+
+        if (signInError) {
+          console.error('❌ [AUTH] Current password verification failed:', signInError);
+          throw new Error('Current password is incorrect');
+        }
+      } else {
+        console.log('🔐 [AUTH] Google OAuth user detected - skipping current password verification');
+      }
+
+      // Update to the new password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        console.error('❌ [AUTH] Password update error:', updateError);
+        throw updateError;
+      }
+
+      console.log('✅ [AUTH] Password updated successfully');
+      toast.success(
+        isGoogleUser 
+          ? 'Password set successfully! You can now sign in with email and password.' 
+          : 'Password updated successfully!'
+      );
+      return { error: null };
+    } catch (error: any) {
+      console.error('❌ [AUTH] Update password error:', error);
+      toast.error(error.message || 'Failed to update password');
+      return { error };
     }
   };
 
@@ -796,9 +992,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Tenant signup
+
+// ─── AUTH-05 helper: detect Supabase "already registered" error ──────────
+// Supabase returns a variety of error messages for duplicate emails across
+// versions (some say "User already registered", others "Email address
+// already in use", some include status 422). This helper normalises all of
+// them into a single boolean so the caller can route to the dedicated
+// account-exists page consistently.
+const _isSupabaseAlreadyRegisteredError = (error: any): boolean => {
+  if (!error) return false;
+  const msg = String(error.message || error.error_description || '').toLowerCase();
+  if (!msg) return false;
+  return (
+    msg.includes('already registered') ||
+    msg.includes('already in use') ||
+    msg.includes('user already') ||
+    msg.includes('email already') ||
+    (error.status === 422 && msg.includes('email'))
+  );
+};
 
 
+// ─── Tenant signup ────────────────────────────────────────────────────────
 const signUpTenant = async (firstName: string, lastName: string, email: string, password: string) => {
   try {
     console.log('👤 [AUTH] Starting tenant signup...');
@@ -837,6 +1052,23 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
 
     if (error) {
       console.error('❌ [AUTH] Tenant signup error:', error);
+      // AUTH-05: Supabase's own signUp returns "User already registered" when
+      // the email is taken. Treat that the same way as the backend's
+      // 409 — redirect to the dedicated "account exists" page rather
+      // than just showing a generic toast (which is easy to miss).
+      if (_isSupabaseAlreadyRegisteredError(error)) {
+        console.warn('[AUTH-05] Supabase reported already-registered for', email);
+        toast.error('This email is already registered. Redirecting…');
+        // We don't yet know whether the existing account is the same role
+        // (tenant) or a different role (landlord/admin) at this point —
+        // Supabase only tells us the email is taken. Default to "duplicate"
+        // (most common case for same-email manual signups); the account-exists
+        // page will guide them to sign in to whichever account exists.
+        router.push(
+          `/auth/account-exists?email=${encodeURIComponent(email)}&existing_type=unknown&requested_type=tenant&scenario=duplicate`
+        );
+        return { error };
+      }
       toast.error(error.message);
       return { error };
     }
@@ -865,6 +1097,59 @@ const signUpTenant = async (firstName: string, lastName: string, email: string, 
       );
       
       console.log('✅ [AUTH] Backend sync complete:', syncResult);
+
+      // ✅ AUTH-05 FIX: Handle email conflicts from backend
+      console.log('🔍 [AUTH] Checking for email conflicts...');
+      console.log('   syncResult:', syncResult);
+      console.log('   syncResult.success:', syncResult?.success);
+      console.log('   syncResult.error:', syncResult?.error);
+      console.log('   Condition match:', syncResult && !syncResult.success && syncResult.error === 'email_conflict');
+      
+      if (syncResult && !syncResult.success && syncResult.error === 'email_conflict') {
+        console.error('🚨 [AUTH] Email conflict detected - redirecting to account-exists');
+        
+        // Prefer the structured `existing_type` that the backend now sends
+        // in the 409 detail. Fall back to parsing the message string for
+        // older backend versions that only sent a plain string.
+        let existingRole =
+          (syncResult.existing_type as string | undefined) || 'tenant';
+        
+        if (
+          !syncResult.existing_type &&
+          typeof syncResult.detail === 'string'
+        ) {
+          const detail = syncResult.detail || '';
+          if (detail.includes('already registered as a landlord')) {
+            existingRole = 'landlord';
+          } else if (detail.includes('already registered as a tenant')) {
+            existingRole = 'tenant';
+          } else if (
+            detail.includes('already registered as an admin') ||
+            detail.includes('already registered as a admin')
+          ) {
+            existingRole = 'admin';
+          }
+        }
+
+        console.error('   Existing role:', existingRole);
+        console.error('   Redirecting to account-exists page...');
+        
+        // Determine scenario:
+        //   - "role_conflict" if the existing account is a different role
+        //     (e.g. user tried to sign up as tenant but already has landlord)
+        //   - "duplicate" otherwise (same role, the most common case)
+        const scenario =
+          existingRole && existingRole !== 'tenant'
+            ? 'role_conflict'
+            : 'duplicate'
+
+        // Redirect to account-exists page with context
+        router.push(
+          `/auth/account-exists?email=${encodeURIComponent(email)}&existing_type=${existingRole}&requested_type=tenant&scenario=${scenario}`
+        );
+        
+        return { error: { message: 'Email already registered' } };
+      }
       
       // 🔔 Fire signup in-app notification (non-blocking)
       _fireSignupNotification(
@@ -977,6 +1262,22 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
 
     if (error) {
       console.error('❌ [AUTH] Landlord signup error:', error);
+      // AUTH-05: same as tenant — Supabase "User already registered" gets
+      // routed to the account-exists page so the user knows exactly what
+      // to do next instead of staring at a generic error toast.
+      if (_isSupabaseAlreadyRegisteredError(error)) {
+        console.warn('[AUTH-05] Supabase reported already-registered for', email);
+        toast.error('This email is already registered. Redirecting…');
+        // We don't yet know whether the existing account is the same role
+        // (landlord) or a different role (tenant/admin) at this point —
+        // Supabase only tells us the email is taken. Default to "duplicate"
+        // so the account-exists page shows the friendly "you already have an
+        // account, please sign in" message rather than the role-conflict one.
+        router.push(
+          `/auth/account-exists?email=${encodeURIComponent(email)}&existing_type=unknown&requested_type=landlord&scenario=duplicate`
+        );
+        return { error };
+      }
       toast.error(error.message);
       return { error };
     }
@@ -999,6 +1300,59 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
       );
       
       console.log('✅ [AUTH] Backend sync complete:', syncResult);
+
+      // ✅ AUTH-05 FIX: Handle email conflicts from backend
+      console.log('🔍 [AUTH] Checking for email conflicts...');
+      console.log('   syncResult:', syncResult);
+      console.log('   syncResult.success:', syncResult?.success);
+      console.log('   syncResult.error:', syncResult?.error);
+      console.log('   Condition match:', syncResult && !syncResult.success && syncResult.error === 'email_conflict');
+      
+      if (syncResult && !syncResult.success && syncResult.error === 'email_conflict') {
+        console.error('🚨 [AUTH] Email conflict detected - redirecting to account-exists');
+        
+        // Prefer the structured `existing_type` that the backend now sends
+        // in the 409 detail. Fall back to parsing the message string for
+        // older backend versions that only sent a plain string.
+        let existingRole =
+          (syncResult.existing_type as string | undefined) || 'tenant';
+        
+        if (
+          !syncResult.existing_type &&
+          typeof syncResult.detail === 'string'
+        ) {
+          const detail = syncResult.detail || '';
+          if (detail.includes('already registered as a landlord')) {
+            existingRole = 'landlord';
+          } else if (detail.includes('already registered as a tenant')) {
+            existingRole = 'tenant';
+          } else if (
+            detail.includes('already registered as an admin') ||
+            detail.includes('already registered as a admin')
+          ) {
+            existingRole = 'admin';
+          }
+        }
+
+        console.error('   Existing role:', existingRole);
+        console.error('   Redirecting to account-exists page...');
+        
+        // Determine scenario:
+        //   - "role_conflict" if the existing account is a different role
+        //     (e.g. user tried to sign up as landlord but already has tenant)
+        //   - "duplicate" otherwise (same role, the most common case)
+        const scenario =
+          existingRole && existingRole !== 'landlord'
+            ? 'role_conflict'
+            : 'duplicate'
+
+        // Redirect to account-exists page with context
+        router.push(
+          `/auth/account-exists?email=${encodeURIComponent(email)}&existing_type=${existingRole}&requested_type=landlord&scenario=${scenario}`
+        );
+        
+        return { error: { message: 'Email already registered' } };
+      }
       
       // 🔔 Fire signup in-app notification (non-blocking)
       _fireSignupNotification(
@@ -1181,10 +1535,14 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         callbackUrl = localStorage.getItem('signup_callback_url') || undefined;
       }
 
-      // ✅ CRITICAL: Fetch user_type from DB — metadata can be stale or wrong.
-      // This is especially important for OAuth users whose metadata may not have
-      // been updated if they signed up via Google and later sign in via email.
-      let userType = data.user.user_metadata?.user_type || 'tenant';
+      // ✅ CRITICAL: Fetch user_type, verification_status, and onboarding state
+      // from DB — JWT metadata can be stale or wrong. This is especially
+      // important for OAuth users whose metadata may not have been updated
+      // if they signed up via Google and later sign in via email/password
+      // (the JWT issued at the new sign-in carries the old user_metadata).
+      let userType: 'admin' | 'landlord' | 'tenant' = data.user.user_metadata?.user_type || 'tenant';
+      let dbVerificationStatus: string | null = null;
+      let dbOnboardingCompleted = false;
       try {
         const { data: dbUser } = await supabase
           .from('users')
@@ -1195,6 +1553,14 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
           userType = dbUser.user_type;
           console.log('✅ [AUTH] user_type resolved from DB:', userType);
         }
+        // ✅ FIX: Use DB value when available — was previously only used
+        // for user_type, which caused stale-JWT issues for OAuth users who
+        // later switched to email/password sign-in (e.g. showing
+        // "Verification Pending" for an already-approved landlord).
+        if (dbUser?.verification_status) {
+          dbVerificationStatus = dbUser.verification_status;
+        }
+        dbOnboardingCompleted = Boolean(dbUser?.onboarding_completed);
       } catch (dbErr) {
         console.warn('⚠️ [AUTH] Could not fetch user_type from DB, using metadata:', userType);
       }
@@ -1202,18 +1568,18 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
       // Build user object DIRECTLY from signIn response
       const firstName = data.user.user_metadata?.first_name || 'User';
       const lastName = data.user.user_metadata?.last_name || 'Name';
-      
+
       const userData: User = {
         id: data.user.id,
         email: data.user.email || '',
         first_name: firstName,
         last_name: lastName,
         full_name: data.user.user_metadata?.full_name || `${firstName} ${lastName}`,
-        user_type: userType as 'admin' | 'landlord' | 'tenant',
+        user_type: userType,
         email_verified: data.user.email_confirmed_at ? true : false,
-        onboarding_completed: data.user.user_metadata?.onboarding_completed || false,
+        onboarding_completed: data.user.user_metadata?.onboarding_completed || dbOnboardingCompleted || false,
         onboarding_step: data.user.user_metadata?.onboarding_step || 1,
-        verification_status: data.user.user_metadata?.verification_status || 'pending',
+        verification_status: (dbVerificationStatus || data.user.user_metadata?.verification_status || 'pending') as User['verification_status'],
         trust_score: data.user.user_metadata?.trust_score || 50, // DB default from schema
         created_at: data.user.created_at || new Date().toISOString(),
         auth_provider: 'email',
@@ -1331,31 +1697,6 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
       console.error('[AUTH] Google sign in error:', error)
       toast.error(error.message || 'Failed to sign in with Google')
       return { error }
-    }
-  };
-
-  // Reset password
-  const resetPassword = async (email: string) => {
-    try {
-      console.log('🔒 [AUTH] Sending password reset email...');
-      
-      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/reset-password`
-      });
-
-      if (error) {
-        console.error('❌ [AUTH] Password reset error:', error);
-        toast.error(error.message);
-        return { error };
-      }
-
-      console.log('✅ [AUTH] Password reset email sent');
-      toast.success('Password reset email sent! Please check your inbox.');
-      return { data, error: null };
-    } catch (error: any) {
-      console.error('❌ [AUTH] Password reset error:', error);
-      toast.error(error.message || 'Failed to send reset email');
-      return { error };
     }
   };
 
@@ -1483,6 +1824,8 @@ const value: AuthContextType = {
   signInWithGoogle,
   signOut,
   resetPassword,
+  updatePassword,
+  isGoogleOAuthUser,
   updateUserProfile,
   completePhase1Profile: wrappedCompletePhase1Profile,
   completePhase2Profile: wrappedCompletePhase2Profile,

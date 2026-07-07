@@ -6,11 +6,12 @@ import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { maintenanceAPI, MaintenanceRequest } from "@/lib/api/maintenance"
+import { maintenanceAPI, MaintenanceRequest, MaintenanceStats } from "@/lib/api/maintenance"
+import { agreementsAPI } from "@/lib/api/agreements"
 import {
   Settings, Plus, Calendar, AlertTriangle, CheckCircle, Clock, 
   MessageSquare, ArrowRight, Filter, Search, X, User, Home,
-  DollarSign, Wrench
+  DollarSign, Wrench, Building2, TrendingUp, Zap
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -20,6 +21,8 @@ export default function LandlordMaintenancePage() {
   const { user } = useAuth()
   const router = useRouter()
   const [requests, setRequests] = useState<MaintenanceRequest[]>([])
+  const [stats, setStats] = useState<MaintenanceStats | null>(null)
+  const [agreements, setAgreements] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
@@ -28,27 +31,36 @@ export default function LandlordMaintenancePage() {
 
   useEffect(() => {
     if (user?.id) {
-      fetchMaintenanceRequests()
+      fetchAllData()
     }
   }, [user?.id])
 
-  const fetchMaintenanceRequests = async () => {
+  const fetchAllData = async () => {
     try {
       setLoading(true)
       const filters: any = {}
       if (statusFilter !== "all") filters.status = statusFilter
       if (urgencyFilter !== "all") filters.urgency = urgencyFilter
       
-      const data = await maintenanceAPI.getAll(filters)
-      setRequests(data)
+      const [requestsData, statsData, agreementsData] = await Promise.all([
+        maintenanceAPI.getAll(filters),
+        maintenanceAPI.getStats(),
+        agreementsAPI.getMyAgreements()
+      ])
+      
+      setRequests(requestsData)
+      setStats(statsData)
+      setAgreements(agreementsData.agreements || [])
     } catch (err: any) {
-      console.error("Failed to fetch maintenance requests:", err)
+      console.error("Failed to fetch data:", err)
       setError(err.message || "Failed to load maintenance requests")
       toast.error("Failed to load maintenance requests")
     } finally {
       setLoading(false)
     }
   }
+
+  const fetchMaintenanceRequests = fetchAllData
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -189,8 +201,56 @@ export default function LandlordMaintenancePage() {
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        {/* Rented Properties Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <Card className="border-orange-200 bg-orange-50">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <Building2 className="h-10 w-10 text-orange-600" />
+                <div>
+                  <p className="text-sm text-orange-600 font-medium">Rented Properties</p>
+                  <p className="text-3xl font-bold text-orange-900">
+                    {agreements.filter(a => a.status === 'ACTIVE' || a.status === 'SIGNED').length}
+                  </p>
+                  <p className="text-xs text-orange-500 mt-1">Total active tenancies</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="border-indigo-200 bg-indigo-50">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <TrendingUp className="h-10 w-10 text-indigo-600" />
+                <div>
+                  <p className="text-sm text-indigo-600 font-medium">Monthly Rent</p>
+                  <p className="text-3xl font-bold text-indigo-900">
+                    ₦{agreements.filter(a => a.status === 'ACTIVE' || a.status === 'SIGNED').reduce((sum, a) => sum + (Number(a.rent_amount) || 0), 0).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-indigo-500 mt-1">Total monthly revenue</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="border-teal-200 bg-teal-50">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <Zap className="h-10 w-10 text-teal-600" />
+                <div>
+                  <p className="text-sm text-teal-600 font-medium">Properties Needing Attention</p>
+                  <p className="text-3xl font-bold text-teal-900">
+                    {stats?.pending_requests || 0}
+                  </p>
+                  <p className="text-xs text-teal-500 mt-1">Pending maintenance requests</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        
+        {/* Maintenance Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <Card className="border-yellow-200 bg-yellow-50">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -198,7 +258,7 @@ export default function LandlordMaintenancePage() {
                 <div>
                   <p className="text-sm text-yellow-600">Pending</p>
                   <p className="text-2xl font-bold text-yellow-900">
-                    {requests.filter(r => r.status === 'PENDING').length}
+                    {stats?.pending_requests ?? requests.filter(r => r.status === 'PENDING').length}
                   </p>
                 </div>
               </div>
@@ -212,7 +272,7 @@ export default function LandlordMaintenancePage() {
                 <div>
                   <p className="text-sm text-blue-600">In Progress</p>
                   <p className="text-2xl font-bold text-blue-900">
-                    {requests.filter(r => r.status === 'IN_PROGRESS').length}
+                    {stats?.in_progress_requests ?? requests.filter(r => r.status === 'IN_PROGRESS').length}
                   </p>
                 </div>
               </div>
@@ -226,7 +286,7 @@ export default function LandlordMaintenancePage() {
                 <div>
                   <p className="text-sm text-red-600">Emergency</p>
                   <p className="text-2xl font-bold text-red-900">
-                    {requests.filter(r => r.urgency === 'EMERGENCY').length}
+                    {stats?.emergency_requests ?? requests.filter(r => r.urgency === 'EMERGENCY').length}
                   </p>
                 </div>
               </div>
@@ -240,7 +300,21 @@ export default function LandlordMaintenancePage() {
                 <div>
                   <p className="text-sm text-green-600">Resolved</p>
                   <p className="text-2xl font-bold text-green-900">
-                    {requests.filter(r => r.status === 'RESOLVED').length}
+                    {stats?.resolved_requests ?? requests.filter(r => r.status === 'RESOLVED').length}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="border-purple-200 bg-purple-50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <DollarSign className="h-8 w-8 text-purple-600" />
+                <div>
+                  <p className="text-sm text-purple-600">Total Cost</p>
+                  <p className="text-2xl font-bold text-purple-900">
+                    ₦{stats?.total_cost?.toLocaleString() || 0}
                   </p>
                 </div>
               </div>

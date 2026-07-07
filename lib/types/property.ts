@@ -138,6 +138,7 @@ export interface Property {
   featured: boolean | null;            // boolean (indexed)
   verification_status: string | null;  // text - pending, approved, rejected
   rejection_reason: string | null;     // text
+  deleted_at: string | null; 
   reviewed_at: Date | null;            // timestamp with time zone
   reviewed_by: string | null;          // uuid
   

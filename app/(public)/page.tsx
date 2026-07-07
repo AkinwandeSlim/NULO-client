@@ -18,6 +18,7 @@ import {
 import { propertiesAPI } from "@/lib/api/properties"
 import { favoritesAPI } from "@/lib/api/favorites"
 import { toast } from "sonner"
+import { FILTER_PRICE_MAX } from "@/lib/filters/constants"
 
 // ✅ REMOVED: Hardcoded cities - now fetched from API
 // const NIGERIAN_CITIES = [...] 
@@ -76,7 +77,7 @@ export default function HomePage() {
   }, [searchParams])
   
   const [location, setLocation] = useState("")
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000])
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, FILTER_PRICE_MAX])
   const [propertyType, setPropertyType] = useState("all")
   const [showAdvanced, setShowAdvanced] = useState(false)
   
@@ -424,9 +425,9 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30 overflow-hidden relative">
-      {/* Background Textures */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30 overflow-x-hidden relative">
+      {/* Background Textures - kept behind every scrollable layer */}
+      <div className="fixed inset-0 -z-10 pointer-events-none">
         <div className="absolute inset-0 texture-dots opacity-5" />
         <div className="absolute inset-0 texture-square-grid opacity-8" />
         <div className="absolute inset-0 texture-noise opacity-10" />

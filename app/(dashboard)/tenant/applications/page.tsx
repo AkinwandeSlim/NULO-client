@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge"
 import {
   Calendar, ArrowLeft, Search, Filter, FileText,
   Loader2, AlertCircle, MapPin, CheckCircle, XCircle,
-  Eye, MessageSquare, Clock, Users
+  Eye, MessageSquare, Clock, Users, Grid, List
 } from "lucide-react"
 import Link from "next/link"
 import { applicationsAPI, type Application } from "@/lib/api/applications"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
+import { normalizeAppStatus } from "@/lib/utils/applicationStatus"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 
@@ -224,6 +225,85 @@ function ApplicationCard({ application, onWithdraw, withdrawingId }: Application
   )
 }
 
+// ============ TABLE ROW COMPONENT ============
+
+interface ApplicationTableRowProps {
+  application: Application
+  onWithdraw: (id: string) => void
+  withdrawingId: string | null
+}
+
+function ApplicationTableRow({ application, onWithdraw, withdrawingId }: ApplicationTableRowProps) {
+  const router = useRouter()
+  const property = application.property
+  const isPending = application.status === 'pending'
+  const isWithdrawing = withdrawingId === application.id
+
+  return (
+    <tr className="hover:bg-slate-50 border-b border-slate-200">
+      <td className="px-4 py-4">
+        <div className="flex items-center gap-3">
+          <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0">
+            <img
+              src={property?.images?.[0] || DEFAULT_PROPERTY_IMAGE}
+              alt={property?.title || 'Property'}
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-slate-900 truncate max-w-xs">{property?.title || 'Property'}</p>
+            <p className="text-sm text-slate-500 truncate flex items-center gap-1">
+              <MapPin className="h-3 w-3" />
+              {property?.location || 'Location not available'}
+            </p>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <Badge className={getStatusBadgeStyle(application.status)}>
+          {getStatusLabel(application.status)}
+        </Badge>
+      </td>
+      <td className="px-4 py-4 text-sm text-slate-700">
+        {application.monthly_income ? formatNGN(application.monthly_income) : '-'}
+      </td>
+      <td className="px-4 py-4 text-sm text-slate-700">
+        {application.move_in_date ? new Date(application.move_in_date).toLocaleDateString('en-NG') : '-'}
+      </td>
+      <td className="px-4 py-4 text-sm text-slate-500">
+        {formatDistanceToNow(new Date(application.created_at), { addSuffix: true })}
+      </td>
+      <td className="px-4 py-4 text-right">
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            onClick={() => router.push(`/tenant/applications/${application.id}`)}
+            size="sm"
+            variant="ghost"
+            className="text-slate-600 hover:text-orange-600"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          {isPending && (
+            <Button
+              onClick={() => onWithdraw(application.id)}
+              disabled={isWithdrawing}
+              variant="ghost"
+              size="sm"
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+            >
+              {isWithdrawing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <XCircle className="h-4 w-4" />
+              )}
+            </Button>
+          )}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 // ============ PAGE COMPONENT ============
 
 export default function TenantApplicationsPage() {
@@ -234,6 +314,7 @@ export default function TenantApplicationsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -249,7 +330,17 @@ export default function TenantApplicationsPage() {
         setIsLoading(true)
         const response = await applicationsAPI.getMyApplications()
         if (response.success && response.applications) {
-          setApplications(response.applications)
+          // Normalize server-side statuses ("submitted"/"under_review") to the
+          // UI-friendly values used by this page (pending/approved/...). The
+          // DB check constraint requires "submitted", but the page's filter,
+          // stats, and badge logic all key off "pending". Without this,
+          // freshly-submitted apps fall through every status check and show
+          // up with the wrong badge color + 0 in the pending counter.
+          const normalized = (response.applications as any[]).map((a) => ({
+            ...a,
+            status: normalizeAppStatus(a.status),
+          }))
+          setApplications(normalized as Application[])
         }
       } catch (error) {
         console.error("Failed to fetch applications:", error)
@@ -318,7 +409,9 @@ export default function TenantApplicationsPage() {
   const stats = {
     total: applications.length,
     pending: applications.filter(a => a.status === 'pending').length,
-    approved: applications.filter(a => a.status === 'approved').length
+    approved: applications.filter(a => a.status === 'approved').length,
+    rejected: applications.filter(a => a.status === 'rejected').length,
+    withdrawn: applications.filter(a => a.status === 'withdrawn').length
   }
 
   if (isLoading) {
@@ -367,7 +460,7 @@ export default function TenantApplicationsPage() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
         <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -405,6 +498,30 @@ export default function TenantApplicationsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Rejected</p>
+                <p className="text-2xl font-bold text-red-600">{stats.rejected}</p>
+              </div>
+              <XCircle className="w-8 h-8 text-red-400" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Withdrawn</p>
+                <p className="text-2xl font-bold text-slate-600">{stats.withdrawn}</p>
+              </div>
+              <Clock className="w-8 h-8 text-slate-400" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Search & filter */}
@@ -433,6 +550,26 @@ export default function TenantApplicationsPage() {
               <option value="rejected">Rejected</option>
               <option value="withdrawn">Withdrawn</option>
             </select>
+          </div>
+          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
+            <Button
+              variant={viewMode === 'cards' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('cards')}
+              className={`${viewMode === 'cards' ? 'bg-orange-500 hover:bg-orange-600' : 'text-slate-600'}`}
+            >
+              <Grid className="h-4 w-4 mr-2" />
+              Cards
+            </Button>
+            <Button
+              variant={viewMode === 'table' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('table')}
+              className={`${viewMode === 'table' ? 'bg-orange-500 hover:bg-orange-600' : 'text-slate-600'}`}
+            >
+              <List className="h-4 w-4 mr-2" />
+              Table
+            </Button>
           </div>
         </div>
       )}
@@ -476,70 +613,109 @@ export default function TenantApplicationsPage() {
                     Clear Filters
                   </Button>
                 </div>
-              ) : (
-                <div className="space-y-6">
+          ) : (
+                viewMode === 'cards' ? (
+                  <div className="space-y-6">
 
-                  {groupedApplications.pending.length > 0 && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                        <AlertCircle className="h-5 w-5 text-orange-600" />
-                        Pending Review ({groupedApplications.pending.length})
-                        <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs animate-pulse ml-1">
-                          Action Required
-                        </Badge>
-                      </h3>
-                      <div className="space-y-3">
-                        {groupedApplications.pending.map(app => (
-                          <ApplicationCard
+                    {groupedApplications.pending.length > 0 && (
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                          <AlertCircle className="h-5 w-5 text-orange-600" />
+                          Pending Review ({groupedApplications.pending.length})
+                          <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs animate-pulse ml-1">
+                            Action Required
+                          </Badge>
+                        </h3>
+                        <div className="space-y-3">
+                          {groupedApplications.pending.map(app => (
+                            <ApplicationCard
+                              key={app.id}
+                              application={app}
+                              onWithdraw={handleWithdraw}
+                              withdrawingId={withdrawingId}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {groupedApplications.approved.length > 0 && (
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                          Approved Applications ({groupedApplications.approved.length})
+                        </h3>
+                        <div className="space-y-3">
+                          {groupedApplications.approved.map(app => (
+                            <ApplicationCard
+                              key={app.id}
+                              application={app}
+                              onWithdraw={handleWithdraw}
+                              withdrawingId={withdrawingId}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {groupedApplications.closed.length > 0 && (
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                          <Clock className="h-5 w-5 text-slate-600" />
+                          Closed Applications ({groupedApplications.closed.length})
+                        </h3>
+                        <div className="space-y-3">
+                          {groupedApplications.closed.map(app => (
+                            <ApplicationCard
+                              key={app.id}
+                              application={app}
+                              onWithdraw={handleWithdraw}
+                              withdrawingId={withdrawingId}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50">
+                        <tr className="border-b border-slate-200">
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Property
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Status
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Monthly Income
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Move-in Date
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Applied
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {filteredApplications.map(app => (
+                          <ApplicationTableRow
                             key={app.id}
                             application={app}
                             onWithdraw={handleWithdraw}
                             withdrawingId={withdrawingId}
                           />
                         ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {groupedApplications.approved.length > 0 && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                        <CheckCircle className="h-5 w-5 text-green-600" />
-                        Approved Applications ({groupedApplications.approved.length})
-                      </h3>
-                      <div className="space-y-3">
-                        {groupedApplications.approved.map(app => (
-                          <ApplicationCard
-                            key={app.id}
-                            application={app}
-                            onWithdraw={handleWithdraw}
-                            withdrawingId={withdrawingId}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {groupedApplications.closed.length > 0 && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                        <Clock className="h-5 w-5 text-slate-600" />
-                        Closed Applications ({groupedApplications.closed.length})
-                      </h3>
-                      <div className="space-y-3">
-                        {groupedApplications.closed.map(app => (
-                          <ApplicationCard
-                            key={app.id}
-                            application={app}
-                            onWithdraw={handleWithdraw}
-                            withdrawingId={withdrawingId}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                </div>
+                      </tbody>
+                    </table>
+                  </div>
+                )
               )}
             </div>
           )}

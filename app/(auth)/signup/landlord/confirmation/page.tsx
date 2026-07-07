@@ -240,7 +240,7 @@ export default function LandlordConfirmationPage() {
             {/* Instructions */}
             <div className="space-y-3 text-sm text-slate-600">
               <p>• Check your spam folder if you don't see the email</p>
-              <p>• The confirmation link expires in 24 hours</p>
+              <p>• The confirmation link expires in 1 hour</p>
               <p>• Click the link in the email to verify your account</p>
               <p>• After verification, you'll be guided through onboarding</p>
             </div>

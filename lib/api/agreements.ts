@@ -10,6 +10,7 @@
  *   GET   /api/v1/agreements/{id}                    getById()
  *   PATCH /api/v1/agreements/{id}/sign               sign()
  *   POST  /api/v1/agreements/{id}/generate-pdf       generatePdf()
+ *   POST  /api/v1/agreements/{id}/receipt            generateReceipt()
  *
  * Changes from original:
  *   - Removed update() — no PATCH /{id} endpoint exists in the backend
@@ -17,6 +18,7 @@
  *   - Added getByApplication() — missing; the flow bridge from application_id to agreement
  *   - Added getByProperty() — was missing, maps to GET /property/{id}
  *   - Added generatePdf() — was missing, maps to POST /{id}/generate-pdf
+ *   - Added generateReceipt() — was missing, maps to POST /{id}/receipt
  *   - Added status_filter param to getMyAgreements()
  *   - Added landlord field to AgreementWithDetails (backend returns all three)
  *   - Added count to response interfaces
@@ -55,6 +57,15 @@ export interface Agreement {
   document_url?: string | null
   created_at: string
   updated_at: string
+  // Nomba payment fields
+  virtual_account_number?: string | null
+  virtual_account_name?: string | null
+  expected_payment_amount?: number | null
+  total_received_amount?: number | null
+  reconciliation_status?: 'FULL_PAYMENT' | 'UNDERPAYMENT' | 'OVERPAYMENT' | 'NO_PAYMENT' | null
+  disbursement_status?: 'pending' | 'released' | 'failed' | null
+  disbursement_amount?: number | null
+  disbursement_merchant_tx_ref?: string | null
 }
 
 /** Agreement enriched with participant and property data — returned by all read endpoints */
@@ -230,6 +241,19 @@ export const agreementsAPI = {
   generatePdf: async (agreementId: string): Promise<PdfResponse> => {
     const response = await apiClient.post<PdfResponse>(
       `/api/v1/agreements/${agreementId}/generate-pdf`,
+      {}
+    );
+    return response.data;
+  },
+
+  /**
+   * Generate a payment receipt PDF for a completed payment.
+   * Requires reconciliation_status === 'FULL_PAYMENT'. Returns a document_url.
+   * POST /api/v1/agreements/{id}/receipt
+   */
+  generateReceipt: async (agreementId: string): Promise<PdfResponse> => {
+    const response = await apiClient.post<PdfResponse>(
+      `/api/v1/agreements/${agreementId}/receipt`,
       {}
     );
     return response.data;

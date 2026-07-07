@@ -37,6 +37,7 @@ import {
   Calendar,
   Download,
   Shield,
+  Home,
   Camera,
   FileCheck,
   Building2,
@@ -178,7 +179,7 @@ export default function LandlordVerificationDetail() {
       }
       
       if (user.user_type !== 'admin') {
-        router.push('/dashboard')
+        router.push('/admin')
         return
       }
       
@@ -501,32 +502,37 @@ export default function LandlordVerificationDetail() {
               <CardContent className="pt-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   
-                  {/* NIN */}
-                  {verification.nin && (
+                  {/* NIN Document (shown independently) */}
+                  {verification.nin_document_url && (
                     <div className="border border-slate-200 rounded-lg p-4 bg-gradient-to-br from-white to-slate-50/30 hover:border-orange-200 transition-colors">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                            <FileCheck className="h-4 w-4 text-blue-600" />
-                          </div>
-                          <span className="font-semibold text-slate-900">NIN</span>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                          <FileCheck className="h-4 w-4 text-blue-600" />
                         </div>
-                        <Badge className={verification.nin_verified ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-600 border-slate-200'}>
-                          {verification.nin_verified ? 'Verified' : 'Pending'}
-                        </Badge>
+                        <span className="font-semibold text-slate-900">NIN Document</span>
                       </div>
-                      <p className="text-sm text-slate-600 mb-3 font-mono">{verification.nin}</p>
-                      {verification.nin_document_url && (
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="w-full border-slate-200 hover:bg-slate-50"
-                          onClick={() => window.open(verification.nin_document_url, '_blank')}
-                        >
-                          <Eye className="h-3 w-3 mr-2" />
-                          View Document
-                        </Button>
-                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full border-slate-200 hover:bg-slate-50"
+                        onClick={() => window.open(verification.nin_document_url, '_blank')}
+                      >
+                        <Eye className="h-3 w-3 mr-2" />
+                        View Document
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* NIN Number (shown independently) */}
+                  {verification.nin && (
+                    <div className="border border-slate-200 rounded-lg p-4 bg-gradient-to-br from-white to-slate-50/30">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                          <FileCheck className="h-4 w-4 text-blue-600" />
+                        </div>
+                        <span className="font-semibold text-slate-900">NIN</span>
+                      </div>
+                      <p className="text-sm text-slate-600 font-mono">{verification.nin}</p>
                     </div>
                   )}
 
@@ -592,11 +598,145 @@ export default function LandlordVerificationDetail() {
                       </Button>
                     </div>
                   )}
+
+                  {/* Proof of Address */}
+                  {verification.proof_of_address_url && (
+                    <div className="border border-slate-200 rounded-lg p-4 bg-gradient-to-br from-white to-slate-50/30 hover:border-orange-200 transition-colors">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center">
+                          <FileCheck className="h-4 w-4 text-teal-600" />
+                        </div>
+                        <span className="font-semibold text-slate-900">Proof of Address</span>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="w-full border-slate-200 hover:bg-slate-50"
+                        onClick={() => window.open(verification.proof_of_address_url, '_blank')}
+                      >
+                        <Download className="h-3 w-3 mr-2" />
+                        Download
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Company Registration */}
+                  {verification.company_registration_url && (
+                    <div className="border border-slate-200 rounded-lg p-4 bg-gradient-to-br from-white to-slate-50/30 hover:border-orange-200 transition-colors">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                          <Building2 className="h-4 w-4 text-indigo-600" />
+                        </div>
+                        <span className="font-semibold text-slate-900">Company Registration</span>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="w-full border-slate-200 hover:bg-slate-50"
+                        onClick={() => window.open(verification.company_registration_url, '_blank')}
+                      >
+                        <Download className="h-3 w-3 mr-2" />
+                        Download
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Bank Statement */}
+                  {verification.bank_statement_url && (
+                    <div className="border border-slate-200 rounded-lg p-4 bg-gradient-to-br from-white to-slate-50/30 hover:border-orange-200 transition-colors">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                            <Banknote className="h-4 w-4 text-amber-600" />
+                          </div>
+                          <span className="font-semibold text-slate-900">Bank Statement</span>
+                        </div>
+                        <Badge className={verification.bank_verification_status === 'verified' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-600 border-slate-200'}>
+                          {verification.bank_verification_status === 'verified' ? 'Verified' : 'Pending'}
+                        </Badge>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="w-full border-slate-200 hover:bg-slate-50"
+                        onClick={() => window.open(verification.bank_statement_url, '_blank')}
+                      >
+                        <Download className="h-3 w-3 mr-2" />
+                        Download
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Guarantor ID */}
+                  {verification.guarantor_id_url && (
+                    <div className="border border-slate-200 rounded-lg p-4 bg-gradient-to-br from-white to-slate-50/30 hover:border-orange-200 transition-colors">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center">
+                          <Users className="h-4 w-4 text-pink-600" />
+                        </div>
+                        <span className="font-semibold text-slate-900">Guarantor ID</span>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="w-full border-slate-200 hover:bg-slate-50"
+                        onClick={() => window.open(verification.guarantor_id_url, '_blank')}
+                      >
+                        <Download className="h-3 w-3 mr-2" />
+                        Download
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Insurance Document */}
+                  {verification.insurance_document_url && (
+                    <div className="border border-slate-200 rounded-lg p-4 bg-gradient-to-br from-white to-slate-50/30 hover:border-orange-200 transition-colors">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-full bg-cyan-100 flex items-center justify-center">
+                          <Shield className="h-4 w-4 text-cyan-600" />
+                        </div>
+                        <span className="font-semibold text-slate-900">Insurance Document</span>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="w-full border-slate-200 hover:bg-slate-50"
+                        onClick={() => window.open(verification.insurance_document_url, '_blank')}
+                      >
+                        <Download className="h-3 w-3 mr-2" />
+                        Download
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Property Ownership Proof */}
+                  {verification.property_ownership_proof && (
+                    <div className="border border-slate-200 rounded-lg p-4 bg-gradient-to-br from-white to-slate-50/30 hover:border-orange-200 transition-colors">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center">
+                          <Home className="h-4 w-4 text-rose-600" />
+                        </div>
+                        <span className="font-semibold text-slate-900">Property Ownership Proof</span>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="w-full border-slate-200 hover:bg-slate-50"
+                        onClick={() => window.open(verification.property_ownership_proof, '_blank')}
+                      >
+                        <Download className="h-3 w-3 mr-2" />
+                        Download
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Empty State */}
                 {!verification.nin_document_url && !verification.bvn && !verification.id_document_url && 
-                 !verification.selfie_url && (
+                 !verification.selfie_url && !verification.proof_of_address_url && 
+                 !verification.company_registration_url && !verification.bank_statement_url && 
+                 !verification.guarantor_id_url && !verification.insurance_document_url && 
+                 !verification.property_ownership_proof && (
                   <div className="text-center py-12">
                     <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
                       <FileText className="h-8 w-8 text-slate-400" />

@@ -343,12 +343,18 @@ export default function TenantApplicationDetailPage() {
       {application.status === 'rejected' && (
         <div className="flex items-start gap-3 p-4 mb-6 bg-red-50 border border-red-200 rounded-xl">
           <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div>
+          <div className="flex-1">
             <p className="font-semibold text-red-900">Application Not Approved</p>
             <p className="text-sm text-red-700 mt-0.5">
               Unfortunately your application was not approved for this property.
               You can browse other available properties and apply again.
             </p>
+            {application.rejection_reason && (
+              <div className="mt-3 p-3 bg-white border border-red-200 rounded-lg">
+                <p className="text-xs font-semibold text-red-800 uppercase tracking-wide mb-1">Landlord's Reason</p>
+                <p className="text-sm text-red-900">{application.rejection_reason}</p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -984,7 +990,7 @@ export default function TenantApplicationDetailPage() {
               <CardContent className="pt-6">
                 <div className="bg-red-50 border border-red-100 rounded-lg p-4">
                   <p className="text-slate-700 leading-relaxed">
-                    {application.message || 'No reason provided by landlord.'}
+                    {application.rejection_reason || 'No reason provided by landlord.'}
                   </p>
                 </div>
               </CardContent>

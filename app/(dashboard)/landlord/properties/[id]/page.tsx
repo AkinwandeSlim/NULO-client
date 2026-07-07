@@ -11,11 +11,12 @@ import {
   Edit, Trash2, ArrowLeft, MessageSquare,
   Home, Wifi, Car, Dumbbell, Shield, Wind,
   ChevronRight, TrendingUp, AlertCircle, Building2, ZoomIn, X,
-  Grid
+  Grid, Wrench, User
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { propertiesAPI } from "@/lib/api/properties"
+import { maintenanceAPI, type MaintenanceRequest } from "@/lib/api/maintenance"
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -68,6 +69,21 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   maintenance: { label: "Maintenance", className: "bg-orange-500 text-white" },
 }
 
+const MAINTENANCE_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  PENDING: { label: "Pending", className: "bg-yellow-100 text-yellow-700 border-yellow-200" },
+  ACKNOWLEDGED: { label: "Acknowledged", className: "bg-blue-100 text-blue-700 border-blue-200" },
+  IN_PROGRESS: { label: "In Progress", className: "bg-orange-100 text-orange-700 border-orange-200" },
+  RESOLVED: { label: "Resolved", className: "bg-green-100 text-green-700 border-green-200" },
+  CLOSED: { label: "Closed", className: "bg-slate-100 text-slate-700 border-slate-200" },
+}
+
+const MAINTENANCE_URGENCY_CONFIG: Record<string, { label: string; className: string }> = {
+  LOW: { label: "Low", className: "bg-slate-100 text-slate-700 border-slate-200" },
+  MEDIUM: { label: "Medium", className: "bg-yellow-100 text-yellow-700 border-yellow-200" },
+  HIGH: { label: "High", className: "bg-orange-100 text-orange-700 border-orange-200" },
+  EMERGENCY: { label: "Emergency", className: "bg-red-100 text-red-700 border-red-200" },
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SpecPill({
@@ -112,11 +128,12 @@ function PerfCard({
 export default function LandlordPropertyViewPage() {
   const [property, setProperty]             = useState<any>(null)
   const [loading, setLoading]               = useState(true)
-  const [mounted, setMounted]               = useState(false)
   const [deleting, setDeleting]             = useState(false)
   const [selectedImage, setSelectedImage]   = useState(0)
   const [lightboxOpen, setLightboxOpen]     = useState(false)
   const [activeTab, setActiveTab]           = useState("overview")
+  const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([])
+  const [maintenanceLoading, setMaintenanceLoading] = useState(false)
 
   const router     = useRouter()
   const params     = useParams()
@@ -127,8 +144,37 @@ export default function LandlordPropertyViewPage() {
   const fetchProperty = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await propertiesAPI.getById(propertyId)
+      const data = await propertiesAPI.getById(propertyId, { skipCache: true })
       setProperty(data)
+
+      //region debug-point H3-detail-page-fetches
+      // Debug: Log what the detail page receives
+      console.log('🔍 [DETAIL-PAGE] Fetched property:', {
+        id: data.id,
+        title: data.title,
+        price: data.price,
+        beds: data.beds
+      })
+
+      // Report to debug server
+      fetch('http://127.0.0.1:7778/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hypothesisId: 'H3',
+          stage: 'detail-page-fetches',
+          propertyId,
+          fetchedFields: {
+            title: data.title,
+            price: data.price,
+            beds: data.beds,
+            baths: data.baths,
+            status: data.status
+          },
+          timestamp: new Date().toISOString()
+        })
+      }).catch(() => {})
+      //endregion debug-point H3-detail-page-fetches
     } catch (error: any) {
       toast.error(error.message || "Failed to load property")
     } finally {
@@ -136,12 +182,28 @@ export default function LandlordPropertyViewPage() {
     }
   }, [propertyId])
 
-  useEffect(() => { setMounted(true) }, [])
+  const fetchMaintenanceRequests = useCallback(async () => {
+    try {
+      setMaintenanceLoading(true)
+      const data = await maintenanceAPI.getByProperty(propertyId)
+      setMaintenanceRequests(data)
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load maintenance requests")
+    } finally {
+      setMaintenanceLoading(false)
+    }
+  }, [propertyId])
 
-  // FIX #7: Correct loading trigger — fetch as soon as mounted is true
   useEffect(() => {
-    if (mounted) fetchProperty()
-  }, [mounted, fetchProperty])
+    fetchProperty()
+  }, [fetchProperty])
+
+  // Fetch maintenance requests when active tab is maintenance
+  useEffect(() => {
+    if (activeTab === "maintenance") {
+      fetchMaintenanceRequests()
+    }
+  }, [activeTab, fetchMaintenanceRequests])
 
   const handleDelete = async () => {
     if (!confirm(`Are you sure you want to delete "${property?.title}"? This cannot be undone.`))
@@ -358,7 +420,7 @@ export default function LandlordPropertyViewPage() {
             <Card className="border-2 border-slate-200 shadow-sm overflow-hidden">
               {/* Tab bar — plain buttons matching public property page style */}
               <div className="flex border-b border-slate-100 overflow-x-auto scrollbar-hide">
-                {(["overview", "amenities", "performance"] as const).map(tab => (
+                {(["overview", "amenities", "performance", "maintenance"] as const).map(tab => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -452,6 +514,72 @@ export default function LandlordPropertyViewPage() {
                     )}
                   </div>
                 )}
+
+                {activeTab === "maintenance" && (
+                  <div>
+                    {maintenanceLoading ? (
+                      <div className="text-center py-10">
+                        <div className="w-10 h-10 border-4 border-orange-200 border-t-orange-600 rounded-full animate-spin mx-auto mb-3" />
+                        <p className="text-slate-500 text-sm">Loading maintenance requests...</p>
+                      </div>
+                    ) : maintenanceRequests.length === 0 ? (
+                      <div className="text-center py-10">
+                        <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center mx-auto mb-3">
+                          <Wrench className="h-8 w-8 text-orange-500" />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-900 mb-2">No Maintenance Requests</h3>
+                        <p className="text-slate-500 text-sm">No maintenance requests have been submitted for this property yet.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {maintenanceRequests.map((request) => {
+                          const statusConfig = MAINTENANCE_STATUS_CONFIG[request.status] || MAINTENANCE_STATUS_CONFIG.PENDING
+                          const urgencyConfig = MAINTENANCE_URGENCY_CONFIG[request.urgency] || MAINTENANCE_URGENCY_CONFIG.MEDIUM
+                          return (
+                            <Card key={request.id} className="border-orange-200 bg-white/80 shadow-sm">
+                              <CardContent className="p-4">
+                                <div className="flex items-start justify-between gap-3 mb-3">
+                                  <div>
+                                    <h4 className="font-semibold text-slate-900">{request.title}</h4>
+                                    <p className="text-sm text-slate-500 mt-1">
+                                      {new Date(request.created_at).toLocaleDateString("en-NG", {
+                                        day: "numeric", month: "short", year: "numeric"
+                                      })}
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-2">
+                                    <Badge className={`${statusConfig.className} text-xs`}>{statusConfig.label}</Badge>
+                                    <Badge className={`${urgencyConfig.className} text-xs`}>{urgencyConfig.label}</Badge>
+                                  </div>
+                                </div>
+                                <p className="text-slate-600 text-sm mb-3">{request.description}</p>
+                                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                                  <span className="flex items-center gap-1">
+                                    <Home className="h-3.5 w-3.5" />
+                                    {request.category}
+                                  </span>
+                                  {request.tenant && (
+                                    <span className="flex items-center gap-1">
+                                      <User className="h-3.5 w-3.5" />
+                                      {request.tenant.full_name}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
+                                  <Link href={`/landlord/maintenance/${request.id}`}>
+                                    <Button size="sm" className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white h-8">
+                                      View Details
+                                    </Button>
+                                  </Link>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </Card>
           </div>
@@ -493,6 +621,18 @@ export default function LandlordPropertyViewPage() {
                     </Badge>
                   </Button>
                 </Link>
+                <button
+                  onClick={() => setActiveTab("maintenance")}
+                  className="w-full flex items-center justify-between border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-semibold hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 transition-all"
+                >
+                  <span className="flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-orange-500" />
+                    Maintenance Requests
+                  </span>
+                  <Badge className="bg-orange-100 text-orange-700 border-0 text-xs font-semibold">
+                    {maintenanceRequests.length}
+                  </Badge>
+                </button>
 
                 <div className="pt-1 space-y-2 border-t border-slate-100">
                   <Link href={`/landlord/properties/${propertyId}/edit`} className="block">

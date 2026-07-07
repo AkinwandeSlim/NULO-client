@@ -478,21 +478,19 @@ export function HeroSection({
             onClose={() => setShowAdvanced(false)}
             filters={{
               priceRange,
+              propertyType,
               bedrooms,
               bathrooms,
               minSize
             }}
             onFiltersChange={(filters) => {
               setPriceRange(filters.priceRange)
+              setPropertyType(filters.propertyType)
               setBedrooms(filters.bedrooms)
               setBathrooms(filters.bathrooms)
               setMinSize(filters.minSize)
             }}
-            onApply={() => {
-              // Trigger search with new filters
-              const event = new Event('searchWithFilters')
-              window.dispatchEvent(event)
-            }}
+            applyHref="/properties"
           />
         </motion.div>
       </div>

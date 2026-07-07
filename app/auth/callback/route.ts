@@ -95,17 +95,76 @@ async function createWelcomeNotification(
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
+  const token_hash = requestUrl.searchParams.get('token_hash')
+  const type = requestUrl.searchParams.get('type')
   const error = requestUrl.searchParams.get('error')
   const error_code = requestUrl.searchParams.get('error_code')
   const error_description = requestUrl.searchParams.get('error_description')
   const user_type = requestUrl.searchParams.get('user_type') || 'tenant'
+  const next = requestUrl.searchParams.get('next') || '/signin'
 
-  console.log('🔄 [CALLBACK] Processing OAuth/email callback')
+  console.log('🔄 [CALLBACK] Processing callback')
+  console.log('📝 [CALLBACK] Token hash:', token_hash)
+  console.log('📝 [CALLBACK] Type:', type)
+  console.log('🔗 [CALLBACK] Next:', next)
   console.log('📝 [CALLBACK] Full URL:', request.url)
   console.log('📝 [CALLBACK] Code:', code?.substring(0, 20) + '...')
   console.log('📝 [CALLBACK] User type from URL:', requestUrl.searchParams.get('user_type'))
   console.log('📝 [CALLBACK] User type (final):', user_type)
   console.log('🌍 [CALLBACK] Origin:', requestUrl.origin)
+
+  // ─── Handle password reset callback ────────────────────────────────────────
+  if (token_hash && type === 'recovery') {
+    console.log('🔐 [CALLBACK] Processing password reset callback')
+    
+    try {
+      const cookieStore = await cookies()
+
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            getAll() {
+              return cookieStore.getAll()
+            },
+            setAll(cookiesToSet) {
+              try {
+                cookiesToSet.forEach(({ name, value, options }) =>
+                  cookieStore.set(name, value, options)
+              )} catch (error) {
+                console.error('⚠️ [CALLBACK] Cookie setting error:', error)
+              }
+            },
+          },
+        }
+      )
+
+      // Exchange token for session
+      console.log('🔄 [CALLBACK] Verifying password reset token...')
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        token_hash,
+        type: 'recovery'
+      })
+
+      if (verifyError) {
+        console.error('❌ [CALLBACK] Password reset token invalid/expired:', verifyError.message)
+        return NextResponse.redirect(
+          new URL(`/signin?error=${encodeURIComponent('Password reset link invalid or expired. Please request a new one.')}`, requestUrl.origin)
+        )
+      }
+
+      console.log('✅ [CALLBACK] Password reset session created successfully')
+
+      // Redirect to password reset form
+      return NextResponse.redirect(new URL(next, requestUrl.origin))
+    } catch (error: any) {
+      console.error('❌ [CALLBACK] Password reset error:', error)
+      return NextResponse.redirect(
+        new URL(`/signin?error=${encodeURIComponent(error.message)}`, requestUrl.origin)
+      )
+    }
+  }
 
   
   // ─── Handle email verification errors ──────────────────────────────────────
@@ -157,6 +216,9 @@ export async function GET(request: NextRequest) {
   try {
     const cookieStore = await cookies()
 
+    // ─── BUG-001 FIX: Capture cookies so they can be applied to the redirect response ─
+    let capturedCookies: Array<{ name: string; value: string; options?: any }> = []
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -167,6 +229,7 @@ export async function GET(request: NextRequest) {
           },
           setAll(cookiesToSet) {
             try {
+              capturedCookies = cookiesToSet
               cookiesToSet.forEach(({ name, value, options }) =>
                 cookieStore.set(name, value, options)
               )
@@ -305,18 +368,57 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Handle duplicate email across different auth UIDs (edge case)
+    // ─── Step 5: Check for email conflict with DIFFERENT auth UID ─────────────
+    // ✅ AUTH-05 FIX: Detect when user attempts to signup as different role
+    // Example: existing tenant trying to signup as landlord using same email
     if (!isReturningUser) {
       const { data: emailUser } = await supabase
         .from('users')
-        .select('id, user_type, email')
+        .select('id, user_type, email, created_at')
         .eq('email', data.session.user.email?.toLowerCase())
         .neq('id', data.session.user.id)
         .single()
 
       if (emailUser) {
-        console.warn('⚠️ [CALLBACK] Duplicate email across UIDs — using existing user type')
-        finalUserType = emailUser.user_type as string
+        // ✅ NEW: Detect role conflict instead of silently switching
+        const existingRole = emailUser.user_type
+        const requestedRole = cookieUserType || urlUserType || finalUserType
+        
+        console.warn('🚨 [CALLBACK] EMAIL CONFLICT DETECTED:', {
+          email: data.session.user.email,
+          new_oauth_uid: data.session.user.id,
+          existing_uid: emailUser.id,
+          existing_role: existingRole,
+          requested_role: requestedRole,
+          account_age_ms: Date.now() - new Date(emailUser.created_at).getTime()
+        })
+
+        // If user is trying to signup with a DIFFERENT role than their existing account
+        if (existingRole !== requestedRole && requestedRole !== 'signin') {
+          console.error('❌ [CALLBACK] ROLE CONFLICT: Cannot create', requestedRole, 'account with email already registered as', existingRole)
+          
+          // Clear temporary cookies to avoid confusion
+          try {
+            const cookieStore = await cookies()
+            cookieStore.delete('nulo_user_type')
+            cookieStore.delete('nulo_oauth_nonce')
+          } catch (err) {
+            console.warn('⚠️ [CALLBACK] Could not clear cookies:', err)
+          }
+
+          // Redirect to account-exists error page (with role_conflict scenario)
+          return NextResponse.redirect(
+            new URL(
+              `/auth/account-exists?email=${encodeURIComponent(data.session.user.email || '')}&existing_type=${existingRole}&requested_type=${requestedRole}&scenario=role_conflict`,
+              requestUrl.origin
+            )
+          )
+        }
+
+        // ✅ If roles match OR this is a signin attempt, proceed with existing role
+        // (return user to their existing account)
+        console.log('✅ [CALLBACK] Email conflict resolved: using existing role', existingRole)
+        finalUserType = existingRole
       }
     }
 
@@ -383,9 +485,37 @@ export async function GET(request: NextRequest) {
       return Date.now() - createdAt < 60_000
     })()
 
+    // ✅ AUTH-05: Look up public.users by email BEFORE we fire any notification.
+    // If a row already exists for this email (regardless of id), we treat the
+    // user as "returning" even if Supabase auth shows a fresh created_at —
+    // this prevents the duplicate "Welcome to NuloAfrica!" notification
+    // spam the QA team reported.
+    const userEmailCb = (data.session.user.email || '').toLowerCase()
+    let emailAccountExistsCb = false
+    if (userEmailCb) {
+      try {
+        const { data: byEmailCb } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', userEmailCb)
+          .limit(1)
+          .maybeSingle()
+        if (byEmailCb) {
+          emailAccountExistsCb = true
+          console.log('🔍 [AUTH-05] public.users row already exists for', userEmailCb)
+        }
+      } catch (lookupErrCb: any) {
+        console.warn('⚠️ [CALLBACK] email lookup failed (non-fatal):', lookupErrCb?.message)
+      }
+    }
+    // Only consider the user "new" if both Supabase auth says they're new
+    // AND no public.users row exists for their email. This is the
+    // canonical "first time signup" signal.
+    const isGenuinelyNewOAuthUser = isNewOAuthUser && !emailAccountExistsCb
+
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || process.env.BACKEND_URL || ''
 
-    if (isOAuthUser && isNewOAuthUser && backendUrl) {
+    if (isOAuthUser && isGenuinelyNewOAuthUser && backendUrl) {
       const googleName =
         data.session.user.user_metadata?.full_name ||
         data.session.user.user_metadata?.name ||
@@ -415,6 +545,67 @@ export async function GET(request: NextRequest) {
             auth_provider: 'google',
           }),
         })
+
+        // ✅ AUTH-05 FIX: Handle 409 Conflict from backend (duplicate email)
+        if (syncRes.status === 409) {
+          console.error('🚨 [CALLBACK] Backend returned 409 Conflict - duplicate email detected')
+          const errorData = await syncRes.json().catch(() => ({}))
+          console.error('   Detail:', errorData.detail)
+
+          // Parse backend error — it may now be a structured detail object
+          // with { message, existing_type, requested_type, ... }. Prefer
+          // the structured fields over plain-string parsing.
+          let existingRole = 'tenant'
+          let requestedRoleFromBackend: string | undefined
+          let detailMsg = ''
+          if (typeof errorData.detail === 'string') {
+            detailMsg = errorData.detail
+          } else if (errorData.detail && typeof errorData.detail === 'object') {
+            existingRole =
+              (errorData.detail.existing_type as string | undefined) ||
+              'tenant'
+            requestedRoleFromBackend =
+              errorData.detail.requested_type as string | undefined
+            detailMsg = errorData.detail.message || ''
+          }
+
+          // Legacy fallback: parse plain-string messages from older backends
+          if (!detailMsg && typeof errorData.detail === 'string') {
+            detailMsg = errorData.detail
+          }
+          if (existingRole === 'tenant' && detailMsg.includes('landlord')) {
+            existingRole = 'landlord'
+          } else if (existingRole === 'tenant' && detailMsg.includes('admin')) {
+            existingRole = 'admin'
+          }
+
+          // Determine scenario
+          const scenario =
+            existingRole &&
+            finalUserType &&
+            existingRole !== finalUserType
+              ? 'role_conflict'
+              : 'duplicate'
+
+          // Clear temporary cookies
+          try {
+            const cookieStore = await cookies()
+            cookieStore.delete('nulo_user_type')
+            cookieStore.delete('nulo_oauth_nonce')
+            cookieStore.delete('nulo_redirect_path')
+          } catch (err) {
+            console.warn('⚠️ [CALLBACK] Could not clear cookies:', err)
+          }
+
+          // Redirect to account-exists page
+          return NextResponse.redirect(
+            new URL(
+              `/auth/account-exists?email=${encodeURIComponent(data.session.user.email || '')}&existing_type=${existingRole}&requested_type=${requestedRoleFromBackend || finalUserType}&scenario=${scenario}`,
+              requestUrl.origin
+            )
+          )
+        }
+
         if (syncRes.ok) {
           console.log('✅ [CALLBACK] Google OAuth profile synced with backend')
         } else {
@@ -426,7 +617,10 @@ export async function GET(request: NextRequest) {
       }
 
       // 2️⃣ Fire signup notification (in-app + email welcome) - ONLY for NEW users
-      if (isNewOAuthUser) {
+      // Use isGenuinelyNewOAuthUser (which already excludes users whose email
+      // is already in public.users) so we never spam a returning user with
+      // a duplicate welcome notification.
+      if (isGenuinelyNewOAuthUser) {
         try {
           const notifRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/signup-notification`, {
             method: 'POST',
@@ -455,7 +649,15 @@ export async function GET(request: NextRequest) {
 
     // ─── 🔔 CREATE WELCOME IN-APP NOTIFICATION ────────────────────────────────
     // Only for brand-new users. Returning users signing in never get a welcome message.
-    const shouldShowWelcome = isOAuthUser ? isNewOAuthUser : !isReturningUser
+    //
+    // We reuse the `emailAccountExistsCb` flag computed earlier (before the
+    // OAuth sync block) so we don't make a second public.users query.
+    // The previous version re-queried the same table here — that was both
+    // wasteful AND inconsistent (a race could give different results).
+    const shouldShowWelcome =
+      isOAuthUser
+        ? (isGenuinelyNewOAuthUser)
+        : (!isReturningUser && !emailAccountExistsCb)
 
     if (shouldShowWelcome) {
       console.log('🎉 [CALLBACK] New user detected - creating welcome notification')
@@ -547,7 +749,15 @@ export async function GET(request: NextRequest) {
 
     console.log('🔀 [CALLBACK] Final redirect to:', redirectTo)
 
+    // ─── BUG-001 FIX: Build redirect response and apply captured cookies ────────
+    // This ensures Set-Cookie headers are present BEFORE the browser follows
+    // the redirect, preventing middleware from seeing "no session".
     const response = NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
+
+    // Apply captured cookies from Supabase session exchange
+    capturedCookies.forEach(({ name, value, options }) => {
+      response.cookies.set(name, value, options)
+    })
 
     // Clear temporary cookies
     response.cookies.delete('nulo_redirect_path')

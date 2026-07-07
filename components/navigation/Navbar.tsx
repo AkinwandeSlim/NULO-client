@@ -231,6 +231,13 @@ export function Navbar() {
                         <User className="h-4 w-4" />
                         Applications
                       </Link>
+                      <Link href="/landlord/occupied-properties"
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+                          isActive('/landlord/occupied-properties', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                        }`}>
+                        <Home className="h-4 w-4" />
+                        Occupied
+                      </Link>
                       <Link href="/landlord/agreements"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/landlord/agreements', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
@@ -257,6 +264,13 @@ export function Navbar() {
 
                   {userType === 'tenant' && (
                     <>
+                      <Link href="/tenant/active-rent"
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+                          isActive('/tenant/active-rent', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                        }`}>
+                        <Home className="h-4 w-4" />
+                        My Rent
+                      </Link>
                       <Link href="/properties"
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
                           isActive('/properties', true) ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
@@ -544,6 +558,12 @@ export function Navbar() {
                           </Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
+                          <Link href="/landlord/occupied-properties" className="cursor-pointer">
+                            <Home className="h-4 w-4 mr-2" />
+                            Occupied Properties
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
                           <Link href="/landlord/agreements" className="cursor-pointer">
                             <FileText className="h-4 w-4 mr-2" />
                             Agreements
@@ -561,7 +581,7 @@ export function Navbar() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
                       <Link 
-                        href={userType === 'landlord' ? '/landlord/settings' : '/tenant/settings'}
+                        href={userType === 'landlord' ? '/landlord/profile' : '/tenant/profile'}
                         className="cursor-pointer"
                       >
                         <Settings className="h-4 w-4 mr-2" />
@@ -716,6 +736,18 @@ export function Navbar() {
                       Dashboard
                     </Link>
                   </Button>
+                  {userType === 'tenant' && (
+                    <Button 
+                      variant="ghost"
+                      className="w-full h-10 text-sm font-medium justify-start text-slate-700 hover:text-orange-600 hover:bg-orange-50 rounded-lg" 
+                      asChild
+                    >
+                      <Link href="/tenant/active-rent" onClick={() => setMobileMenuOpen(false)}>
+                        <Home className="h-4 w-4 mr-2" />
+                        My Rent
+                      </Link>
+                    </Button>
+                  )}
                   <Button 
                     variant="ghost"
                     className="w-full h-10 text-sm font-medium justify-start text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg" 

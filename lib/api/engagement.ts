@@ -41,7 +41,8 @@ export interface EngagementActivity {
   user_id: string;
   activity_type: 'favorite_added' | 'viewing_requested' | 'viewing_confirmed' | 
                  'message_sent' | 'property_listed' | 'viewing_responded' | 
-                 'property_viewed' | 'login';
+                 'property_viewed' | 'login' | 'payment_made' | 'payment_details_viewed' |
+                 'nuban_copied' | 'receipt_downloaded';
   metadata?: Record<string, any>;
 }
 
@@ -92,17 +93,41 @@ export interface EngagementStats {
 // API CLIENT
 // ============================================================================
 
+// Default empty metrics returned when the server is unreachable / errors.
+// Lets the dashboard render gracefully instead of throwing 500s in the console.
+const DEFAULT_METRICS: EngagementMetrics = {
+  user_id: '',
+  user_type: 'landlord',
+  engagement_score: 0,
+  trust_score: 50,
+  engagement_level: 'Low',
+  metrics: {},
+  last_updated: new Date().toISOString(),
+}
+
 export const engagementAPI = {
   // Get user engagement metrics
   async getEngagementMetrics(userId: string): Promise<EngagementMetrics> {
+    if (!userId) {
+      console.warn('engagementAPI.getEngagementMetrics called without userId')
+      return { ...DEFAULT_METRICS, user_id: '' }
+    }
     try {
       const response = await apiClient.get(`/api/v1/engagement/${userId}`, {
-        timeout: 60000 // 60 seconds - slow endpoint
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch engagement metrics:', error);
-      throw error;
+        timeout: 30000, // 30s — Supabase can be slow on cold start
+      })
+      return response.data
+    } catch (error: any) {
+      // Fail soft: return defaults so the dashboard still renders.
+      // The server logs the real error — this just keeps the UI stable.
+      console.warn(
+        'engagementAPI: failed to fetch metrics, using defaults:',
+        error?.message || error
+      )
+      return {
+        ...DEFAULT_METRICS,
+        user_id: userId,
+      }
     }
   },
 

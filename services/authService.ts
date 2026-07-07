@@ -180,10 +180,15 @@ export const authService = {
       
       const supabase = createClient()
       
+      // Store user_type in cookie so Google callback can read it
+      if (typeof document !== 'undefined') {
+        document.cookie = `nulo_user_type=tenant; path=/; max-age=600; SameSite=Lax`
+      }
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?user_type=tenant`,
+          redirectTo: `${window.location.origin}/auth/google/callback`,
           queryParams: {
             prompt: 'select_account',
             access_type: 'offline',
@@ -210,10 +215,15 @@ export const authService = {
       
       const supabase = createClient()
       
+      // Store user_type in cookie so Google callback can read it
+      if (typeof document !== 'undefined') {
+        document.cookie = `nulo_user_type=landlord; path=/; max-age=600; SameSite=Lax`
+      }
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?user_type=landlord`,
+          redirectTo: `${window.location.origin}/auth/google/callback`,
           queryParams: {
             prompt: 'select_account',
             access_type: 'offline',

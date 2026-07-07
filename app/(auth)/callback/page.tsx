@@ -97,10 +97,10 @@ export default function AuthCallback() {
             // If user has onboarding_completed metadata, go to dashboard instead
             const onboardingCompleted = session.user.user_metadata?.onboarding_completed
             if (onboardingCompleted) {
-              redirectUrl = '/landlord'
+              redirectUrl = '/landlord/overview'
               console.log('🏠 [CALLBACK PAGE] Landlord already onboarded, going to dashboard')
             } else {
-              redirectUrl = '/onboarding/landlord/step-1'
+              redirectUrl = '/onboarding/landlord/step-1?verified=1'
               console.log('🎓 [CALLBACK PAGE] New landlord, going to onboarding')
             }
           } else if (userType === 'tenant') {

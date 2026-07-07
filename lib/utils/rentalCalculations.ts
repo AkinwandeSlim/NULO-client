@@ -5,14 +5,19 @@
  * across all pages following Nigerian rental market standards.
  */
 
+export type PaymentFrequency = 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL'
+
 export interface RentalBreakdown {
   monthlyRent: number
   annualRent: number
+  periodRent: number // Rent for the selected payment frequency period
   securityDeposit: number
   cautionFee: number
   platformFee: number
   serviceCharge: number
   totalDue: number
+  paymentFrequency: PaymentFrequency
+  periodLabel: string
 }
 
 export interface PropertyData {
@@ -21,6 +26,7 @@ export interface PropertyData {
   caution_fee?: number | null
   platform_fee?: number | null
   service_charge?: number | null
+  payment_frequency?: PaymentFrequency | null
 }
 
 export interface AgreementData {
@@ -28,6 +34,7 @@ export interface AgreementData {
   deposit_amount?: number | null
   platform_fee?: number | null
   service_charge?: number | null
+  payment_frequency?: PaymentFrequency | null
 }
 
 export interface PaymentBreakdownData {
@@ -42,6 +49,46 @@ export interface TransactionData {
   notes?: string | null
 }
 
+const PAYMENT_FREQUENCY_MULTIPLIERS: Record<PaymentFrequency, number> = {
+  MONTHLY: 1,
+  QUARTERLY: 3,
+  SEMI_ANNUAL: 6,
+  ANNUAL: 12
+}
+
+const PAYMENT_FREQUENCY_LABELS: Record<PaymentFrequency, string> = {
+  MONTHLY: 'Monthly Rent (1 month)',
+  QUARTERLY: 'Quarterly Rent (3 months)',
+  SEMI_ANNUAL: 'Semi-Annual Rent (6 months)',
+  ANNUAL: 'Annual Rent (12 months)'
+}
+
+/**
+ * Get payment frequency multiplier (number of months in the period)
+ */
+export function getPaymentFrequencyMultiplier(frequency: PaymentFrequency | null | undefined): number {
+  return PAYMENT_FREQUENCY_MULTIPLIERS[frequency || 'ANNUAL']
+}
+
+/**
+ * Get payment frequency label
+ */
+export function getPaymentFrequencyLabel(frequency: PaymentFrequency | null | undefined): string {
+  return PAYMENT_FREQUENCY_LABELS[frequency || 'ANNUAL']
+}
+
+/**
+ * Normalize payment frequency to valid enum
+ */
+export function normalizePaymentFrequency(frequency: string | null | undefined): PaymentFrequency {
+  const normalized = (frequency || 'ANNUAL').toUpperCase()
+  if (normalized === 'YEARLY') return 'ANNUAL'
+  if (normalized in PAYMENT_FREQUENCY_MULTIPLIERS) {
+    return normalized as PaymentFrequency
+  }
+  return 'ANNUAL'
+}
+
 /**
  * Calculate rental breakdown from property data
  * Uses Nigerian rental market standards: Security deposit = 2 months rent
@@ -49,6 +96,9 @@ export interface TransactionData {
 export function calculateRentalBreakdown(property: PropertyData): RentalBreakdown {
   const monthlyRent = property.price || 0
   const annualRent = monthlyRent * 12
+  const paymentFrequency = normalizePaymentFrequency(property.payment_frequency)
+  const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
+  const periodRent = monthlyRent * frequencyMultiplier
   
   // Always use 2 months rent for security deposit to ensure consistency
   // This overrides any old values stored in the database
@@ -59,16 +109,20 @@ export function calculateRentalBreakdown(property: PropertyData): RentalBreakdow
   
   const platformFee = property.platform_fee ?? 0
   const serviceCharge = property.service_charge ?? 0
-  const totalDue = annualRent + cautionFee + platformFee + serviceCharge
+  // Total due is period rent + caution fee + fees
+  const totalDue = periodRent + cautionFee + platformFee + serviceCharge
 
   return {
     monthlyRent,
     annualRent,
+    periodRent,
     securityDeposit,
     cautionFee,
     platformFee,
     serviceCharge,
-    totalDue
+    totalDue,
+    paymentFrequency,
+    periodLabel: getPaymentFrequencyLabel(paymentFrequency)
   }
 }
 
@@ -78,6 +132,9 @@ export function calculateRentalBreakdown(property: PropertyData): RentalBreakdow
 export function calculateAgreementBreakdown(agreement: AgreementData): RentalBreakdown {
   const monthlyRent = agreement.rent_amount || 0
   const annualRent = monthlyRent * 12
+  const paymentFrequency = normalizePaymentFrequency(agreement.payment_frequency)
+  const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
+  const periodRent = monthlyRent * frequencyMultiplier
   
   // Always use 2 months rent for security deposit to ensure consistency
   // This overrides any old values stored in the database
@@ -86,16 +143,20 @@ export function calculateAgreementBreakdown(agreement: AgreementData): RentalBre
   
   const platformFee = agreement.platform_fee ?? 0
   const serviceCharge = agreement.service_charge ?? 0
-  const totalDue = annualRent + cautionFee + platformFee + serviceCharge
+  // Total due is period rent + caution fee + fees
+  const totalDue = periodRent + cautionFee + platformFee + serviceCharge
 
   return {
     monthlyRent,
     annualRent,
+    periodRent,
     securityDeposit,
     cautionFee,
     platformFee,
     serviceCharge,
-    totalDue
+    totalDue,
+    paymentFrequency,
+    periodLabel: getPaymentFrequencyLabel(paymentFrequency)
   }
 }
 

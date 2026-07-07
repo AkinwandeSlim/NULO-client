@@ -90,9 +90,9 @@ export default function SettingsPage() {
 
 ### 3. Enable Authentication
 
-**Step 1:** Rename middleware example
-```bash
-mv middleware.ts.example middleware.ts
+**Step 1:** Middleware is already configured
+```
+✅ proxy.ts is the active middleware (Next.js 16+ convention)
 ```
 
 **Step 2:** Install auth library (choose one)
@@ -303,7 +303,7 @@ Before deploying:
 
 1. Check `PROJECT_STRUCTURE.md` for detailed architecture
 2. Review `FIXES_APPLIED.md` for recent changes
-3. See `middleware.ts.example` for auth examples
+3. Check `proxy.ts` for auth middleware implementation
 4. Check Next.js docs: https://nextjs.org/docs
 
 ---

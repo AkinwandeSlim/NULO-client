@@ -1,29 +1,26 @@
 # 🎨 NuloAfrica Frontend
-
 > Modern React 19 + Next.js 16 frontend for Nigeria's zero-agency rental platform.  
 > Direct connection between verified tenants and landlords, eliminating agency fees.
 
+🌐 **Live Platform:** [https://nuloafrica.com/](https://nuloafrica.com/)
+🎬 **Demo Video:** [Watch on Google Drive](https://drive.google.com/file/d/13eggGGQwzehcVrArb6cJPwLgy2i_f8Y0/view?usp=sharing)
+
 [![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com)
+[![Live](https://img.shields.io/badge/Status-Live-brightgreen?style=for-the-badge)](https://nuloafrica.com/)
 
 ---
-
 ## ⚡ Quick Start (2 minutes)
-
 ```bash
 # 1. Install
 pnpm install
-
 # 2. Configure
 cp .env.example .env.local
 # Add: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_MAPBOX_TOKEN
-
 # 3. Run
 pnpm dev
 # → Open http://localhost:3000
 ```
-
 ## 🛠️ Tech Stack
-
 | Layer | Technology |
 |-------|------------|
 | **Framework** | Next.js 16 + React 19 + TypeScript |
@@ -89,8 +86,8 @@ See `README_CLIENT.md` for detailed breakdown.
 ```env
 # .env.local
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
-NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1Io...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci....
+NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1Io....
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 

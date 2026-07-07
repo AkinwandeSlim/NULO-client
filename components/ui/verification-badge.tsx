@@ -1,23 +1,44 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, Clock, XCircle, AlertTriangle, Shield, Star } from "lucide-react"
+import { CheckCircle, Clock, XCircle, AlertTriangle, Shield, Star, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+// interface VerificationBadgeProps {
+//   status: 'pending' | 'approved' | 'rejected' | 'verified' | 'not_verified'
+//   type?: 'tenant' | 'landlord' | 'property'
+//   size?: 'sm' | 'md' | 'lg'
+//   showIcon?: boolean
+//   className?: string
+// }
+
+
 interface VerificationBadgeProps {
+  /** Real verification status from API/DB. Note: 'deleted' is NOT included here
+   *  because it's not a stored value — it's a derived lifecycle state. */
   status: 'pending' | 'approved' | 'rejected' | 'verified' | 'not_verified'
+  /** Whether the resource has been soft-deleted. When true, the badge
+   *  renders as "Deleted" with highest priority, regardless of status. */
+  isDeleted?: boolean
+  /** Optional timestamp of deletion — when provided AND isDeleted is true,
+   *  displays a tooltip with the deletion date. */
+  deletedAt?: string | null
   type?: 'tenant' | 'landlord' | 'property'
   size?: 'sm' | 'md' | 'lg'
   showIcon?: boolean
   className?: string
 }
 
-export function VerificationBadge({ 
-  status, 
-  type = 'tenant', 
-  size = 'md', 
+
+
+export function VerificationBadge({
+  status,
+  isDeleted = false,
+  deletedAt,
+  type = 'tenant',
+  size = 'md',
   showIcon = true,
-  className 
+  className
 }: VerificationBadgeProps) {
   const getBadgeConfig = () => {
     const configs = {
@@ -38,6 +59,12 @@ export function VerificationBadge({
         icon: XCircle,
         text: "Rejected",
         className: "bg-red-100 text-red-800 border-red-200"
+      },
+      deleted: {
+        variant: "secondary" as const,
+        icon: Trash2,  // need to import this from lucide-react
+        text: "Deleted",
+        className: "bg-slate-200 text-slate-700 border-slate-300"
       },
       verified: {
         variant: "default" as const,
@@ -76,6 +103,41 @@ export function VerificationBadge({
 
   const config = getBadgeConfig()
   const Icon = config.icon
+
+
+
+  // Priority 1: Deleted state takes precedence over all other statuses.
+  // This is the lifecycle overlay — when a resource is soft-deleted, we
+  // always show "Deleted" regardless of its underlying verification status.
+  if (isDeleted) {
+    const Trash = Trash2  // from lucide-react (added to imports)
+    const tooltip = deletedAt
+      ? `Deleted on ${new Date(deletedAt).toLocaleDateString()}`
+      : undefined
+    return (
+      <Badge
+        variant="secondary"
+        className={cn(
+          "bg-slate-200 text-slate-700 border-slate-300 flex items-center gap-1",
+          getSizeClasses(),
+          className
+        )}
+        title={tooltip}
+      >
+        {showIcon && <Trash className={getIconSize()} />}
+        <span className="font-medium">🗑️ Deleted</span>
+      </Badge>
+    )
+  }
+
+
+
+
+
+
+
+
+
 
   // Special handling for verified status with star
   if (status === 'verified' && type === 'tenant') {
@@ -185,5 +247,36 @@ export const HeroVerificationBadge = ({
     size="lg" 
     showIcon={true}
     className={cn("shadow-lg", className)}
+  />
+)
+
+
+
+/**
+ * PropertyLifecycleBadge — use this for property cards/listings.
+ * Renders "Deleted" with highest priority when isDeleted=true, otherwise
+ * falls through to the standard verification badge.
+ *
+ * @example
+ *   <PropertyLifecycleBadge
+ *     status={property.verification_status}
+ *     isDeleted={!!property.deleted_at}
+ *     deletedAt={property.deleted_at}
+ *   />
+ */
+export const PropertyLifecycleBadge = ({
+  status,
+  isDeleted,
+  deletedAt,
+  className,
+}: Pick<VerificationBadgeProps, 'status' | 'isDeleted' | 'deletedAt' | 'className'>) => (
+  <VerificationBadge
+    status={status}
+    isDeleted={isDeleted}
+    deletedAt={deletedAt}
+    type="property"
+    size="sm"
+    showIcon={true}
+    className={className}
   />
 )

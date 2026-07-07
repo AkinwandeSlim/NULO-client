@@ -149,7 +149,7 @@ export default function LandlordManagement() {
       }
       
       if (user.user_type !== 'admin') {
-        router.push('/dashboard')
+        router.push('/admin')
         return
       }
     }

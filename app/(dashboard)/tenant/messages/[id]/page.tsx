@@ -33,6 +33,7 @@ import {
 } from "@/lib/api/engagement"
 import { toast } from "sonner"
 import { notificationsAPI } from "@/lib/api/notifications"
+import { getPaymentFrequencyMultiplier, getPaymentFrequencyLabel, normalizePaymentFrequency } from "@/lib/utils/rentalCalculations"
 
 const DEFAULT_PROPERTY_IMAGE =
   "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop"
@@ -138,6 +139,9 @@ export default function TenantDashboard() {
     if (!activeAgreement) return { state: "no-lease" as const }
 
     const rentAmount = (activeAgreement as any).rent_amount ?? 0
+    const paymentFrequency = normalizePaymentFrequency((activeAgreement as any).payment_frequency)
+    const periodRent = rentAmount * getPaymentFrequencyMultiplier(paymentFrequency)
+    const periodLabel = getPaymentFrequencyLabel(paymentFrequency).replace(' Rent', '')
     let daysUntilDue: number | null = null
 
     if ((activeAgreement as any).start_date) {
@@ -154,10 +158,10 @@ export default function TenantDashboard() {
 
     // Use actual payment data instead of agreement payment_pending
     if (completedPayments === 0 && totalPayments === 0) {
-      return { state: "due" as const, rentAmount, daysUntilDue }
+      return { state: "due" as const, rentAmount, periodRent, periodLabel, paymentFrequency, daysUntilDue }
     }
-    
-    return { state: "paid" as const, rentAmount, daysUntilDue, completedPayments, totalPayments }
+
+    return { state: "paid" as const, rentAmount, periodRent, periodLabel, paymentFrequency, daysUntilDue, completedPayments, totalPayments }
   }, [tenantData?.agreements, tenantData?.stats?.totalPayments, tenantData?.stats?.completedPayments])
 
   const formatPrice = (price: number) =>
@@ -263,7 +267,7 @@ export default function TenantDashboard() {
                   )}
                 </Button>
               </Link>
-              <Link href="/tenant/settings">
+              <Link href="/tenant/profile">
                 <Button variant="outline" size="lg" className="border-orange-200 text-orange-700 hover:bg-orange-50">
                   <Settings className="h-4 w-4" />
                 </Button>
@@ -563,9 +567,9 @@ export default function TenantDashboard() {
                         <Clock className="h-6 w-6 text-orange-600" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-600 mb-1">Annual Rent Due</p>
+                        <p className="text-sm font-medium text-slate-600 mb-1">{paymentSummary.periodLabel} Due</p>
                         <p className="text-3xl font-bold text-slate-900 leading-tight">
-                          {paymentSummary.rentAmount > 0 ? formatPrice(paymentSummary.rentAmount * 12) : "???"}
+                          {paymentSummary.rentAmount > 0 ? formatPrice(paymentSummary.periodRent) : "???"}
                         </p>
                         <div className="flex items-center gap-1.5 mt-1">
                           <span className="text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">Payment Required</span>
@@ -589,9 +593,9 @@ export default function TenantDashboard() {
                         <Wallet className="h-6 w-6 text-green-600" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-600 mb-1">Annual Rent</p>
+                        <p className="text-sm font-medium text-slate-600 mb-1">{paymentSummary.periodLabel}</p>
                         <p className="text-3xl font-bold text-slate-900 leading-tight">
-                          {paymentSummary.rentAmount > 0 ? formatPrice(paymentSummary.rentAmount * 12) : "???"}
+                          {paymentSummary.rentAmount > 0 ? formatPrice(paymentSummary.periodRent) : "???"}
                         </p>
                         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                           <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
@@ -734,8 +738,8 @@ export default function TenantDashboard() {
                             onClick={() => trackActivity("property_viewed", { property_id: fav.id })}>
                             <div className="group relative bg-white rounded-2xl overflow-hidden border-2 border-slate-200 hover:border-orange-300 hover:shadow-xl transition-all duration-300 cursor-pointer hover:scale-[1.02]">
                               <div className="relative h-48 overflow-hidden">
-                                <img src={fav.images?.[0] || fav.property_image || DEFAULT_PROPERTY_IMAGE}
-                                  alt={fav.title || fav.property_title || "Property"}
+                                <img src={fav.property_image || DEFAULT_PROPERTY_IMAGE}
+                                  alt={fav.property_title || "Property"}
                                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                                 <div className="absolute top-3 right-3">
                                   <div className="bg-white/95 backdrop-blur-sm p-2 rounded-full shadow-lg">
@@ -755,7 +759,7 @@ export default function TenantDashboard() {
                                   {formatPrice(fav.price ?? 0)}<span className="text-sm font-normal text-slate-500">/mo</span>
                                 </p>
                                 <h3 className="font-bold text-slate-900 text-lg mb-2 line-clamp-1 group-hover:text-orange-600 transition-colors">
-                                  {fav.title || fav.property_title}
+                                  {fav.property_title}
                                 </h3>
                                 <p className="text-sm text-slate-600 flex items-center mb-4">
                                   <MapPin className="h-4 w-4 mr-1.5 text-orange-500 flex-shrink-0" />
@@ -764,16 +768,16 @@ export default function TenantDashboard() {
                                 <div className="flex items-center gap-4 text-sm text-slate-600 pt-4 border-t border-slate-100">
                                   <div className="flex items-center gap-1.5">
                                     <Bed className="h-4 w-4 text-orange-500" />
-                                    <span className="font-medium">{fav.beds || fav.bedrooms || 0}</span>
+                                    <span className="font-medium">{fav.beds}</span>
                                   </div>
                                   <div className="flex items-center gap-1.5">
                                     <Bath className="h-4 w-4 text-orange-500" />
-                                    <span className="font-medium">{fav.baths || fav.bathrooms || 0}</span>
+                                    <span className="font-medium">{fav.baths}</span>
                                   </div>
-                                  {(fav.sqft || fav.square_feet) && (
+                                  {fav.sqft && (
                                     <div className="flex items-center gap-1.5">
                                       <Square className="h-4 w-4 text-orange-500" />
-                                      <span className="font-medium">{(fav.sqft || fav.square_feet)?.toLocaleString()} sqft</span>
+                                      <span className="font-medium">{fav.sqft.toLocaleString()} sqft</span>
                                     </div>
                                   )}
                                 </div>
@@ -1319,7 +1323,7 @@ export default function TenantDashboard() {
                       badge: (tenantData?.stats?.pendingSignatures ?? 0) > 0 ? `${tenantData?.stats?.pendingSignatures} to sign` : undefined },
                     { href: "/tenant/messages", icon: MessageSquare, label: "Messages",
                       badge: (tenantData?.stats?.unreadMessages ?? 0) > 0 ? `${tenantData?.stats?.unreadMessages} unread` : undefined },
-                    { href: "/profile", icon: User, label: "Update Profile",
+                    { href: "/tenant/profile", icon: User, label: "Update Profile",
                       badge: undefined },
                   ].map(({ href, icon: Icon, label, badge }) => (
                     <Link key={href} href={href}>

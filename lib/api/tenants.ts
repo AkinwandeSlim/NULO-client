@@ -87,18 +87,11 @@ export const tenantsAPI = {
    * Upload document to Supabase Storage
    * This is a helper function to upload files before completing profile
    */
-  uploadDocument: async (file: File, type: 'id' | 'income'): Promise<string> => {
+  uploadDocument: async (file: File): Promise<string> => {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('type', type)
     
-    // TODO: Implement file upload endpoint
-    // For now, return a mock URL
-    const response = await apiClient.post<{ url: string }>('/api/v1/tenants/upload-document', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
+    const response = await apiClient.post<{ url: string }>('/api/v1/tenants/upload-document', formData)
     
     return response.data.url
   }

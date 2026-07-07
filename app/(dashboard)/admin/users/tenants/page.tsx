@@ -127,7 +127,7 @@ export default function TenantManagement() {
       }
       
       if (user.user_type !== 'admin') {
-        router.push('/dashboard')
+        router.push('/admin')
         return
       }
     }

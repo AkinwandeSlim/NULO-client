@@ -152,6 +152,8 @@ export interface AuthContextType {
   signInWithGoogle: (redirectUrl?: string) => Promise<any>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<any>;
+  updatePassword: (currentPassword: string, newPassword: string) => Promise<{ error: any }>;
+  isGoogleOAuthUser: () => Promise<boolean>;
   updateUserProfile: (updates: Partial<User>) => Promise<void>;
   completePhase1Profile: (profileData: any) => Promise<void>;
   completePhase2Profile: (documents: any[]) => Promise<void>;

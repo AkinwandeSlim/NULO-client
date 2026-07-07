@@ -13,7 +13,7 @@ import type {
   CreatePropertyData,
   UpdatePropertyData,
   PopularLocationsResponse,
-} from '../types/property';
+} from '@/lib/types/property';
 
 // ============================================================================
 // REQUEST CANCELLATION MANAGER
@@ -440,9 +440,8 @@ create: async (data: CreatePropertyData | FormData): Promise<Property> => {
     try {
       console.log('📝 [UPDATE PROPERTY]:', id);
       
-      const response = await apiClient.put<Property>(`/api/v1/properties/${id}`, data, {
-        headers: data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {},
-      });
+      // Don't set Content-Type header manually for FormData - browser will handle it with boundary
+      const response = await apiClient.put<Property>(`/api/v1/properties/${id}`, data);
       
       // Invalidate caches
       await Promise.all([
@@ -502,30 +501,44 @@ create: async (data: CreatePropertyData | FormData): Promise<Property> => {
     page: number = 1,
     limit: number = 20,
     statusFilter?: string,
-    options?: { skipCache?: boolean }
+    options?: {
+      skipCache?: boolean;
+      search?: string;
+      includeDeleted?: boolean;
+      includePending?: boolean;
+      includeRejected?: boolean;
+    }
   ): Promise<PropertySearchResponse> => {
     try {
+      const search = options?.search?.trim() || ''
       if (!options?.skipCache) {
-        const cacheKey = `my_properties_${page}_${limit}_${statusFilter || 'all'}`;
+        const cacheKey = `my_properties_${page}_${limit}_${statusFilter || 'all'}_${search}`;
         const cached = await optimizedPropertyCache.get(cacheKey);
         if (cached) {
           console.log(`🎯 [CACHE HIT] My properties`);
           return cached;
         }
       }
-      
+
       const params: any = { page, limit };
       // Only send status_filter when a real status is chosen.
       // 'all' is a UI concept — do not send it to the backend.
       if (statusFilter && statusFilter !== 'all') {
         params.status_filter = statusFilter;
       }
-      
+      if (search) {
+        params.search = search;
+      }
+      // Only send opt-in flags when truthy to keep URL clean
+      if (options?.includeDeleted) params.include_deleted = true;
+      if (options?.includePending) params.include_pending = true;
+      if (options?.includeRejected) params.include_rejected = true;
+
       const response = await apiClient.get<PropertySearchResponse>('/api/v1/properties/my-properties', {
         params
       });
       
-      const cacheKey = `my_properties_${page}_${limit}_${statusFilter || 'all'}`;
+      const cacheKey = `my_properties_${page}_${limit}_${statusFilter || 'all'}_${search}`;
       // Only cache if we actually got results back — never cache an empty landlord list.
       // An empty result is more likely a query bug or transient backend issue than
       // a legitimate "you have no properties" state.

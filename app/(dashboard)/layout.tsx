@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/AuthContext"
-import { useDashboard } from "@/contexts/DashboardContext"  
+import { useDashboard, useTenantDashboard } from "@/contexts/DashboardContext"  
 import { toast } from "sonner"
 import { Navbar } from "@/components/navigation/Navbar"
 import { NotificationBadge } from "@/components/notifications/NotificationBadge"
@@ -35,7 +35,9 @@ import {
   Briefcase,
   FileCheck,
   Send,
-  BookOpen
+  BookOpen,
+  Wrench,
+  BarChart2
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -68,13 +70,20 @@ interface SidebarSection {
   items: SidebarItem[]
 }
 
-// Tenant sidebar with grouped sections
-const tenantSidebarSections: SidebarSection[] = [
+// Tenant sidebar — dynamic based on whether tenant has an active tenancy.
+// Maintenance is only surfaced when the tenant has an active lease; it lives
+// nested under "My Rent" so the relationship is visually obvious.
+const getTenantSidebarSections = (hasActiveTenancy: boolean): SidebarSection[] => [
   {
     section: "Dashboard",
     items: [
       { href: "/tenant", label: "Dashboard", icon: LayoutDashboard, isMain: true },
-    ]
+      { href: "/tenant/active-rent", label: "My Rent", icon: Home },
+      // Maintenance only makes sense when there is an active lease
+      ...(hasActiveTenancy
+        ? [{ href: "/tenant/maintenance", label: "Maintenance Requests", icon: Wrench, indent: true }]
+        : []),
+    ],
   },
   {
     section: "Application Journey",
@@ -83,8 +92,7 @@ const tenantSidebarSections: SidebarSection[] = [
       { href: "/tenant/viewings", label: "Viewing Requests", icon: Calendar },
       { href: "/tenant/applications", label: "My Applications", icon: FileText, badge: "pending" },
       { href: "/tenant/agreements", label: "My Agreements", icon: FileCheck },
-      { href: "/tenant/maintenance", label: "Maintenance Requests", icon: SettingsIcon },
-    ]
+    ],
   },
   {
     section: "Billing & Payments",
@@ -93,7 +101,7 @@ const tenantSidebarSections: SidebarSection[] = [
       { href: "/tenant/payments/new", label: "Make Payment", icon: Send },
       { href: "/tenant/payments", label: "Payment History", icon: BookOpen },
       { href: "/tenant/invoices", label: "Invoices", icon: FileText },
-    ]
+    ],
   },
   {
     section: "Explore & Save",
@@ -101,7 +109,7 @@ const tenantSidebarSections: SidebarSection[] = [
     items: [
       { href: "/properties", label: "Browse Properties", icon: Home, external: true },
       { href: "/tenant/favorites", label: "Saved Properties", icon: Heart },
-    ]
+    ],
   },
   {
     section: "Communication",
@@ -109,7 +117,7 @@ const tenantSidebarSections: SidebarSection[] = [
     items: [
       { href: "/tenant/messages", label: "Messages", icon: MessageSquare, badge: "messages" },
       { href: "/tenant/notifications", label: "Notifications", icon: Bell, badge: "notifications" },
-    ]
+    ],
   },
 ]
 
@@ -128,7 +136,14 @@ const landlordSidebarSections: SidebarSection[] = [
       { href: "/landlord/properties", label: "My Properties", icon: Building2 },
       { href: "/landlord/viewings", label: "Viewing Requests", icon: Eye },
       { href: "/landlord/applications", label: "Applications", icon: FileText },
+    ]
+  },
+  {
+    section: "Lease Management",
+    icon: BookOpen,
+    items: [
       { href: "/landlord/agreements", label: "Agreements", icon: BookOpen },
+      { href: "/landlord/occupied-properties", label: "Occupied Properties", icon: Home },
       { href: "/landlord/maintenance", label: "Maintenance", icon: SettingsIcon },
     ]
   },
@@ -156,7 +171,8 @@ const adminSidebarSections: SidebarSection[] = [
   {
     section: "Dashboard",
     items: [
-      { href: "/admin", label: "Admin Dashboard", icon: Shield, isMain: true },
+      { href: "/admin",           label: "Admin Dashboard", icon: Shield,    isMain: true },
+      { href: "/admin/analytics", label: "Analytics",       icon: BarChart2, indent: true },
     ]
   },
   {
@@ -207,7 +223,28 @@ export default function DashboardLayout({
   
   // ✅ Initialize dashboard cache at layout level (benefits all child pages!)
   const { fetchDashboardStats } = useDashboard()
-  
+  const { tenantData, fetchTenantDashboard } = useTenantDashboard()
+
+  // Derive active tenancy — check both the stats counter and the agreements array
+  // so the sidebar reacts correctly as soon as context data is populated.
+  // Include SIGNED agreements since maintenance makes sense once tenant has signed
+  const hasActiveTenancy =
+    (tenantData?.stats?.activeAgreements ?? 0) > 0 ||
+    (tenantData?.agreements ?? []).some((a) => 
+      a.status === "ACTIVE" || a.status === "SIGNED"
+    )
+
+  // Debug logging — remove after confirming it works
+  useEffect(() => {
+    if (user?.user_type === 'tenant') {
+      console.log('🔍 [SIDEBAR] Tenant Data:', {
+        activeAgreementsCount: tenantData?.stats?.activeAgreements,
+        agreementsArray: tenantData?.agreements?.map(a => ({ id: a.id, status: a.status })),
+        hasActiveTenancy,
+      })
+    }
+  }, [tenantData, hasActiveTenancy, user?.user_type])
+
   // Toggle section collapse
   const toggleSection = (sectionName: string) => {
     setCollapsedSections(prev => ({
@@ -221,13 +258,13 @@ export default function DashboardLayout({
     if (!user?.user_type) {
       return [] // Return empty sections until user type is available
     }
-    
+
     if (user.user_type === 'admin') {
       return adminSidebarSections
     } else if (user.user_type === 'landlord') {
       return landlordSidebarSections
     } else {
-      return tenantSidebarSections
+      return getTenantSidebarSections(hasActiveTenancy)
     }
   }
   
@@ -242,6 +279,11 @@ export default function DashboardLayout({
   useEffect(() => {
     if (mounted && !loading && user) {
       fetchDashboardStats()
+      // Fetch tenant data at layout level so the sidebar knows about active tenancy
+      // as early as possible — without waiting for the tenant dashboard page to mount.
+      if (user.user_type === 'tenant') {
+        fetchTenantDashboard()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, loading, user?.id])
@@ -307,31 +349,32 @@ export default function DashboardLayout({
     if (path === '/tenant' || path === '/landlord/overview' || path === '/admin') {
       return pathname === path
     }
-    
-    // Exact match for other pages
-    if (pathname === path) return true
-    
-    // Special case: /tenant/payments should ONLY match /tenant/payments and /tenant/payments (exact)
-    // NOT /tenant/payments/new (Make Payment) - those have their own routes
-    if (path === '/tenant/payments') {
-      return pathname === '/tenant/payments'
-    }
-    
+
     // Special case: /tenant/payments/new should ONLY match that exact path and query strings
+    // Check this FIRST to prevent conflicts with /tenant/payments
     if (path === '/tenant/payments/new') {
       return pathname === '/tenant/payments/new'
     }
-    
-    // Check if this is a nested route under this path
-    // Only match if the next character is a slash (prevents false positives)
-    if (pathname.startsWith(path + '/')) return true
-    
+
+    // Special case: /tenant/payments should match /tenant/payments and /tenant/payments/[id] (detail pages)
+    // BUT NOT /tenant/payments/new (Make Payment) - that's handled above
+    if (path === '/tenant/payments') {
+      return pathname === '/tenant/payments' || (pathname.startsWith('/tenant/payments/') && pathname !== '/tenant/payments/new')
+    }
+
     // Special cases: Other billing pages
     if (path === '/tenant/invoices' && pathname.startsWith('/tenant/invoices')) return true
     if (path === '/landlord/transactions' && pathname.startsWith('/landlord/transactions')) return true
     if (path === '/landlord/invoices' && pathname.startsWith('/landlord/invoices')) return true
     if (path === '/landlord/reports' && pathname.startsWith('/landlord/reports')) return true
-    
+
+    // Exact match for other pages
+    if (pathname === path) return true
+
+    // Check if this is a nested route under this path
+    // Only match if the next character is a slash (prevents false positives)
+    if (pathname.startsWith(path + '/')) return true
+
     return false
   }
 
