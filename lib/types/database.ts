@@ -123,6 +123,7 @@ export interface Property {
   amenities?: string[]
   rules?: string[]
   verification_status: 'pending' | 'verified' | 'rejected'
+  payment_frequency?: string
   created_at: string
   updated_at: string
 }
