@@ -47,7 +47,7 @@ export interface AgreementPaymentRow {
   total_received_amount: number
   payment_frequency: "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL" | null
   status: "DRAFT" | "SIGNED" | "ACTIVE" | "EXPIRED" | "TERMINATED"
-  reconciliation_status: "PENDING" | "FULL_PAYMENT" | "UNDERPAYMENT" | "OVERPAYMENT" | null
+  reconciliation_status: "PENDING" | "FULL_PAYMENT" | "UNDERPAYMENT" | "OVERPAYMENT" | "RECONCILED" | null
   // Virtual account details
   virtual_account_number: string | null
   virtual_account_name: string | null

@@ -104,7 +104,8 @@ export interface Property {
   longitude: number | null;            // numeric(11,8)
   
   // Pricing
-  price: number;                       // integer (indexed) - monthly rent
+  price: number;                       // integer (indexed) - base rent
+  payment_frequency: string | null;    // text - MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL
   security_deposit: number | null;     // integer
   
   // Property specs
@@ -308,6 +309,7 @@ export interface CreatePropertyData {
   location?: string;
   neighborhood?: string;
   sqft?: number;
+  payment_frequency?: string;
   security_deposit?: number;
   amenities?: string[];
   rules?: string[];
@@ -330,6 +332,7 @@ export interface UpdatePropertyData {
   description?: string;
   property_type?: string;
   price?: number;
+  payment_frequency?: string;
   beds?: number;
   baths?: number;
   sqft?: number;
