@@ -67,6 +67,7 @@ export interface Application {
     city?: string;
     state?: string;
     price?: number;
+    payment_frequency?: string;
     security_deposit?: number;
     beds?: number;
     baths?: number;

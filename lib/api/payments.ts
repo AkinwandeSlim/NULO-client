@@ -176,7 +176,7 @@ function normalizeAgreementRow(a: any): AgreementPaymentRow {
     rent_amount: Number(a?.rent_amount ?? 0),
     expected_payment_amount: Number(a?.expected_payment_amount ?? 0),
     total_received_amount: Number(a?.total_received_amount ?? 0),
-    payment_frequency: (a?.payment_frequency ?? null) as AgreementPaymentRow['payment_frequency'],
+    payment_frequency: (property?.payment_frequency ?? a?.payment_frequency ?? null) as AgreementPaymentRow['payment_frequency'],
     status: (a?.status ?? 'DRAFT') as AgreementPaymentRow['status'],
     reconciliation_status: (a?.reconciliation_status ?? null) as AgreementPaymentRow['reconciliation_status'],
     virtual_account_number: a?.virtual_account_number ?? null,

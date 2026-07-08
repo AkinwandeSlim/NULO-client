@@ -829,8 +829,8 @@ export default function LandlordApplicationDetailPage() {
 
                 {/* Rental Breakdown */}
                 {property?.price && (
-                  <div className="bg-blue-50 rounded-xl p-4 mb-4">
-                    <p className="text-blue-600 font-semibold text-sm mb-2">Rental Breakdown</p>
+                  <div className="bg-blue-50 rounded-xl p-3 mb-3">
+                    <p className="text-blue-600 font-semibold text-sm mb-2">Move-in Cost Breakdown</p>
                     {(() => {
                       const breakdown = calculateRentalBreakdown(property)
                       const { monthlyRent, annualRent, periodRent, cautionFee, platformFee, serviceCharge, totalDue, periodLabel, paymentFrequency } = breakdown
@@ -845,16 +845,20 @@ export default function LandlordApplicationDetailPage() {
                             <span>{periodLabel}:</span>
                             <span className="font-semibold">{formatNGN(periodRent)}</span>
                           </div>
-                          {cautionFee > 0 && (
-                            <div className="flex justify-between">
-                              <span>Security Deposit (2 months):</span>
-                              <span className="font-semibold text-blue-700">{formatNGN(cautionFee)}</span>
-                            </div>
-                          )}
-                          {platformFee > 0 && (
+                          <div className="flex justify-between">
+                            <span>Security Deposit (2 months):</span>
+                            <span className={`font-semibold ${cautionFee === 0 ? "text-green-600" : "text-blue-700"}`}>                              {cautionFee === 0 ? "₦0 — Waived" : formatNGN(cautionFee)}
+                            </span>
+                          </div>
+                          {platformFee > 0 ? (
                             <div className="flex justify-between">
                               <span>Platform Fee:</span>
                               <span className="font-semibold">{formatNGN(platformFee)}</span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between">
+                              <span>Platform Fee:</span>
+                              <span className="font-semibold text-green-600">₦0 — Waived</span>
                             </div>
                           )}
                           {serviceCharge > 0 && (
@@ -864,7 +868,7 @@ export default function LandlordApplicationDetailPage() {
                             </div>
                           )}
                           <div className="flex justify-between pt-1 border-t border-slate-300 font-bold">
-                            <span>Total Move-in Cost:</span>
+                            <span>Total Due:</span>
                             <span className="text-orange-700">{formatNGN(totalDue)}</span>
                           </div>
                         </div>

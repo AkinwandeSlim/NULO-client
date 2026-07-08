@@ -467,20 +467,20 @@ export default function TenantDashboard() {
     const row = sorted[0] as AgreementPaymentRow
     if (!row) return null
 
-    const totalRent    = Number(row.rent_amount ?? 0)
+    // Only show payment overview for approved/signed/active agreements
+    if (!["ACTIVE", "SIGNED", "PENDING_TENANT", "PENDING_LANDLORD"].includes(row.status)) {
+      return null
+    }
+
+    const rentalBreakdown = calculateAgreementBreakdown(row)
+    const totalRent    = rentalBreakdown.annualRent // Annual rent is total for progress bar
     const totalPaid    = Number(row.total_received_amount ?? 0)
-    const expected     = Number(row.expected_payment_amount ?? 0)
-    const outstanding  = Math.max(totalRent - totalPaid, 0)
+    const outstanding  = Math.max(rentalBreakdown.periodRent - totalPaid, 0)
     const paymentPct   = totalRent > 0 ? Math.min(100, Math.round((totalPaid / totalRent) * 100)) : 0
-    const isFullyPaid  = row.reconciliation_status === "FULL_PAYMENT" || totalPaid >= totalRent
+    const isFullyPaid  = row.reconciliation_status === "FULL_PAYMENT" || totalPaid >= rentalBreakdown.periodRent
 
     const freq         = row.payment_frequency ?? "ANNUAL"
     const meta         = freqMeta[freq] ?? freqMeta.ANNUAL
-
-    // Calculate per-period amount (mirrors ReconciliationEngine.calculate_per_payment_amount)
-    const perPaymentAmount = meta.periodsPerYear > 0
-      ? Math.round(totalRent / meta.periodsPerYear)
-      : totalRent
 
     // Next due date: advance from lease_start by the next billing period boundary
     let nextDueDate: Date | null = null
@@ -511,8 +511,8 @@ export default function TenantDashboard() {
       outstanding,
       paymentPct,
       isFullyPaid,
-      perPaymentAmount,
-      perPaymentLabel:  fmtNGN(perPaymentAmount),
+      perPaymentAmount: rentalBreakdown.periodRent,
+      perPaymentLabel:  fmtNGN(rentalBreakdown.periodRent),
       totalPaidLabel:   fmtNGN(totalPaid),
       outstandingLabel: fmtNGN(outstanding),
       nextDueLabel,

@@ -137,9 +137,10 @@ interface FinancialRowProps {
   amount: number | null | undefined
   isTotal?: boolean
   highlight?: boolean
+  waived?: boolean
 }
 
-function FinancialRow({ label, amount, isTotal, highlight }: FinancialRowProps) {
+function FinancialRow({ label, amount, isTotal, highlight, waived }: FinancialRowProps) {
   if (amount == null) return null
   return (
     <div className={`flex items-center justify-between py-3 ${
@@ -148,8 +149,8 @@ function FinancialRow({ label, amount, isTotal, highlight }: FinancialRowProps) 
       <span className={`text-sm ${isTotal ? "font-bold text-slate-900" : highlight ? "font-semibold text-slate-800" : "text-slate-600"}`}>
         {label}
       </span>
-      <span className={`font-semibold ${isTotal ? "text-lg text-orange-600" : highlight ? "text-slate-900" : "text-slate-700"}`}>
-        {formatNGN(amount)}
+      <span className={`font-semibold ${isTotal ? "text-lg text-orange-600" : highlight ? "text-slate-900" : waived ? "text-green-600" : "text-slate-700"}`}>
+        {waived && amount === 0 ? "₦0 — Waived" : formatNGN(amount)}
       </span>
     </div>
   )
@@ -484,16 +485,44 @@ export default function TenantAgreementDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                  <FinancialRow label="Monthly Rent" amount={monthlyRent} />
-                  <FinancialRow label={periodLabel} amount={periodRent} highlight />
-                  {cautionFee > 0 && <FinancialRow label="Caution Fee (Security Deposit)" amount={cautionFee} />}
-                  {platformFee > 0 && <FinancialRow label="Platform Fee" amount={platformFee} />}
-                  {/* service_charge is nullable — only render if set */}
-                  {serviceCharge > 0 && (
-                    <FinancialRow label="Service Charge" amount={serviceCharge} />
-                  )}
-                  <FinancialRow label="Total Due on Move-in" amount={totalDue} isTotal />
+                <div className="bg-blue-50 rounded-xl p-3 mb-3">
+                  <p className="text-blue-600 font-semibold text-sm mb-2">Move-in Cost Breakdown</p>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span>Monthly Rent:</span>
+                      <span className="font-semibold">{formatNGN(monthlyRent)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>{periodLabel}:</span>
+                      <span className="font-semibold">{formatNGN(periodRent)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Security Deposit (2 months):</span>
+                      <span className={`font-semibold ${cautionFee === 0 ? "text-green-600" : "text-blue-700"}`}>                        {cautionFee === 0 ? "₦0 — Waived" : formatNGN(cautionFee)}
+                      </span>
+                    </div>
+                    {platformFee > 0 ? (
+                      <div className="flex justify-between">
+                        <span>Platform Fee:</span>
+                        <span className="font-semibold">{formatNGN(platformFee)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between">
+                        <span>Platform Fee:</span>
+                        <span className="font-semibold text-green-600">₦0 — Waived</span>
+                      </div>
+                    )}
+                    {serviceCharge > 0 && (
+                      <div className="flex justify-between">
+                        <span>Service Charge:</span>
+                        <span className="font-semibold">{formatNGN(serviceCharge)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between pt-1 border-t border-slate-300 font-bold">
+                      <span>Total Due:</span>
+                      <span className="text-orange-700">{formatNGN(totalDue)}</span>
+                    </div>
+                  </div>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
                   * Rent is payable in advance per the property's payment frequency ({paymentFrequency}, ×{frequencyMultiplier} months).

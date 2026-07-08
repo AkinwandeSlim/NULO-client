@@ -591,19 +591,17 @@ export default function PropertyDetailPage() {
                           <span className="font-semibold text-slate-900">{formatPrice(periodRent)}</span>
                         </div>
 
-                        {/* Caution Fee - only show if > 0 */}
-                        {cautionFee > 0 && (
-                          <div className="flex justify-between items-center text-sm">
-                            <div className="flex flex-col">
-                              <span className="text-slate-700">Caution Fee <span className="text-slate-400 text-xs">(Security Deposit)</span></span>
-                              <span className="text-xs text-blue-600 font-medium">2 months' rent</span>
-                            </div>
-                            <div className="text-right">
-                              <span className="font-semibold text-slate-900">{formatPrice(cautionFee)}</span>
-                              <div className="text-xs text-slate-500">{formatPrice(monthlyRent)} × 2</div>
-                            </div>
+                        {/* Caution Fee - show as waived when 0 */}
+                        <div className="flex justify-between items-center text-sm">
+                          <div className="flex flex-col">
+                            <span className="text-slate-700">Caution Fee <span className="text-slate-400 text-xs">(Security Deposit)</span></span>
+                            <span className="text-xs text-blue-600 font-medium">{cautionFee > 0 ? "2 months' rent" : "Waived for MVP"}</span>
                           </div>
-                        )}
+                          <div className="text-right">
+                            <span className={`font-semibold ${cautionFee === 0 ? "text-green-600" : "text-slate-900"}`}>                              {cautionFee === 0 ? "₦0 — Waived" : formatPrice(cautionFee)}                            </span>
+                            {cautionFee > 0 && <div className="text-xs text-slate-500">{formatPrice(monthlyRent)} × 2</div>}
+                          </div>
+                        </div>
 
                         <div className="flex justify-between items-center text-sm">
                           <span className="text-slate-700">Platform Fee</span>

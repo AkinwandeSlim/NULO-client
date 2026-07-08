@@ -94,26 +94,36 @@ export interface TenantConversation {
 }
 
 export interface TenantAgreement {
-  id: string
-  property_id: string
-  property_title: string
-  property?: {
     id: string
-    title?: string
-    location?: string
-    address?: string
-    image?: string
-  }
-  landlord_id: string
-  landlord_name: string
-  rent_amount: number
-  deposit_amount: number
-  status: 'ACTIVE' | 'SIGNED' | 'PENDING_TENANT' | 'PENDING_LANDLORD' | 'EXPIRED' | 'TERMINATED'
-  lease_start_date: string
-  lease_end_date: string
-  payment_pending?: boolean
-  created_at: string
-  updated_at: string
+    property_id: string
+    property_title: string
+    property?: {
+        id: string
+        title?: string
+        location?: string
+        address?: string
+        image?: string
+    }
+    landlord_id: string
+    landlord_name: string
+    rent_amount: number
+    deposit_amount: number
+    status: 'ACTIVE' | 'SIGNED' | 'PENDING_TENANT' | 'PENDING_LANDLORD' | 'EXPIRED' | 'TERMINATED'
+    lease_start_date: string
+    lease_end_date: string
+    payment_pending?: boolean
+    payment_frequency?: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL' | null
+    expected_payment_amount?: number
+    total_received_amount?: number
+    reconciliation_status?: string | null
+    virtual_account_number?: string | null
+    virtual_account_name?: string | null
+    nomba_account_ref?: string | null
+    disbursement_status?: string | null
+    disbursement_merchant_tx_ref?: string | null
+    disbursement_amount?: number | null
+    created_at: string
+    updated_at: string
 }
 
 export interface TenantEngagementMetrics {

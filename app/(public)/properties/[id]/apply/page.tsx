@@ -799,16 +799,20 @@ export default function ApplicationPage() {
                               <span>{periodLabel}:</span>
                               <span className="font-semibold">{formatNGN(periodRent)}</span>
                             </div>
-                            {cautionFee > 0 && (
-                              <div className="flex justify-between">
-                                <span>Security Deposit (2 months):</span>
-                                <span className="font-semibold text-blue-700">{formatNGN(cautionFee)}</span>
-                              </div>
-                            )}
-                            {platformFee > 0 && (
+                            <div className="flex justify-between">
+                              <span>Security Deposit (2 months):</span>
+                              <span className={`font-semibold ${cautionFee === 0 ? "text-green-600" : "text-blue-700"}`}>                                {cautionFee === 0 ? "₦0 — Waived" : formatNGN(cautionFee)}
+                              </span>
+                            </div>
+                            {platformFee > 0 ? (
                               <div className="flex justify-between">
                                 <span>Platform Fee:</span>
                                 <span className="font-semibold">{formatNGN(platformFee)}</span>
+                              </div>
+                            ) : (
+                              <div className="flex justify-between">
+                                <span>Platform Fee:</span>
+                                <span className="font-semibold text-green-600">₦0 — Waived</span>
                               </div>
                             )}
                             {serviceCharge > 0 && (
