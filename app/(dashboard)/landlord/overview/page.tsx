@@ -928,9 +928,9 @@ export default function LandlordDashboard() {
     }
 
     // Priority 5: New applications (pending review)
-    const pendingApplications = applications.filter((app: Application) => 
-      app.status === 'pending' && !isBannerDismissed(buildBannerKey('new_application', app.id))
-    )
+            const pendingApplications = applications.filter((app: Application) => 
+                (app.status === 'pending' || app.status === 'submitted') && !isBannerDismissed(buildBannerKey('new_application', app.id))
+            )
     if (pendingApplications.length > 0) {
       return { type: 'new-application', data: { count: pendingApplications.length, latest: pendingApplications[0] } }
     }

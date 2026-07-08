@@ -33,7 +33,7 @@ export interface Application {
   property_id: string;
   user_id: string;  // Updated from tenant_id
   viewing_id?: string;
-  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+  status: 'pending' | 'submitted' | 'under_review' | 'approved' | 'rejected' | 'withdrawn';
   message?: string;
   employment_status?: string;
   employer_name?: string;

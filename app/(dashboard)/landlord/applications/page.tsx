@@ -32,6 +32,8 @@ const formatNGN = (amount: number) =>
 
 const getStatusBadgeStyle = (status: string) => ({
   pending:   "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
+  submitted: "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
+  under_review: "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
   approved:  "bg-green-100 text-green-800 border-green-200 font-semibold",
   rejected:  "bg-red-100 text-red-800 border-red-200 font-semibold",
   withdrawn: "bg-slate-100 text-slate-800 border-slate-200 font-semibold"
@@ -40,6 +42,8 @@ const getStatusBadgeStyle = (status: string) => ({
 const getPriorityBorder = (status: string) => {
   switch (status) {
     case 'pending':   return 'border-l-4 border-l-orange-500'
+    case 'submitted': return 'border-l-4 border-l-orange-500'
+    case 'under_review': return 'border-l-4 border-l-orange-500'
     case 'approved':  return 'border-l-4 border-l-green-500'
     case 'rejected':  return 'border-l-4 border-l-red-500'
     case 'withdrawn': return 'border-l-4 border-l-slate-300'
@@ -52,12 +56,17 @@ const getStatusIcon = (status: string) => {
     case 'approved': return <CheckCircle className="h-5 w-5 text-green-600" />
     case 'rejected': return <XCircle className="h-5 w-5 text-red-600" />
     case 'withdrawn': return <AlertCircle className="h-5 w-5 text-slate-500" />
+    case 'pending': return <AlertCircle className="h-5 w-5 text-orange-600" />
+    case 'submitted': return <AlertCircle className="h-5 w-5 text-orange-600" />
+    case 'under_review': return <AlertCircle className="h-5 w-5 text-orange-600" />
     default:          return <AlertCircle className="h-5 w-5 text-orange-600" />
   }
 }
 
 const getStatusLabel = (status: string) => ({
   pending:   'Under Review',
+  submitted: 'New Application',
+  under_review: 'Under Review',
   approved:  'Approved',
   rejected:  'Rejected',
   withdrawn: 'Withdrawn'
