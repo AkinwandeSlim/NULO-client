@@ -888,6 +888,11 @@ export default function LandlordDashboard() {
   // 10. Verified but no properties (informational)
 
   const activeBanner = useMemo(() => {
+    // Wait for landlordData to be loaded before showing any banner to prevent flashing!
+    if (!landlordData) {
+      return null
+    }
+
     // Priority 1: Onboarding incomplete
     if (!landlordData?.onboarding?.all_steps_completed) {
       return { type: 'onboarding-incomplete', data: null }
@@ -982,6 +987,10 @@ export default function LandlordDashboard() {
 
   // Memoize progressive banner to prevent unnecessary re-renders (legacy - will be replaced)
   const progressiveBanner = useMemo(() => {
+    // Wait for landlordData to be loaded before showing any banner to prevent flashing!
+    if (!landlordData) {
+      return null
+    }
 
     // ── State 1: Onboarding incomplete ────────────────────────────────────────
 
