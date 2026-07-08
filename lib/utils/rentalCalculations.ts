@@ -91,7 +91,7 @@ export function normalizePaymentFrequency(frequency: string | null | undefined):
 
 /**
  * Calculate rental breakdown from property data
- * Uses Nigerian rental market standards: Security deposit = 2 months rent
+ * MVP: Caution fee set to 0 for transparency
  */
 export function calculateRentalBreakdown(property: PropertyData): RentalBreakdown {
   const monthlyRent = property.price || 0
@@ -100,17 +100,15 @@ export function calculateRentalBreakdown(property: PropertyData): RentalBreakdow
   const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
   const periodRent = monthlyRent * frequencyMultiplier
   
-  // Always use 2 months rent for security deposit to ensure consistency
-  // This overrides any old values stored in the database
-  const securityDeposit = monthlyRent * 2
+  // MVP: Caution fee set to 0 for transparency - override any database value
+  const securityDeposit = 0
+  const cautionFee = 0
   
-  // For display consistency, always show caution fee as security deposit
-  const cautionFee = securityDeposit
-  
-  const platformFee = property.platform_fee ?? 0
-  const serviceCharge = property.service_charge ?? 0
-  // Total due is period rent + caution fee + fees
-  const totalDue = periodRent + cautionFee + platformFee + serviceCharge
+  // MVP: Platform fee set to 0% for transparency - override any database value
+  const platformFee = 0
+  const serviceCharge = 0  // MVP: Also set service charge to 0
+  // Total due is period rent only (no caution fee, no platform fee, no service charge for MVP)
+  const totalDue = periodRent
 
   return {
     monthlyRent,
@@ -128,6 +126,7 @@ export function calculateRentalBreakdown(property: PropertyData): RentalBreakdow
 
 /**
  * Calculate rental breakdown from agreement data
+ * MVP: Caution fee set to 0 for transparency
  */
 export function calculateAgreementBreakdown(agreement: AgreementData): RentalBreakdown {
   const monthlyRent = agreement.rent_amount || 0
@@ -136,15 +135,15 @@ export function calculateAgreementBreakdown(agreement: AgreementData): RentalBre
   const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
   const periodRent = monthlyRent * frequencyMultiplier
   
-  // Always use 2 months rent for security deposit to ensure consistency
-  // This overrides any old values stored in the database
-  const securityDeposit = monthlyRent * 2
-  const cautionFee = securityDeposit
+  // MVP: Caution fee set to 0 for transparency - override any database value
+  const securityDeposit = 0
+  const cautionFee = 0
   
-  const platformFee = agreement.platform_fee ?? 0
-  const serviceCharge = agreement.service_charge ?? 0
-  // Total due is period rent + caution fee + fees
-  const totalDue = periodRent + cautionFee + platformFee + serviceCharge
+  // MVP: Platform fee set to 0% for transparency - override any database value
+  const platformFee = 0
+  const serviceCharge = 0  // MVP: Also set service charge to 0
+  // Total due is period rent only (no caution fee, no platform fee, no service charge for MVP)
+  const totalDue = periodRent
 
   return {
     monthlyRent,
@@ -187,6 +186,7 @@ export function parsePaymentBreakdown(transaction: TransactionData): PaymentBrea
 
 /**
  * Get security deposit amount with consistent fallback
+ * MVP: Caution fee set to 0 for transparency
  */
 export function getSecurityDeposit(property?: PropertyData, agreement?: AgreementData): number {
   if (agreement?.deposit_amount) {
@@ -197,9 +197,8 @@ export function getSecurityDeposit(property?: PropertyData, agreement?: Agreemen
     return property.security_deposit
   }
   
-  // Default to 2 months rent
-  const monthlyRent = property?.price || agreement?.rent_amount || 0
-  return monthlyRent * 2
+  // MVP: Default to 0 for transparency
+  return 0
 }
 
 /**

@@ -845,10 +845,12 @@ export default function LandlordApplicationDetailPage() {
                             <span>{periodLabel}:</span>
                             <span className="font-semibold">{formatNGN(periodRent)}</span>
                           </div>
-                          <div className="flex justify-between">
-                            <span>Security Deposit (2 months):</span>
-                            <span className="font-semibold text-blue-700">{formatNGN(cautionFee)}</span>
-                          </div>
+                          {cautionFee > 0 && (
+                            <div className="flex justify-between">
+                              <span>Security Deposit (2 months):</span>
+                              <span className="font-semibold text-blue-700">{formatNGN(cautionFee)}</span>
+                            </div>
+                          )}
                           {platformFee > 0 && (
                             <div className="flex justify-between">
                               <span>Platform Fee:</span>

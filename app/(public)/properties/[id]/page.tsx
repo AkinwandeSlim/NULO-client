@@ -591,16 +591,19 @@ export default function PropertyDetailPage() {
                           <span className="font-semibold text-slate-900">{formatPrice(periodRent)}</span>
                         </div>
 
-                        <div className="flex justify-between items-center text-sm">
-                          <div className="flex flex-col">
-                            <span className="text-slate-700">Caution Fee <span className="text-slate-400 text-xs">(Security Deposit)</span></span>
-                            <span className="text-xs text-blue-600 font-medium">2 months' rent</span>
+                        {/* Caution Fee - only show if > 0 */}
+                        {cautionFee > 0 && (
+                          <div className="flex justify-between items-center text-sm">
+                            <div className="flex flex-col">
+                              <span className="text-slate-700">Caution Fee <span className="text-slate-400 text-xs">(Security Deposit)</span></span>
+                              <span className="text-xs text-blue-600 font-medium">2 months' rent</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="font-semibold text-slate-900">{formatPrice(cautionFee)}</span>
+                              <div className="text-xs text-slate-500">{formatPrice(monthlyRent)} × 2</div>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <span className="font-semibold text-slate-900">{formatPrice(cautionFee)}</span>
-                            <div className="text-xs text-slate-500">{formatPrice(monthlyRent)} × 2</div>
-                          </div>
-                        </div>
+                        )}
 
                         <div className="flex justify-between items-center text-sm">
                           <span className="text-slate-700">Platform Fee</span>
@@ -620,7 +623,9 @@ export default function PropertyDetailPage() {
                         <div className="border-t border-slate-200 pt-2.5 mt-1 flex justify-between items-center">
                           <div className="flex flex-col">
                             <span className="font-bold text-slate-900 text-sm">Total Due on Move-In</span>
-                            <span className="text-[11px] text-slate-500">{periodLabel.toLowerCase()} + 2 months deposit</span>
+                            <span className="text-[11px] text-slate-500">
+                              {cautionFee > 0 ? `${periodLabel.toLowerCase()} + 2 months deposit` : periodLabel.toLowerCase()}
+                            </span>
                           </div>
                           <div className="text-right">
                             <span className="text-lg font-bold text-orange-600">{formatPrice(totalDue)}</span>

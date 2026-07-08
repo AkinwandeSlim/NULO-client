@@ -890,7 +890,8 @@ export default function TenantDashboard() {
 
 
         {/* ── Payment Overview Card ── */}
-        {(paymentOverview || paymentsLoading) && (
+        {/* Only show if there are active agreements/payments */}
+        {recentPayments.length > 0 && (paymentOverview || paymentsLoading) && (
           <>
             {paymentsLoading && !paymentOverview ? (
               <Card className="border-orange-200 bg-white/90">

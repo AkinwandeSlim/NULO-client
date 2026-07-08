@@ -597,8 +597,8 @@ export default function LandlordAgreementDetailPage() {
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
                   <FinancialRow label="Monthly Rent" amount={agreement.rent_amount} />
                   <FinancialRow label={periodLabel} amount={periodRent} highlight />
-                  <FinancialRow label="Caution Fee (Security Deposit)" amount={cautionFee} />
-                  <FinancialRow label="Platform Fee" amount={platformFee} />
+                  {cautionFee > 0 && <FinancialRow label="Caution Fee (Security Deposit)" amount={cautionFee} />}
+                  {platformFee > 0 && <FinancialRow label="Platform Fee" amount={platformFee} />}
                   {/* FIX: service_charge is nullable — only show if non-null */}
                   {agreement.service_charge != null && (
                     <FinancialRow label="Service Charge" amount={agreement.service_charge} />
