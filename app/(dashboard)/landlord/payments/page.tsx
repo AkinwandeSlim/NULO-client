@@ -61,9 +61,9 @@ const getReconciliationBadge = (row: AgreementPaymentRow) => {
     }
     if (row.disbursement_status === "failed") {
       return (
-        <Badge className="bg-red-100 text-red-700 border-red-200">
+        <Badge className="bg-orange-100 text-orange-700 border-orange-200">
           <AlertCircle className="w-3 h-3 mr-1" />
-          Disbursement Failed
+          Retry Release
         </Badge>
       )
     }
@@ -187,7 +187,9 @@ export default function LandlordPaymentsPage() {
       }
       return s
     }, 0),
-    active: rows.filter(r => r.status === "ACTIVE" || r.status === "SIGNED").length,
+    // ✅ FIX: Only count ACTIVE (paid) agreements. SIGNED agreements
+    // (both parties signed but no payment yet) are NOT yet active leases.
+    active: rows.filter(r => r.status === "ACTIVE").length,
     totalReceived: rows.reduce((s, r) => s + Number(r.total_received_amount ?? 0), 0),
   }
 
@@ -260,7 +262,7 @@ export default function LandlordPaymentsPage() {
             <CardContent className="pt-5">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Leases</p>
               <p className="text-2xl font-bold text-slate-900 mt-1">{stats.active}</p>
-              <p className="text-xs text-slate-500 mt-1">Signed &amp; active</p>
+              <p className="text-xs text-slate-500 mt-1">Currently occupied & paying</p>
             </CardContent>
           </Card>
           <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
@@ -350,6 +352,11 @@ export default function LandlordPaymentsPage() {
                               <Badge className="bg-amber-100 text-amber-700 border-amber-200">
                                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />
                                 Pending
+                              </Badge>
+                            ) : row.disbursement_status === "failed" ? (
+                              <Badge className="bg-orange-100 text-orange-700 border-orange-200">
+                                <AlertCircle className="w-3 h-3 mr-1" />
+                                Not Released
                               </Badge>
                             ) : (
                               <span className="text-xs text-slate-400">—</span>

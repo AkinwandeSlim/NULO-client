@@ -26,8 +26,12 @@ export interface PropertyData {
   caution_fee?: number | null
   platform_fee?: number | null
   service_charge?: number | null
-  payment_frequency?: PaymentFrequency | null
+  payment_frequency?: string | null
 }
+
+
+
+
 
 export interface AgreementData {
   rent_amount?: number | null

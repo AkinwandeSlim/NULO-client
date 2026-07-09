@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTenantDashboard } from "@/contexts/DashboardContext"
@@ -196,25 +196,46 @@ export default function TenantDashboard() {
   }, [mounted])
 
   // ✅ Fetch dashboard data on mount or when user changes
+  // ============================================================================
+  // FETCH ON MOUNT — always force a fresh fetch so the user sees up-to-date
+  // data (e.g. after making a payment on /tenant/payments and clicking
+  // "Overview" on the navbar). The 5-minute API-layer cache is bypassed.
+  // ============================================================================
+  // ✅ FIX: Use a ref to always call the LATEST fetchTenantDashboard function
+  // (which is recreated on every tenantData change due to useCallback in the
+  // context), but exclude it from the useEffect's dependency array to avoid
+  // an infinite re-fetch loop. Also use a guard ref to prevent overlapping
+  // fetches if the effect somehow fires twice in a row.
+  const fetchFnRef = useRef(fetchTenantDashboard)
+  fetchFnRef.current = fetchTenantDashboard
+  const fetchInFlightRef = useRef(false)
+
   useEffect(() => {
     if (!mounted || !user || user.user_type !== 'tenant') {
       setAllDataLoading(false)
       return
     }
+    if (fetchInFlightRef.current) return  // guard against rapid re-fires
 
-    // Always attempt fetch on mount (API layer will use cache if available)
     setAllDataLoading(true)
-    
-    fetchTenantDashboard()
+    fetchInFlightRef.current = true
+
+    // ✅ FIX: Pass `true` to bypass the 5-min client-side cache. The previous
+    // behaviour showed stale data (e.g. "0 active leases" after a payment)
+    // because the cache survived in-memory across /tenant/payments →
+    // /tenant navigation. Only a hard refresh cleared it.
+    fetchFnRef.current(true)
       .then(() => {
         setAllDataLoading(false)
       })
       .catch((error) => {
         console.error('❌ Dashboard fetch failed:', error)
-        // Still hide spinner on error - user will see error state with retry button
         setAllDataLoading(false)
       })
-  }, [mounted, user?.id, user?.user_type, fetchTenantDashboard])
+      .finally(() => {
+        fetchInFlightRef.current = false
+      })
+  }, [mounted, user?.id, user?.user_type])
 
   // Fetch tenant payments for banner notifications
   useEffect(() => {
@@ -467,8 +488,9 @@ export default function TenantDashboard() {
     const row = sorted[0] as AgreementPaymentRow
     if (!row) return null
 
-    // Only show payment overview for approved/signed/active agreements
-    if (!["ACTIVE", "SIGNED", "PENDING_TENANT", "PENDING_LANDLORD"].includes(row.status)) {
+    // ✅ Only show payment overview for SIGNED and ACTIVE agreements (not pending)
+    // Pending agreements shouldn't show payment details yet
+    if (!["ACTIVE", "SIGNED"].includes(row.status)) {
       return null
     }
 
@@ -535,7 +557,10 @@ export default function TenantDashboard() {
   const activeBanner = useMemo(() => {
     // Priority 1: Payment Ready Banner
     const readyToPayAgreements = tenantData?.agreements?.filter((agreement: any) => {
-      const isSigned = agreement.status === "SIGNED" || agreement.status === "ACTIVE"
+      // ✅ Check timestamps first (source of truth) before status field
+      // The status field may lag behind actual signature state
+      const bothSigned = Boolean(agreement.tenant_signed_at && agreement.landlord_signed_at)
+      const isSigned = agreement.status === "SIGNED" || agreement.status === "ACTIVE" || bothSigned
       const received = Number(agreement.total_received_amount ?? 0)
       const expected = Number(agreement.expected_payment_amount ?? 0)
       
@@ -548,7 +573,10 @@ export default function TenantDashboard() {
       const needsPayment = isSigned && !isFullyPaid
       
       console.log('🔍 [PAYMENT BANNER DEBUG] Agreement:', agreement.id, {
+        bothSigned,
         status: agreement.status,
+        tenant_signed_at: agreement.tenant_signed_at,
+        landlord_signed_at: agreement.landlord_signed_at,
         reconciliation_status: agreement.reconciliation_status,
         received,
         expected,
@@ -563,7 +591,14 @@ export default function TenantDashboard() {
         return false
       }
       
-      // Only check dismissal if payment is still needed
+      // ALWAYS show if both are signed and payment needed - override dismissal
+      // This ensures the banner reappears when status changes to signed
+      if (bothSigned && needsPayment) {
+        console.log('✅ [PAYMENT BANNER DEBUG] Both signed and payment needed - SHOWING BANNER:', agreement.id)
+        return true
+      }
+      
+      // For other cases, check dismissal
       const isDismissed = 
         isBannerDismissed(buildBannerKey('agreement_signed', `payment-${agreement.id}`)) ||
         dismissedPaymentBanners.includes(agreement.id)
@@ -770,6 +805,7 @@ export default function TenantDashboard() {
           switch (activeBanner.type) {
             case "payment-ready": {
               const a = activeBanner.data as any
+              const bothSigned = Boolean(a.tenant_signed_at && a.landlord_signed_at)
               return (
                 <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-purple-200 bg-purple-50">
                   <div className="flex items-center gap-3 min-w-0">
@@ -777,12 +813,16 @@ export default function TenantDashboard() {
                       <DollarSign className="h-5 w-5 text-white" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-purple-900">Agreement signed — make your payment to activate tenancy</p>
+                      <p className="text-sm font-semibold text-purple-900">
+                        {bothSigned 
+                          ? "✅ Both parties signed! Complete payment to activate your tenancy" 
+                          : "Agreement signed — make your payment to activate tenancy"}
+                      </p>
                       <p className="text-xs text-purple-700 truncate">{a.property_title || "Your property"}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Link href={`/tenant/payments/${a.id}`}>
+                    <Link href={`/tenant/agreements/${a.id}`}>
                       <Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white h-8 text-xs">Pay Now</Button>
                     </Link>
                     <button onClick={() => { setDismissedPaymentBanners(p => [...p, a.id]); dismissBanner(buildBannerKey("agreement_signed", `payment-${a.id}`)) }}
@@ -890,25 +930,8 @@ export default function TenantDashboard() {
 
 
         {/* ── Payment Overview Card ── */}
-        {/* Only show if there are active agreements/payments */}
-        {recentPayments.length > 0 && (paymentOverview || paymentsLoading) && (
-          <>
-            {paymentsLoading && !paymentOverview ? (
-              <Card className="border-orange-200 bg-white/90">
-                <CardContent className="p-5">
-                  <div className="flex items-center gap-3 mb-4">
-                    <Skeleton className="h-9 w-9 rounded-lg" />
-                    <div><Skeleton className="h-4 w-40 mb-1.5" /><Skeleton className="h-3 w-28" /></div>
-                  </div>
-                  <Skeleton className="h-2.5 w-full rounded-full mb-3" />
-                  <div className="grid grid-cols-3 gap-3">
-                    <Skeleton className="h-14 rounded-lg" />
-                    <Skeleton className="h-14 rounded-lg" />
-                    <Skeleton className="h-14 rounded-lg" />
-                  </div>
-                </CardContent>
-              </Card>
-            ) : paymentOverview && (
+        {/* Only show when payment data is loaded and there's an actionable payment */}
+        {paymentOverview && (
               <Card className={`border-2 bg-white/90 shadow-sm ${
                 paymentOverview.isFullyPaid ? "border-green-200"
                 : paymentOverview.daysUntilDue !== null && paymentOverview.daysUntilDue <= 3 ? "border-red-200"
@@ -970,7 +993,16 @@ export default function TenantDashboard() {
                         </span></>
                       ) : <span className="text-xs text-slate-400">No lease dates set</span>}
                     </div>
-                    <Link href={`/tenant/payments/${paymentOverview.agreementId}`}>
+                    <Link href={`/tenant/payments/${paymentOverview.agreementId}`}
+                      onClick={(e) => {
+                        // Check if both parties have signed
+                        const { tenant_signed_at, landlord_signed_at } = paymentOverview.row
+                        if (!paymentOverview.isFullyPaid && (!tenant_signed_at || !landlord_signed_at)) {
+                          e.preventDefault()
+                          toast.warning("Please wait for both parties to sign the agreement before making payment")
+                        }
+                      }}
+                    >
                       <Button size="sm" className={`h-8 text-xs shrink-0 ${paymentOverview.isFullyPaid ? "border-green-300 text-green-700 hover:bg-green-50" : "bg-orange-500 hover:bg-orange-600 text-white"}`}
                         variant={paymentOverview.isFullyPaid ? "outline" : "default"}>
                         {paymentOverview.isFullyPaid ? <><Eye className="w-3.5 h-3.5 mr-1.5" />Receipt</> : <><TrendingUp className="w-3.5 h-3.5 mr-1.5" />Pay Now</>}
@@ -980,13 +1012,11 @@ export default function TenantDashboard() {
                 </CardContent>
               </Card>
             )}
-          </>
-        )}
 
-        {/* ── 6-cell Quick Stats ── */}
+        {/* ── 8-cell Activity Stats (mirrors landlord) ── */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold text-slate-800">Your Overview</h2>
+            <h2 className="text-base font-semibold text-slate-800">Your Activity</h2>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <div className="h-2 w-2 rounded-full" style={{ backgroundColor: engagementDisplay.level === "high" ? "#22c55e" : engagementDisplay.level === "medium" ? "#f97316" : "#94a3b8" }} />
@@ -995,65 +1025,224 @@ export default function TenantDashboard() {
               <Badge className={`${trustDisplay.bgColor} ${trustDisplay.textColor} border-0 text-xs`}>Trust {trustDisplay.score}/100</Badge>
             </div>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              { href: "/tenant/active-rent", icon: Home, bg: "bg-emerald-100", iconCls: "text-emerald-600", count: tenantData?.agreements?.filter((a: any) => a.status === "ACTIVE").length ?? 0, label: "Active Lease", pulse: (tenantData?.agreements?.filter((a: any) => a.status === "ACTIVE").length ?? 0) > 0, badge: (hasSignedLease && !hasActiveLease) ? "Payment pending" : null, badgeCls: "text-amber-600", badgeHref: "/tenant/payments", clickable: true },
-              { href: null, icon: FileText, bg: "bg-blue-100", iconCls: "text-blue-600", count: (() => {
-                const pendingSigs = tenantData?.stats?.pendingSignatures ?? 0
-                const pendingApps = tenantData?.stats?.pendingApplications ?? 0
-                const confirmedViewings = tenantData?.stats?.confirmedViewings ?? 0
-                return pendingSigs + pendingApps + confirmedViewings
-              })(), label: "Activity", badge: (() => {
-                const pendingApps = tenantData?.stats?.pendingApplications ?? 0
-                const confirmedViewings = tenantData?.stats?.confirmedViewings ?? 0
-                const pendingSigs = tenantData?.stats?.pendingSignatures ?? 0
-                
-                const items = []
-                if (pendingSigs > 0) items.push(`${pendingSigs} to sign`)
-                if (pendingApps > 0) items.push(`${pendingApps} apps`)
-                if (confirmedViewings > 0) items.push(`${confirmedViewings} viewing${confirmedViewings !== 1 ? 's' : ''}`)
-                
-                return items.length > 0 ? items.join(' · ') : null
-              })(), badgeCls: "text-orange-600", badgeHref: (() => {
-                const pendingSigs = tenantData?.stats?.pendingSignatures ?? 0
-                const pendingApps = tenantData?.stats?.pendingApplications ?? 0
-                
-                // Redirect to most urgent page
-                if (pendingSigs > 0) return "/tenant/agreements"
-                if (pendingApps > 0) return "/tenant/applications"
-                return "/tenant/viewings"
-              })(), clickable: false },
-              { href: "/tenant/messages", icon: MessageSquare, bg: "bg-purple-100", iconCls: "text-purple-600", count: tenantData?.stats.totalConversations ?? 0, label: "Messages", badge: (tenantData?.stats.unreadMessages ?? 0) > 0 ? `${tenantData?.stats.unreadMessages} unread` : null, badgeCls: "text-orange-600", badgeHref: "/tenant/messages", clickable: true },
-              { href: "/tenant/maintenance", icon: Settings, bg: "bg-amber-100", iconCls: "text-amber-600", count: 0, label: "Maintenance", badge: null, badgeCls: "", badgeHref: null, clickable: true },
-            ].map(({ href, icon: Icon, bg, iconCls, count, label, badge, badgeCls, badgeHref, pulse, clickable }) => {
-              const cardContent = (
-                <Card className={`border-orange-200 bg-white/90 h-full ${clickable ? 'hover:shadow-md hover:border-orange-300 transition-all cursor-pointer' : ''}`}>
-                  <CardContent className="p-3.5">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className={`h-7 w-7 ${bg} rounded-lg flex items-center justify-center`}>
-                        <Icon className={`h-4 w-4 ${iconCls}`} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            {(() => {
+              // Compute shared derivations once
+              const allAgreements = tenantData?.agreements ?? []
+              // ✅ ACTIVE = payment received (the only true "Active Lease")
+              const activeAgreements = allAgreements.filter((a: any) => a.status === "ACTIVE")
+              // ✅ "Fully signed" includes SIGNED + ACTIVE + both timestamps present.
+              // Used for the Agreements card to show "X signed" completion count.
+              const signedAgreements = allAgreements.filter((a: any) =>
+                a.status === "SIGNED" ||
+                a.status === "ACTIVE" ||
+                (a.tenant_signed_at && a.landlord_signed_at)
+              )
+              // ✅ "Signed but not yet paid" = SIGNED-only (no payment yet).
+              // Used for the Active Lease card pill to surface "awaiting payment"
+              // without falsely showing it when everything is already paid.
+              const signedNotActive = allAgreements.filter((a: any) => {
+                const isActive = a.status === "ACTIVE"
+                const isSigned = a.status === "SIGNED" || (a.tenant_signed_at && a.landlord_signed_at)
+                return isSigned && !isActive
+              })
+              // Agreements that still need the CURRENT tenant's signature
+              const awaitingTenantSign = allAgreements.filter((a: any) =>
+                !a.tenant_signed_at &&
+                a.landlord_signed_at &&
+                a.status !== "REJECTED" && a.status !== "CANCELLED" && a.status !== "EXPIRED"
+              )
+              // Agreements that still need the LANDLORD's signature
+              // (tenant has signed, landlord hasn't yet)
+              const awaitingLandlordSign = allAgreements.filter((a: any) =>
+                a.tenant_signed_at &&
+                !a.landlord_signed_at &&
+                a.status !== "REJECTED" && a.status !== "CANCELLED" && a.status !== "EXPIRED"
+              )
+              const allApplications = tenantData?.applications ?? []
+              const pendingApps = allApplications.filter((a: any) => a.status === "pending" || a.status === "submitted" || a.status === "under_review")
+              const approvedApps = allApplications.filter((a: any) => a.status === "approved")
+              const allViewings = tenantData?.viewingRequests ?? []
+              const pendingViewings = allViewings.filter((v: any) => v.status === "pending")
+              const confirmedViewings = allViewings.filter((v: any) => v.status === "confirmed")
+              const totalFavorites = tenantData?.favorites?.length ?? 0
+              const completedPayments = tenantData?.stats?.completedPayments ?? 0
+              const totalPayments = tenantData?.stats?.totalPayments ?? 0
+              const totalMessages = tenantData?.stats?.totalConversations ?? 0
+              const unreadMessages = tenantData?.stats?.unreadMessages ?? 0
+              const propertiesContacted = tenantData?.stats?.propertiesContacted ?? 0
+
+              const cards: Array<{
+                key: string
+                href: string | null
+                icon: any
+                bg: string
+                iconCls: string
+                value: number
+                label: string
+                valueCls: string
+                pills: Array<{ text: string; bg: string; textCls: string; dot: string; pulse?: boolean }>
+                emptyText: string
+              }> = [
+                {
+                  key: "active-lease",
+                  href: "/tenant/active-rent",
+                  icon: Home,
+                  bg: "bg-emerald-100",
+                  iconCls: "text-emerald-600",
+                  value: activeAgreements.length,
+                  label: "Active Lease",
+                  valueCls: "text-emerald-600",
+                  // ✅ FIX: Pill only shows "X signed · pay pending" when there is
+                  // at least one SIGNED-but-not-ACTIVE agreement. If all signed
+                  // agreements are paid (ACTIVE), show "all paid up" instead.
+                  pills: signedNotActive.length > 0
+                    ? [{ text: `${signedNotActive.length} signed · pay pending`, bg: "bg-amber-50", textCls: "text-amber-700", dot: "bg-amber-500" }]
+                    : activeAgreements.length === 0
+                      ? []
+                      : [{ text: "all paid up", bg: "bg-emerald-50", textCls: "text-emerald-700", dot: "bg-emerald-500" }],
+                  emptyText: "no active lease",
+                },
+                {
+                  key: "applications",
+                  href: "/tenant/applications",
+                  icon: FileText,
+                  bg: "bg-blue-100",
+                  iconCls: "text-blue-600",
+                  value: allApplications.length,
+                  label: "Applications",
+                  valueCls: "text-blue-600",
+                  pills: [
+                    ...(approvedApps.length > 0 ? [{ text: `${approvedApps.length} approved`, bg: "bg-emerald-50", textCls: "text-emerald-700", dot: "bg-emerald-500" }] : []),
+                    ...(pendingApps.length > 0 ? [{ text: `${pendingApps.length} pending`, bg: "bg-amber-50", textCls: "text-amber-700", dot: "bg-amber-500" }] : []),
+                  ],
+                  emptyText: "no applications yet",
+                },
+                {
+                  key: "agreements",
+                  href: "/tenant/agreements",
+                  icon: FileCheck,
+                  bg: "bg-indigo-100",
+                  iconCls: "text-indigo-600",
+                  value: allAgreements.length,
+                  label: "Agreements",
+                  valueCls: "text-indigo-600",
+                  pills: [
+                    ...(signedAgreements.length > 0 ? [{ text: `${signedAgreements.length} signed`, bg: "bg-emerald-50", textCls: "text-emerald-700", dot: "bg-emerald-500" }] : []),
+                    // Most-urgent first: YOUR signature pending beats landlord's
+                    ...(awaitingTenantSign.length > 0 ? [{ text: `${awaitingTenantSign.length} to sign (you)`, bg: "bg-pink-50", textCls: "text-pink-700", dot: "bg-pink-500", pulse: true }] : []),
+                    ...(awaitingLandlordSign.length > 0 ? [{ text: `${awaitingLandlordSign.length} landlord to sign`, bg: "bg-sky-50", textCls: "text-sky-700", dot: "bg-sky-500" }] : []),
+                  ],
+                  emptyText: "no agreements",
+                },
+                {
+                  key: "viewings",
+                  href: "/tenant/viewings",
+                  icon: Calendar,
+                  bg: "bg-teal-100",
+                  iconCls: "text-teal-600",
+                  value: allViewings.length,
+                  label: "Viewings",
+                  valueCls: "text-teal-600",
+                  pills: [
+                    ...(confirmedViewings.length > 0 ? [{ text: `${confirmedViewings.length} confirmed`, bg: "bg-emerald-50", textCls: "text-emerald-700", dot: "bg-emerald-500" }] : []),
+                    ...(pendingViewings.length > 0 ? [{ text: `${pendingViewings.length} pending`, bg: "bg-amber-50", textCls: "text-amber-700", dot: "bg-amber-500" }] : []),
+                  ],
+                  emptyText: "no viewings yet",
+                },
+                {
+                  key: "messages",
+                  href: "/tenant/messages",
+                  icon: MessageSquare,
+                  bg: "bg-purple-100",
+                  iconCls: "text-purple-600",
+                  value: totalMessages,
+                  label: "Messages",
+                  valueCls: "text-purple-600",
+                  pills: unreadMessages > 0
+                    ? [{ text: `${unreadMessages} unread`, bg: "bg-orange-50", textCls: "text-orange-700", dot: "bg-orange-500", pulse: true }]
+                    : [],
+                  emptyText: totalMessages === 0 ? "no messages yet" : "all caught up",
+                },
+                {
+                  key: "favorites",
+                  href: "/tenant/favorites",
+                  icon: Heart,
+                  bg: "bg-rose-100",
+                  iconCls: "text-rose-600",
+                  value: totalFavorites,
+                  label: "Favorites",
+                  valueCls: "text-rose-600",
+                  pills: totalFavorites > 0
+                    ? [{ text: "saved properties", bg: "bg-rose-50", textCls: "text-rose-700", dot: "bg-rose-500" }]
+                    : [],
+                  emptyText: "no favorites yet",
+                },
+                {
+                  key: "payments",
+                  href: "/tenant/payments",
+                  icon: Wallet,
+                  bg: "bg-amber-100",
+                  iconCls: "text-amber-600",
+                  value: totalPayments,
+                  label: "Payments",
+                  valueCls: "text-amber-600",
+                  pills: [
+                    ...(completedPayments > 0 ? [{ text: `${completedPayments} completed`, bg: "bg-emerald-50", textCls: "text-emerald-700", dot: "bg-emerald-500" }] : []),
+                    ...((totalPayments - completedPayments) > 0 ? [{ text: `${totalPayments - completedPayments} pending`, bg: "bg-orange-50", textCls: "text-orange-700", dot: "bg-orange-500" }] : []),
+                  ],
+                  emptyText: "no payments yet",
+                },
+                {
+                  key: "contacted",
+                  href: "/tenant/messages",
+                  icon: Mail,
+                  bg: "bg-sky-100",
+                  iconCls: "text-sky-600",
+                  value: propertiesContacted,
+                  label: "Properties Contacted",
+                  valueCls: "text-sky-600",
+                  pills: propertiesContacted > 0
+                    ? [{ text: "landlords reached", bg: "bg-sky-50", textCls: "text-sky-700", dot: "bg-sky-500" }]
+                    : [],
+                  emptyText: "no outreach yet",
+                },
+              ]
+
+              return cards.map((card) => {
+                const Icon = card.icon
+                const cardBody = (
+                  <Card className="border-orange-200 bg-white/80 backdrop-blur-sm h-full hover:shadow-lg transition-shadow">
+                    <CardContent className="p-4 sm:p-6">
+                      <div className="flex items-start gap-3 sm:gap-4">
+                        <div className={`h-10 w-10 sm:h-12 sm:w-12 ${card.bg} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                          <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${card.iconCls}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">{card.label}</p>
+                          <p className={`text-xl sm:text-3xl font-bold ${card.valueCls} truncate`}>{card.value}</p>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            {card.pills.length > 0
+                              ? card.pills.map((pill, i) => (
+                                  <span key={i} className={`inline-flex items-center gap-1 text-xs font-medium ${pill.textCls} ${pill.bg} px-2 py-0.5 rounded-full`}>
+                                    <span className={`h-1.5 w-1.5 rounded-full ${pill.dot} ${pill.pulse ? "animate-pulse" : ""}`} aria-hidden="true" />
+                                    {pill.text}
+                                  </span>
+                                ))
+                              : <span className="text-xs text-slate-400">{card.emptyText}</span>}
+                          </div>
+                        </div>
                       </div>
-                      {pulse && !badge && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
-                    </div>
-                    <p className="text-xl font-bold text-slate-900 mb-1">{count}</p>
-                    <p className="text-xs text-slate-500">{label}</p>
-                    {badge && badgeHref ? (
-                      <Link href={badgeHref} onClick={(e) => e.stopPropagation()} className="block mt-1.5">
-                        <span className={`text-xs font-semibold ${badgeCls} hover:underline cursor-pointer`}>{badge}</span>
-                      </Link>
-                    ) : badge ? (
-                      <span className={`text-xs font-semibold ${badgeCls} block mt-1.5`}>{badge}</span>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              )
-              
-              return clickable && href ? (
-                <Link key={label} href={href}>{cardContent}</Link>
-              ) : (
-                <div key={label}>{cardContent}</div>
-              )
-            })}
+                    </CardContent>
+                  </Card>
+                )
+                return card.href ? (
+                  <Link key={card.key} href={card.href}>{cardBody}</Link>
+                ) : (
+                  <div key={card.key}>{cardBody}</div>
+                )
+              })
+            })()}
           </div>
         </div>
 

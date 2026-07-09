@@ -17,6 +17,21 @@ import { toast } from "sonner"
 
 const DEFAULT_PROPERTY_IMAGE = "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop"
 
+/**
+ * Resolve the true status of an agreement from timestamps.
+ * The DB `status` field can lag — e.g. a tenant signs but the backend hasn't
+ * flipped `PENDING_TENANT` → `PENDING_LANDLORD` yet.
+ * This function resolves the true status from timestamps (which are facts).
+ */
+function getEffectiveStatus(a: any) {
+  const tenantSigned   = Boolean(a.tenant_signed_at)
+  const landlordSigned = Boolean(a.landlord_signed_at)
+
+  if (tenantSigned && !landlordSigned)  return "PENDING_LANDLORD"
+  if (!tenantSigned && landlordSigned)  return "PENDING_TENANT"
+  return a.status
+}
+
 export default function LandlordMaintenancePage() {
   const { user } = useAuth()
   const router = useRouter()
@@ -210,14 +225,17 @@ export default function LandlordMaintenancePage() {
                 <div>
                   <p className="text-sm text-orange-600 font-medium">Rented Properties</p>
                   <p className="text-3xl font-bold text-orange-900">
-                    {agreements.filter(a => a.status === 'ACTIVE' || a.status === 'SIGNED').length}
+                    {/* ✅ FIX: Only count ACTIVE (paid) agreements.
+                        SIGNED (both parties signed but no payment yet) is not
+                        a real tenancy until rent clears. */}
+                    {agreements.filter(a => getEffectiveStatus(a) === 'ACTIVE').length}
                   </p>
                   <p className="text-xs text-orange-500 mt-1">Total active tenancies</p>
                 </div>
               </div>
             </CardContent>
           </Card>
-          
+
           <Card className="border-indigo-200 bg-indigo-50">
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
@@ -225,7 +243,10 @@ export default function LandlordMaintenancePage() {
                 <div>
                   <p className="text-sm text-indigo-600 font-medium">Monthly Rent</p>
                   <p className="text-3xl font-bold text-indigo-900">
-                    ₦{agreements.filter(a => a.status === 'ACTIVE' || a.status === 'SIGNED').reduce((sum, a) => sum + (Number(a.rent_amount) || 0), 0).toLocaleString()}
+                    ₦{agreements
+                      .filter(a => getEffectiveStatus(a) === 'ACTIVE')
+                      .reduce((sum, a) => sum + (Number(a.rent_amount) || 0), 0)
+                      .toLocaleString()}
                   </p>
                   <p className="text-xs text-indigo-500 mt-1">Total monthly revenue</p>
                 </div>

@@ -143,7 +143,7 @@ export const viewingRequestsAPI = {
     const params = statusFilter ? { status_filter: statusFilter } : {};
     const response = await apiClient.get<ViewingRequestsResponse>(
       '/api/v1/viewing-requests/landlord',
-      { params }
+      { params, timeout: 60000 } // 60 second timeout for this endpoint
     );
     return response.data;
   },

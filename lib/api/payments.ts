@@ -48,6 +48,9 @@ export interface AgreementPaymentRow {
   payment_frequency: "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL" | null
   status: "DRAFT" | "SIGNED" | "ACTIVE" | "EXPIRED" | "TERMINATED"
   reconciliation_status: "PENDING" | "FULL_PAYMENT" | "UNDERPAYMENT" | "OVERPAYMENT" | "RECONCILED" | null
+  // Signatures
+  tenant_signed_at: string | null
+  landlord_signed_at: string | null
   // Virtual account details
   virtual_account_number: string | null
   virtual_account_name: string | null
@@ -179,6 +182,8 @@ function normalizeAgreementRow(a: any): AgreementPaymentRow {
     payment_frequency: (property?.payment_frequency ?? a?.payment_frequency ?? null) as AgreementPaymentRow['payment_frequency'],
     status: (a?.status ?? 'DRAFT') as AgreementPaymentRow['status'],
     reconciliation_status: (a?.reconciliation_status ?? null) as AgreementPaymentRow['reconciliation_status'],
+    tenant_signed_at: a?.tenant_signed_at ?? null,
+    landlord_signed_at: a?.landlord_signed_at ?? null,
     virtual_account_number: a?.virtual_account_number ?? null,
     virtual_account_name: a?.virtual_account_name ?? null,
     nomba_account_ref: a?.nomba_account_ref ?? null,
@@ -326,6 +331,20 @@ export const paymentsAPI = {
     const { data } = await apiClient.post(
       `/api/v1/agreements/${agreementId}/simulate-payout-webhook`,
       { merchant_tx_ref: merchantTxRef },
+    )
+    return data
+  },
+
+  /**
+   * DEMO ONLY: Simulate a payment to the agreement's virtual account.
+   * This allows testing the payment flow without having real money.
+   * Backend: POST /api/v1/agreements/{agreement_id}/simulate-payment
+   */
+  async simulatePayment(
+    agreementId: string,
+  ): Promise<{ status: string; amount: number; agreement_id: string }> {
+    const { data } = await apiClient.post(
+      `/api/v1/agreements/${agreementId}/simulate-payment`,
     )
     return data
   },

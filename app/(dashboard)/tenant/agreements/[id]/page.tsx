@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
+import { useTenantDashboard } from "@/contexts/DashboardContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -11,7 +12,7 @@ import {
   ArrowLeft, FileText, MapPin, Calendar, Users,
   Loader2, AlertCircle, Phone, Mail, Shield,
   Clock, PenLine, Banknote, CheckCircle2,
-  FilePlus2, Download, Eye
+  FilePlus2, Download, Eye, Copy, Check, Sparkles
 } from "lucide-react"
 import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
@@ -164,6 +165,7 @@ export default function TenantAgreementDetailPage() {
   const router = useRouter()
   const params = useParams()
   const { user } = useAuth()
+  const { invalidateTenantCache } = useTenantDashboard()
   const agreementId = (params?.id as string) || ""
 
   const [agreement, setAgreement] = useState<AgreementWithDetails | null>(null)
@@ -172,6 +174,9 @@ export default function TenantAgreementDetailPage() {
   const [checkingPayments, setCheckingPayments] = useState(false)
   const [isSigning, setIsSigning] = useState(false)
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
+  const [isGeneratingNuban, setIsGeneratingNuban] = useState(false)
+  const [isSimulatingPayment, setIsSimulatingPayment] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
   // Checkbox must be checked before signing — per handoff spec
   const [termsAccepted, setTermsAccepted] = useState(false)
 
@@ -255,6 +260,11 @@ export default function TenantAgreementDetailPage() {
         toast.success("Agreement signed successfully!")
         setAgreement(response.agreement)
         setTermsAccepted(false)
+        // Drop the 5-min frontend dashboard cache so the Agreements stat
+        // card reflects the new signature state immediately, otherwise it
+        // keeps showing the pre-sign counts (e.g. "0 agreements") until
+        // the cache expires.
+        invalidateTenantCache?.()
       } else {
         toast.error(response.error ?? "Failed to sign agreement")
       }
@@ -287,6 +297,57 @@ export default function TenantAgreementDetailPage() {
     }
   }
 
+  // ── Provision NUBAN (inline on the agreement page — the agreement detail
+  //    page is the single source of truth for the pay flow. The backend
+  //    POST /api/v1/agreements/{id}/provision-nomba is idempotent.
+  const handleProvisionNuban = async () => {
+    if (!agreementId || isGeneratingNuban) return
+    setIsGeneratingNuban(true)
+    try {
+      await paymentsAPI.provisionNomba(agreementId)
+      toast.success("NUBAN generated — copy it and pay from any bank app.")
+      await fetchAgreement()
+    } catch (error: any) {
+      console.error("[TenantAgreementDetail] provision NUBAN error:", error)
+      const detail = error?.response?.data?.detail ?? error?.message
+      toast.error(detail ? `Could not generate NUBAN: ${detail}` : "Could not generate NUBAN. Please try again.")
+    } finally {
+      setIsGeneratingNuban(false)
+    }
+  }
+
+  // ── Simulate Payment (demo only): triggers a simulated payment to the NUBAN
+  const handleSimulatePayment = async () => {
+    if (!agreementId || isSimulatingPayment) return
+    setIsSimulatingPayment(true)
+    try {
+      const result = await paymentsAPI.simulatePayment(agreementId)
+      toast.success(`Payment of ${formatNGN(result.amount)} simulated successfully!`)
+      // Invalidate cache and refresh the page
+      await fetchAgreement()
+      await checkExistingPayments()
+      invalidateTenantCache?.()
+    } catch (error: any) {
+      console.error("[TenantAgreementDetail] simulate payment error:", error)
+      const detail = error?.response?.data?.detail ?? error?.message
+      toast.error(detail ? `Could not simulate payment: ${detail}` : "Could not simulate payment. Please try again.")
+    } finally {
+      setIsSimulatingPayment(false)
+    }
+  }
+
+  // ── Copy to clipboard helper ───────────────────────────────────────────────
+  const copyField = useCallback((value: string, field: string) => {
+    if (!value) return
+    navigator.clipboard.writeText(value).then(
+      () => {
+        setCopiedField(field)
+        setTimeout(() => setCopiedField(null), 1500)
+      },
+      () => toast.error("Could not copy to clipboard")
+    )
+  }, [])
+
   // ── Derived state ──────────────────────────────────────────────────────────
 
   const effectiveStatus = agreement ? getEffectiveStatus(agreement) : null
@@ -301,6 +362,19 @@ export default function TenantAgreementDetailPage() {
   const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
   const signaturesCount =
     (agreement?.tenant_signed_at ? 1 : 0) + (agreement?.landlord_signed_at ? 1 : 0)
+
+  // Derived payment state — used by the "Payment In Progress" branch below.
+  // (The old `existingPayments.length > 0` check was meaningless because
+  //  `getMyPayments` returns agreement rows, not payment transactions, so
+  //  the filter-by-agreement-id was always returning 1 row.)
+  const totalReceived = Number(agreement?.total_received_amount ?? 0)
+  const expectedAmount =
+    Number(agreement?.expected_payment_amount ?? 0) ||
+    Number(agreement?.rent_amount ?? 0) * frequencyMultiplier
+  const recon = agreement?.reconciliation_status ?? null
+  const isPartiallyPaid =
+    totalReceived > 0 &&
+    (recon === "UNDERPAYMENT" || recon === "OVERPAYMENT" || recon === null)
 
   // ─────────────────────────────────────────────────────────────────────────
   // Loading
@@ -760,8 +834,11 @@ export default function TenantAgreementDetailPage() {
                         </Button>
                       </Link>
                     </div>
-                  ) : existingPayments.length > 0 ? (
-                    /* Payment in progress (has payments but not complete) */
+                  ) : isPartiallyPaid ? (
+                    /* Payment in progress — money has arrived but not the full
+                       expected amount yet. PENDING with 0 received = NUBAN
+                       generated but no transfer yet → falls through to the
+                       NUBAN/Generate CTA below. */
                     <div className="space-y-3">
                       <div className="flex items-start gap-3">
                         <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
@@ -776,7 +853,9 @@ export default function TenantAgreementDetailPage() {
                         <AlertCircle className="h-12 w-12 text-orange-600 mx-auto mb-3" />
                         <h3 className="text-lg font-semibold text-orange-800 mb-2">Payment In Progress</h3>
                         <p className="text-slate-600 mb-4">
-                          A payment for this agreement is currently being processed. Please check your payment history for status updates.
+                          We received <span className="font-semibold text-orange-700">{formatNGN(totalReceived)}</span> of{" "}
+                          <span className="font-semibold text-slate-900">{formatNGN(expectedAmount)}</span>.
+                          Awaiting the remaining balance to fully reconcile.
                         </p>
                         <Link href="/tenant/payments">
                           <Button variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50">
@@ -787,9 +866,9 @@ export default function TenantAgreementDetailPage() {
                       </div>
                     </div>
                   ) : (
-                    /* No existing payments - show payment button */
-                    <div>
-                      <div className="flex items-start gap-3 mb-4">
+                    /* No existing payments - inline NUBAN flow on this page */
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3">
                         <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="font-semibold text-green-800 text-sm">Agreement Fully Signed</p>
@@ -798,16 +877,163 @@ export default function TenantAgreementDetailPage() {
                           </p>
                         </div>
                       </div>
-                      <p className="text-sm text-slate-600 mb-4">
-                        Click below to initiate your secure payment through Paystack.
-                      </p>
-                      {/* TODO: replace href with real payment route once /tenant/payments is built */}
-                      <Link href={`/tenant/payments/new?agreement_id=${agreement.id}`} className="block">
-                        <Button className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold shadow-sm transition-all duration-300">
-                          <Banknote className="mr-2 h-4 w-4" />
-                          Proceed to Payment
-                        </Button>
-                      </Link>
+
+                      {/* State A: No NUBAN yet → show "Generate NUBAN" */}
+                      {!agreement.virtual_account_number && (
+                        <div className="rounded-xl border-2 border-dashed border-orange-200 bg-orange-50/60 p-5 text-center">
+                          <Sparkles className="w-7 h-7 text-orange-500 mx-auto mb-2" />
+                          <p className="text-sm font-semibold text-slate-900 mb-1">
+                            Generate your dedicated NUBAN
+                          </p>
+                          <p className="text-xs text-slate-600 mb-4">
+                            One click — we'll create a unique 10-digit account number for this lease.
+                          </p>
+                          <Button
+                            onClick={handleProvisionNuban}
+                            disabled={isGeneratingNuban}
+                            className="bg-orange-500 hover:bg-orange-600 text-white"
+                          >
+                            {isGeneratingNuban ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Generating NUBAN…
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                Generate NUBAN
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* State B: NUBAN exists → show it inline with copy buttons */}
+                      {agreement.virtual_account_number && (
+                        <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/60 p-5 space-y-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Shield className="w-5 h-5 text-emerald-600" />
+                            <p className="text-sm font-semibold text-emerald-900">
+                              Pay into your dedicated NUBAN
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-600">
+                            Transfer the exact amount below from any Nigerian bank app — we auto-confirm within seconds.
+                          </p>
+
+                          {/* NUBAN */}
+                          <div>
+                            <label className="text-xs font-semibold text-slate-500 uppercase">
+                              Account number
+                            </label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <code className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-lg font-mono font-semibold text-slate-900">
+                                {agreement.virtual_account_number}
+                              </code>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => copyField(agreement.virtual_account_number!, "nuban")}
+                                className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                              >
+                                {copiedField === "nuban" ? (
+                                  <Check className="w-4 h-4" />
+                                ) : (
+                                  <Copy className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Account name */}
+                          {agreement.virtual_account_name && (
+                            <div>
+                              <label className="text-xs font-semibold text-slate-500 uppercase">
+                                Account name
+                              </label>
+                              <div className="flex items-center gap-2 mt-1">
+                                <code className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-700">
+                                  {agreement.virtual_account_name}
+                                </code>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => copyField(agreement.virtual_account_name!, "name")}
+                                  className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                >
+                                  {copiedField === "name" ? (
+                                    <Check className="w-4 h-4" />
+                                  ) : (
+                                    <Copy className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Amount */}
+                          <div>
+                            <label className="text-xs font-semibold text-slate-500 uppercase">
+                              Amount to pay
+                            </label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <code className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-lg font-mono font-semibold text-orange-600">
+                                {formatNGN(
+                                  agreement.expected_payment_amount
+                                    && agreement.expected_payment_amount > 0
+                                    ? agreement.expected_payment_amount
+                                    : Number(agreement.rent_amount || 0) *
+                                        getPaymentFrequencyMultiplier(paymentFrequency)
+                                )}
+                              </code>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const amt = agreement.expected_payment_amount
+                                    && agreement.expected_payment_amount > 0
+                                    ? agreement.expected_payment_amount
+                                    : Number(agreement.rent_amount || 0) *
+                                        getPaymentFrequencyMultiplier(paymentFrequency)
+                                  copyField(String(amt), "amount")
+                                }}
+                                className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                              >
+                                {copiedField === "amount" ? (
+                                  <Check className="w-4 h-4" />
+                                ) : (
+                                  <Copy className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Simulate Payment Button (Demo Only) */}
+                          <div className="pt-3 border-t border-emerald-200">
+                            <Button
+                              onClick={handleSimulatePayment}
+                              disabled={isSimulatingPayment}
+                              className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
+                            >
+                              {isSimulatingPayment ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Simulating Payment…
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="mr-2 h-4 w-4" />
+                                  Simulate Payment (Demo)
+                                </>
+                              )}
+                            </Button>
+                            <p className="text-xs text-slate-500 pt-2">
+                              After paying, this page will auto-refresh and show your payment as{" "}
+                              <span className="font-semibold text-green-700">Completed</span>.
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </CardContent>

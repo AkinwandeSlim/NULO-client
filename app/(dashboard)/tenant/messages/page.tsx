@@ -65,6 +65,10 @@ export default function TenantMessagesPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date())
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
+  // Ref-based guard: changing a ref never triggers re-renders, so putting it
+  // in a useEffect dep array (like the old isCreatingConversation state) can
+  // never cause the effect to re-run mid-flight and fire a second concurrent call.
+  const creatingConversationRef = useRef(false)
   
   // Conversaton context (signing, payment, etc.)
   const [conversationContext, setConversationContext] = useState<string | null>(() => {
@@ -115,7 +119,7 @@ export default function TenantMessagesPage() {
   }, [])
   
   // Fetch messages for a conversation
-  const fetchMessages = useCallback(async (conversationId: string, offset = 0) => {
+  const fetchMessages = useCallback(async (conversationId: string, offset = 0, retryCount = 0) => {
     if (offset === 0) {
       setIsLoadingMessages(true)
     } else {
@@ -143,6 +147,12 @@ export default function TenantMessagesPage() {
       
       setPagination(response.pagination)
     } catch (error: any) {
+      // Retry on 500 errors (connection issues) up to 2 times
+      if (error?.response?.status === 500 && retryCount < 2) {
+        console.log(`[Messages] Retrying fetchMessages (attempt ${retryCount + 1})...`)
+        setTimeout(() => fetchMessages(conversationId, offset, retryCount + 1), 1000 * (retryCount + 1))
+        return
+      }
       console.error('Failed to fetch messages:', error)
       toast.error("Failed to load messages")
     } finally {
@@ -336,97 +346,70 @@ export default function TenantMessagesPage() {
   }, [])
 
   const handleCreateConversationFromParams = useCallback(async (landlordId: string, propertyId: string, context: string | null) => {
-    if (!user?.id || isCreatingConversation) return
-    
+    // Ref guard: never runs concurrently even if the effect fires more than once.
+    if (!user?.id || creatingConversationRef.current) return
+    creatingConversationRef.current = true
     setIsCreatingConversation(true)
-    
+
     try {
-      // First, check if there's an existing conversation for this property
-      console.log('🔍 [MESSAGES] Looking for existing conversation...')
+      const contextMessage = getContextualInitialMessage(context)
+
+      // Try to find an existing conversation first so we never hit the backend
+      // upsert unnecessarily (and never risk a duplicate-key race).
       const existingConversation = await messagesAPI.findConversation(propertyId, landlordId)
-      
+
+      let conversationId: string
       if (existingConversation) {
-        console.log('✅ [MESSAGES] Found existing conversation:', existingConversation.id)
-        // Navigate to existing conversation
-        router.replace(`/tenant/messages?conversation=${existingConversation.id}`)
-        setSelectedConversationId(existingConversation.id)
-        
-        // Always send the contextual message, even for existing conversations
-        if (context) {
-          const contextualMessage = getContextualInitialMessage(context)
-          console.log('🔍 [MESSAGES] Sending contextual message to existing conversation:', contextualMessage)
-          
-          try {
-            await messagesAPI.sendMessage(
-              existingConversation.id,  // conversation_id
-              contextualMessage         // content
-            )
-            toast.success('Message sent to landlord')
-          } catch (sendError) {
-            console.error('❌ [MESSAGES] Failed to send contextual message:', sendError)
-            toast.error('Conversation loaded but failed to send message')
-          }
-        } else {
-          toast.success('Conversation loaded')
-        }
+        conversationId = existingConversation.id
+        // Pre-fill the input with the contextual message so the tenant can
+        // review and send it as a fresh follow-up (not auto-sent).
+        setMessageInput(contextMessage)
       } else {
-        console.log('🔍 [MESSAGES] Creating new conversation...')
-        // Create a new conversation with contextual initial message
+        // New conversation — backend sends the opening message automatically.
         const result = await messagesAPI.createConversation({
           property_id: propertyId,
           landlord_id: landlordId,
-          initial_message: getContextualInitialMessage(context)
+          initial_message: contextMessage,
         })
-        
-        console.log('✅ [MESSAGES] Created new conversation:', result.conversation_id)
-        // Navigate to the new conversation
-        router.replace(`/tenant/messages?conversation=${result.conversation_id}`)
-        setSelectedConversationId(result.conversation_id)
-        toast.success('Conversation started')
+        conversationId = result.conversation_id
+        // Leave input empty — the opening message was already sent.
       }
-    } catch (error) {
-      console.error('❌ [MESSAGES] Failed to create conversation from parameters:', error)
-      
-      // Better error handling based on error type
-      let errorMessage = 'Failed to start conversation. Please try again.'
-      const axiosError = error as any // Type assertion for axios error
-      
-      if (axiosError?.response?.status === 500) {
-        errorMessage = 'Database connection issue. Please try again in a moment.'
-      } else if (axiosError?.response?.status === 400) {
-        errorMessage = 'Invalid conversation request. Please check the property details.'
-      } else if (axiosError?.code === 'ECONNABORTED' || axiosError?.message?.includes('timeout')) {
-        errorMessage = 'Request timed out. Please check your connection and try again.'
-      }
-      
-      toast.error(errorMessage, {
-        action: {
-          label: 'Retry',
-          onClick: () => handleCreateConversationFromParams(landlordId, propertyId, context)
-        }
-      })
+
+      // Set the context badge immediately (before the list re-loads)
+      if (context) setConversationContext(context)
+
+      router.replace(`/tenant/messages?conversation=${conversationId}`)
+      setSelectedConversationId(conversationId)
+
+      // Refresh the conversation list so the new entry appears in the left panel
+      fetchConversations()
+    } catch (error: any) {
+      console.error('[MESSAGES] Failed to create/find conversation:', error)
+      toast.error('Failed to open conversation. Please try again.')
     } finally {
       setIsCreatingConversation(false)
+      creatingConversationRef.current = false
     }
-  }, [user?.id, router, isCreatingConversation, getContextualInitialMessage])
+  }, [user?.id, router, getContextualInitialMessage, fetchConversations])
   
   // Handle tenant and property URL parameters for auto-creating conversations
   useEffect(() => {
     if (!searchParams) return
-    
+
     const landlordId = searchParams.get('landlord')
     const propertyId = searchParams.get('property')
     const conversationId = searchParams.get('conversation')
     const context = searchParams.get('context')
-    
-    // Update conversation context
+
+    // Update conversation context badge
     setConversationContext(context)
-    
-    // Only proceed if we have landlord and property but no conversation
-    if (landlordId && propertyId && !conversationId && !isCreatingConversation) {
+
+    // Only proceed if we have landlord+property but no conversation yet.
+    // The ref guard inside handleCreateConversationFromParams prevents double-fire.
+    if (landlordId && propertyId && !conversationId) {
       handleCreateConversationFromParams(landlordId, propertyId, context)
     }
-  }, [searchParams, isCreatingConversation, handleCreateConversationFromParams])
+  }, [searchParams, handleCreateConversationFromParams])
   
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -439,6 +422,20 @@ export default function TenantMessagesPage() {
   const selectedConversation = conversations.find(conv => conv.id === selectedConversationId)
   const isBannerDismissed = selectedConversationId ? 
     dismissedBanners.has(`${selectedConversationId}:rental-context`) : false
+
+  // Derive the partner (landlord) display name from the conversation list when
+  // available, falling back to message sender data while the list is still
+  // loading. This covers the window right after creation where selectedConversation
+  // is undefined but messages are already streaming in.
+  const partnerName: string = (() => {
+    if (selectedConversation?.partner?.name) return selectedConversation.partner.name
+    if (messages.length > 0 && conversationDetail) {
+      const landlordId = conversationDetail.landlord_id
+      const landlordMsg = messages.find(m => m.sender_id === landlordId && m.sender?.full_name)
+      if (landlordMsg?.sender?.full_name) return landlordMsg.sender.full_name
+    }
+    return "Landlord"
+  })()
   
   // FIX-5: filter soft-deleted messages before grouping (migration 0001 adds deleted_at).
   // Matches FIX-10b on the landlord page.

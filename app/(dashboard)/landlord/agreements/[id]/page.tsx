@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
+import { useDashboard } from "@/contexts/DashboardContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -256,6 +257,7 @@ export default function LandlordAgreementDetailPage() {
   const router = useRouter()
   const params = useParams()
   const { user } = useAuth()
+  const { invalidateLandlordCache } = useDashboard()
   const agreementId = (params?.id as string) || ""
 
   const [agreement, setAgreement] = useState<AgreementWithDetails | null>(null)
@@ -358,6 +360,10 @@ export default function LandlordAgreementDetailPage() {
         toast.success("Agreement signed successfully!")
         setAgreement(response.agreement)  // Use the fresh enriched data from response
         setTermsAccepted(false)
+        // Drop the frontend dashboard cache so the Agreements stat card
+        // reflects the new signature state immediately instead of waiting
+        // for the 5-min cache to expire.
+        invalidateLandlordCache?.()
       } else {
         toast.error(response.error ?? "Failed to sign agreement")
       }

@@ -73,6 +73,12 @@ export default function LandlordMessagesPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date())
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
+  // Ref-based guard so the URL-param effect never fires twice during a render
+  // cycle. Using a ref (not state) means changing it never triggers re-renders,
+  // which broke the previous guard: putting isCreatingConversation in the
+  // useEffect dep array made the effect re-run the moment it was set to true,
+  // causing a second concurrent call before the first had finished.
+  const creatingConversationRef = useRef(false)
 
   // ─── UI state ────────────────────────────────────────────────────────────
   const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all")
@@ -150,7 +156,7 @@ export default function LandlordMessagesPage() {
     }
   }, [])
 
-  const fetchMessages = useCallback(async (conversationId: string, offset = 0) => {
+  const fetchMessages = useCallback(async (conversationId: string, offset = 0, retryCount = 0) => {
     if (offset === 0) setIsLoadingMessages(true)
     else setLoadingEarlier(true)
 
@@ -174,7 +180,13 @@ export default function LandlordMessagesPage() {
       }
 
       setPagination(response.pagination)
-    } catch {
+    } catch (error: any) {
+      // Retry on 500 errors (connection issues) up to 2 times
+      if (error?.response?.status === 500 && retryCount < 2) {
+        console.log(`[Messages] Retrying fetchMessages (attempt ${retryCount + 1})...`)
+        setTimeout(() => fetchMessages(conversationId, offset, retryCount + 1), 1000 * (retryCount + 1))
+        return
+      }
       toast.error("Failed to load messages. Please try again.")
     } finally {
       if (offset === 0) setIsLoadingMessages(false)
@@ -350,35 +362,60 @@ export default function LandlordMessagesPage() {
 
   const handleCreateConversationFromParams = useCallback(
     async (tenantId: string, propertyId: string, context: string | null) => {
-      if (!user?.id || isCreatingConversation) return
+      // Use the ref guard so this never runs concurrently.
+      // We also keep the state flag for the loading spinner in the right panel.
+      if (!user?.id || creatingConversationRef.current) return
+      creatingConversationRef.current = true
       setIsCreatingConversation(true)
       try {
-        // FIX: removed 13 console.log('[DEBUG]...) statements
+        // Pre-fill the input box with the context-specific message so the
+        // landlord can review / edit it before sending.
+        const contextMessage = getContextualInitialMessage(context)
+
+        // Always try find first to avoid hitting the backend upsert at all
+        // when an existing conversation is already present.
         const existingConversation = await messagesAPI.findConversation(propertyId, tenantId)
 
+        let conversationId: string
         if (existingConversation) {
-          router.replace(`/landlord/messages?conversation=${existingConversation.id}`)
-          setSelectedConversationId(existingConversation.id)
+          conversationId = existingConversation.id
+          // Pre-fill the input — the opening message was already sent in the
+          // past, so let the landlord type a fresh reminder instead.
+          setMessageInput(contextMessage)
         } else {
-          const payload = {
+          const result = await messagesAPI.createConversation({
             property_id: propertyId,
             landlord_id: user.id,
             tenant_id: tenantId,
-            initial_message: getContextualInitialMessage(context),
-          }
-          const result = await messagesAPI.createConversation(payload)
-          router.replace(`/landlord/messages?conversation=${result.conversation_id}`)
-          setSelectedConversationId(result.conversation_id)
+            initial_message: contextMessage,
+          })
+          conversationId = result.conversation_id
+          // Opening message already sent by the backend — leave input empty
+          // so the landlord isn't about to double-send the same text.
         }
+
+        // Update context badge immediately (before the conversation list re-loads)
+        if (context) setConversationContext(context)
+
+        // Navigate to the conversation
+        router.replace(`/landlord/messages?conversation=${conversationId}`)
+        setSelectedConversationId(conversationId)
+
+        // Refresh the conversation list so the new entry appears in the left panel
+        // (non-blocking — fires in the background)
+        fetchConversations()
       } catch (error: any) {
-        toast.error(
-          `Failed to start conversation: ${error?.response?.data?.detail ?? error?.message ?? "Unknown error"}`
-        )
+        const errorMessage = error?.response?.data?.detail ?? error?.message ?? "Unknown error"
+        console.error("[CONVERSATION] handleCreateConversationFromParams error:", errorMessage)
+        toast.error("Failed to open conversation. Please try again.")
       } finally {
         setIsCreatingConversation(false)
+        creatingConversationRef.current = false
       }
     },
-    [user?.id, isCreatingConversation, router, getContextualInitialMessage]
+    // NOTE: creatingConversationRef intentionally omitted from deps — refs are
+    // stable and do not need to be listed. Only true reactive values listed.
+    [user?.id, router, getContextualInitialMessage, fetchConversations]
   )
 
   // ─── Keyboard handler ────────────────────────────────────────────────────
@@ -431,19 +468,21 @@ export default function LandlordMessagesPage() {
 
   useEffect(() => {
     if (!searchParams) return
-    
+
     const tenantId = searchParams.get("tenant")
     const propertyId = searchParams.get("property")
     const conversationId = searchParams.get("conversation")
     const context = searchParams.get("context")
-    
+
     // Update conversation context for UI indicators
     setConversationContext(context)
-    
-    if (tenantId && propertyId && !conversationId && !isCreatingConversation) {
+
+    if (tenantId && propertyId && !conversationId) {
+      // The ref guard inside handleCreateConversationFromParams ensures this
+      // never runs twice concurrently, even if searchParams triggers a re-render.
       handleCreateConversationFromParams(tenantId, propertyId, context)
     }
-  }, [searchParams, isCreatingConversation, handleCreateConversationFromParams])
+  }, [searchParams, handleCreateConversationFromParams])
 
   // ─── Filter effect ───────────────────────────────────────────────────────
 
@@ -475,6 +514,21 @@ export default function LandlordMessagesPage() {
   const isBannerDismissed = selectedConversationId
     ? dismissedBanners.has(`${selectedConversationId}:rental-context`)
     : false
+
+  // Derive the partner name from the conversation list entry when available,
+  // falling back to whatever the messages response carries on the sender objects.
+  // This covers the window between conversation creation and the list re-loading
+  // where selectedConversation is undefined but messages are already showing.
+  const partnerName: string = (() => {
+    if (selectedConversation?.partner?.name) return selectedConversation.partner.name
+    // Try to find the tenant's name from already-loaded messages
+    if (messages.length > 0 && conversationDetail) {
+      const tenantId = conversationDetail.tenant_id
+      const tenantMsg = messages.find(m => m.sender_id === tenantId && m.sender?.full_name)
+      if (tenantMsg?.sender?.full_name) return tenantMsg.sender.full_name
+    }
+    return "Tenant"
+  })()
 
   // FIX-10: filter soft-deleted messages before grouping.
   // deleted_at is non-null when a message has been soft-deleted (migration 0001).
@@ -722,7 +776,7 @@ export default function LandlordMessagesPage() {
                   <Avatar className="h-10 w-10 ring-2 ring-slate-100 flex-shrink-0">
                     <AvatarImage src={selectedConversation?.partner?.avatar_url ?? undefined} />
                     <AvatarFallback className="bg-orange-100 text-orange-700 font-semibold text-sm">
-                      {selectedConversation?.partner?.name?.charAt(0)?.toUpperCase() ?? "T"}
+                      {partnerName.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
 
@@ -730,7 +784,7 @@ export default function LandlordMessagesPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold text-slate-900 text-sm truncate">
-                        {selectedConversation?.partner?.name ?? "Tenant"}
+                        {partnerName}
                       </h3>
                       {selectedConversation?.partner?.verified && (
                         <span className="inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-700 font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0">
@@ -738,9 +792,12 @@ export default function LandlordMessagesPage() {
                           Verified
                         </span>
                       )}
-                      <span className="text-[10px] bg-orange-100 text-orange-600 font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
-                        Tenant
-                      </span>
+                      {/* Only show the role badge when we actually know user_type */}
+                      {(selectedConversation?.partner?.user_type ?? "tenant") === "tenant" && (
+                        <span className="text-[10px] bg-orange-100 text-orange-600 font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
+                          Tenant
+                        </span>
+                      )}
                       {selectedConversation?.partner?.trust_score != null && (
                         <span className="inline-flex items-center gap-1 text-[10px] bg-yellow-50 text-yellow-700 font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
                           <Star className="h-2.5 w-2.5 text-yellow-500" />

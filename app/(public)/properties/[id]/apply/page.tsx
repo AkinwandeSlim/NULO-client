@@ -278,29 +278,29 @@ export default function ApplicationPage() {
     setIsSubmitting(true)
 
     try {
-      // BUG-025 FIX: Upload each document to Supabase Storage via the
-      // server endpoint (uses service-role, bypasses RLS). Storing the
-      // returned *path* (not a URL) lets the landlord view request
-      // signed URLs at render time.
+      // Upload all documents in parallel so the tenant isn't waiting for
+      // each file to finish before the next one starts.
       const documentFields = ["idDocument", "proofOfIncome", "bankStatement", "employmentLetter"] as const
-      const documentUrls: string[] = []
 
-      for (const field of documentFields) {
-        const file = formData[field] as File | null
-        if (!file) continue
+      const uploadResults = await Promise.all(
+        documentFields.map(async (field) => {
+          const file = formData[field] as File | null
+          if (!file) return null
+          try {
+            const uploaded = await applicationsAPI.uploadDocument(file)
+            return uploaded.path
+          } catch (uploadErr: any) {
+            console.error("[APPLY] Document upload failed", { field, uploadErr })
+            const detail =
+              uploadErr?.response?.data?.detail ||
+              uploadErr?.message ||
+              "Unknown upload error"
+            throw new Error(`Failed to upload ${field}: ${detail}`)
+          }
+        })
+      )
 
-        try {
-          const uploaded = await applicationsAPI.uploadDocument(file)
-          documentUrls.push(uploaded.path)
-        } catch (uploadErr: any) {
-          console.error("[APPLY] Document upload failed", { field, uploadErr })
-          const detail =
-            uploadErr?.response?.data?.detail ||
-            uploadErr?.message ||
-            "Unknown upload error"
-          throw new Error(`Failed to upload ${field}: ${detail}`)
-        }
-      }
+      const documentUrls: string[] = uploadResults.filter((p): p is string => p !== null)
 
       // Build references as JSONB object (database schema: references jsonb)
       const referencesData: Record<string, any> = {

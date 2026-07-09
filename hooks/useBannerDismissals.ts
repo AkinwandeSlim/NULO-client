@@ -117,11 +117,28 @@ export function useBannerDismissals(): UseBannerDismissalsReturn {
         fetchedRef.current = true
         lastUserIdRef.current = user.id
         console.log('✅ [useBannerDismissals] Loaded', next.size, 'dismissals')
-      } catch (err) {
-        console.error('❌ [useBannerDismissals] Failed to load dismissals:', err)
-        // Fail open: if the backend is unreachable, no banners are
-        // dismissed, so all candidates show. This is the safe default.
-        setDismissedKeys(new Set())
+      } catch (err: any) {
+        if (!cancelled) {
+          const isTimeout = err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')
+          if (isTimeout) {
+            console.warn('⏱️ [useBannerDismissals] API timeout — using localStorage fallback')
+            // Fall back to localStorage dismissals on timeout
+            // This prevents dashboard from being completely blocked
+            const storedKeys = new Set<string>()
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i)
+              if (key?.startsWith('banner_dismissed_')) {
+                storedKeys.add(key.replace('banner_dismissed_', ''))
+              }
+            }
+            setDismissedKeys(storedKeys)
+          } else {
+            console.error('❌ [useBannerDismissals] Failed to load dismissals:', err)
+            // Fail open: if the backend is unreachable, no banners are
+            // dismissed, so all candidates show. This is the safe default.
+            setDismissedKeys(new Set())
+          }
+        }
       } finally {
         if (!cancelled) setIsLoading(false)
       }

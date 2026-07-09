@@ -61,7 +61,7 @@ import { applicationsAPI, type Application } from "@/lib/api/applications"
 
 import { agreementsAPI } from "@/lib/api/agreements"
 
-import { paymentsAPI } from "@/lib/api/payments"
+import { paymentsAPI } from "@/lib/api/payments";
 
 import { engagementAPI, getEngagementLevelColor, getEngagementLevelTextColor, getEngagementLevelBgColor, getTrustScoreColor, getTrustScoreTextColor, getTrustScoreBgColor, trackEngagement } from "@/lib/api/engagement"
 import { isBannerDismissed, dismissBanner, buildBannerKey } from "@/lib/bannerStorage"
@@ -70,7 +70,22 @@ import { isBannerDismissed, dismissBanner, buildBannerKey } from "@/lib/bannerSt
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: Derive effective status from timestamps
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * The DB `status` field can lag — e.g. a tenant signs but the backend hasn't
+ * flipped `PENDING_TENANT` → `PENDING_LANDLORD` yet.
+ * This function resolves the true status from timestamps (which are facts).
+ */
+function getEffectiveStatus(a: any) {
+  const tenantSigned   = Boolean(a.tenant_signed_at)
+  const landlordSigned = Boolean(a.landlord_signed_at)
 
+  if (tenantSigned && !landlordSigned)  return "PENDING_LANDLORD"
+  if (!tenantSigned && landlordSigned)  return "PENDING_TENANT"
+  return a.status
+}
 
 export default function LandlordDashboard() {
 
@@ -238,17 +253,17 @@ export default function LandlordDashboard() {
 
 
   // Calculate agreement stats from fetched data
-
   const agreementStats = useMemo(() => {
-
     const totalCount = agreements.length
-
-    const fullySignedCount = agreements.filter(a => a.status === 'SIGNED' || a.status === 'ACTIVE').length
-
-    const pendingCount = agreements.filter(a => a.status === 'PENDING_LANDLORD' || a.status === 'PENDING_TENANT').length
-
+    const fullySignedCount = agreements.filter(a => {
+      const effectiveStatus = getEffectiveStatus(a)
+      return effectiveStatus === 'SIGNED' || effectiveStatus === 'ACTIVE'
+    }).length
+    const pendingCount = agreements.filter(a => {
+      const effectiveStatus = getEffectiveStatus(a)
+      return effectiveStatus === 'PENDING_LANDLORD' || effectiveStatus === 'PENDING_TENANT'
+    }).length
     return { totalCount, fullySignedCount, pendingCount }
-
   }, [agreements])
 
   // Total Collected = ALL payments received (escrow + withdrawn combined)
@@ -284,10 +299,19 @@ export default function LandlordDashboard() {
 
   useEffect(() => { setMounted(true) }, [])
 
+  // ✅ FIX: Use a ref to always call the LATEST fetchLandlordDashboard function
+  // (which is recreated on every landlordData change due to useCallback in the
+  // context), but exclude it from the useEffect's dependency array to avoid
+  // an infinite re-fetch loop. Also use a guard ref to prevent overlapping
+  // fetches if the effect somehow fires twice in a row.
+  const fetchLandlordFnRef = useRef(fetchLandlordDashboard)
+  fetchLandlordFnRef.current = fetchLandlordDashboard
+  const landlordFetchInFlightRef = useRef(false)
+
   useEffect(() => {
     if (!mounted) return
-
     if (!user) return
+    if (landlordFetchInFlightRef.current) return  // guard against rapid re-fires
 
     console.log(' [OVERVIEW] User data check:', {
       user_type: user?.user_type,
@@ -296,15 +320,18 @@ export default function LandlordDashboard() {
 
     if (user.user_type === 'landlord') {
       // Fetch dashboard immediately — do not wait for userTypeConfirmed
-      if (!landlordData) {
-        setHasFetchedOnce(false)
-        fetchLandlordDashboard()
-          .catch(() => { /* error handled in context */ })
-          .finally(() => setHasFetchedOnce(true))
-      } else {
-        // We already have data (e.g., from cache or navigation) — mark as fetched
-        setHasFetchedOnce(true)
-      }
+      // ✅ FIX: Force a fresh fetch on every page mount. The 60s cache was
+      // causing stale "Occupied: 1" / "0 signed" stats to persist after the
+      // tenant's payment status changed. Now the user always sees the
+      // freshest data when navigating via the navbar "Overview" button.
+      setHasFetchedOnce(false)
+      landlordFetchInFlightRef.current = true
+      fetchLandlordFnRef.current(true)
+        .catch(() => { /* error handled in context */ })
+        .finally(() => {
+          setHasFetchedOnce(true)
+          landlordFetchInFlightRef.current = false
+        })
     } else if (userTypeConfirmed) {
       // Only redirect AFTER DB has confirmed this is genuinely not a landlord.
       // Without this guard, a landlord with stale JWT gets kicked to '/'
@@ -314,7 +341,7 @@ export default function LandlordDashboard() {
     }
     // If user_type !== 'landlord' AND !userTypeConfirmed: wait silently
 
-  }, [mounted, user, userTypeConfirmed, landlordData, fetchLandlordDashboard, router])
+  }, [mounted, user, userTypeConfirmed, router])
 
 
 
@@ -332,18 +359,8 @@ export default function LandlordDashboard() {
 
       try {
 
-        // 💾 CHECK CACHE FIRST: Use cached data if available
-
-        if (landlordData.viewingRequests && landlordData.viewingRequests.length > 0) {
-          console.log('📦 [OVERVIEW] Using cached viewing requests')
-          setViewingRequests(landlordData.viewingRequests.filter((v: any) => v.status === 'pending' || v.status === 'confirmed' || v.status === 'completed'))
-          setViewingsLoading(false)
-          return
-        }
-
-
-
-        // 🔄 FALLBACK: Fetch separately if not in cache
+        // Always fetch fresh viewing requests from API to ensure accurate stats
+        // (manual DB changes need to be reflected immediately)
 
         console.log('🔄 [OVERVIEW] Fetching viewing requests from API...')
 
@@ -405,23 +422,8 @@ export default function LandlordDashboard() {
 
       try {
 
-        // 💾 CHECK CACHE FIRST: Use cached data if available
-
-        if (landlordData.receivedApplications && landlordData.receivedApplications.length > 0) {
-
-          console.log('📦 [OVERVIEW] Using cached received applications')
-
-          setApplications(landlordData.receivedApplications as any[])
-
-          setApplicationsLoading(false)
-
-          return
-
-        }
-
-
-
-        // 🔄 FALLBACK: Fetch separately if not in cache
+        // Always fetch fresh applications from API to ensure accurate stats
+        // (manual DB changes need to be reflected immediately)
 
         console.log('🔄 [OVERVIEW] Fetching applications from API...')
 
@@ -489,29 +491,16 @@ export default function LandlordDashboard() {
 
       try {
 
-        // 💾 CHECK CACHE FIRST: Use cached data if available
-
-        if (landlordData.agreements && landlordData.agreements.length > 0) {
-
-          console.log('📦 [OVERVIEW] Using cached agreements')
-
-          setAgreements(landlordData.agreements)
-
-          setAgreementsLoading(false)
-
-          return
-
-        }
-
-
-
-        // 🔄 FALLBACK: Fetch separately if not in cache
+        // Always fetch fresh agreements from API to ensure accurate occupancy stats
+        // (manual DB changes need to be reflected immediately)
 
         console.log('🔄 [OVERVIEW] Fetching agreements from API...')
 
         setAgreementsLoading(true)
 
         const data = await agreementsAPI.getMyAgreements()
+
+        console.log('📊 [OVERVIEW] Agreements API response:', data)
 
         // Handle array or wrapped response
 
@@ -529,6 +518,8 @@ export default function LandlordDashboard() {
 
           : []
 
+        console.log('📊 [OVERVIEW] Agreements list length:', list.length)
+
         // Show all agreements with relevant statuses
 
         const filtered = list.filter((agreement: any) => 
@@ -536,6 +527,8 @@ export default function LandlordDashboard() {
           ['ACTIVE', 'SIGNED', 'PENDING_LANDLORD', 'PENDING_TENANT', 'EXPIRED'].includes(agreement.status)
 
         )
+
+        console.log('📊 [OVERVIEW] Filtered agreements:', filtered.length, 'statuses:', filtered.map((a: any) => a.status))
 
         setAgreements(filtered)
 
@@ -920,9 +913,22 @@ export default function LandlordDashboard() {
     }
 
     // Priority 4: Pending landlord signature (agreements waiting for landlord)
-    const pendingSignatureAgreements = agreements.filter((a: any) => 
-      a.status === 'PENDING_LANDLORD' && !isBannerDismissed(buildBannerKey('landlord_signature', a.id))
-    )
+    // Also show PENDING_TENANT agreements so landlord knows tenant is reviewing
+    console.log('📝 [LANDLORD BANNER DEBUG] All agreements:', agreements.map((a: any) => ({ 
+      id: a.id, 
+      status: a.status,
+      effectiveStatus: getEffectiveStatus(a),
+      title: a.property_title || a.property?.title,
+      tenant_signed_at: a.tenant_signed_at,
+      landlord_signed_at: a.landlord_signed_at,
+      key: buildBannerKey('landlord_signature', a.id),
+      isDismissed: isBannerDismissed(buildBannerKey('landlord_signature', a.id))
+    })))
+    const pendingSignatureAgreements = agreements.filter((a: any) => {
+      const effectiveStatus = getEffectiveStatus(a)
+      return (effectiveStatus === 'PENDING_LANDLORD' || effectiveStatus === 'PENDING_TENANT') && !isBannerDismissed(buildBannerKey('landlord_signature', a.id))
+    })
+    console.log('📝 [LANDLORD BANNER DEBUG] Pending signature agreements:', pendingSignatureAgreements)
     if (pendingSignatureAgreements.length > 0) {
       return { type: 'pending-signature', data: pendingSignatureAgreements[0] }
     }
@@ -973,15 +979,24 @@ export default function LandlordDashboard() {
 
     // Priority 9: Pending viewing requests
     const pendingViewingsCount = viewingRequestsList.filter((v: any) => v.status === 'pending').length
+    console.log('🏠 [LANDLORD BANNER DEBUG] pendingViewingsCount:', pendingViewingsCount)
     if (pendingViewingsCount > 0 && !isBannerDismissed(buildBannerKey('viewing_request', `pending-${pendingViewingsCount}`))) {
+      console.log('🏠 [LANDLORD BANNER DEBUG] Returning pending-viewings banner')
       return { type: 'pending-viewings', data: { count: pendingViewingsCount } }
     }
 
     // Priority 10: Verified but no properties
+    console.log('🏠 [LANDLORD BANNER DEBUG] Check no properties:', { 
+      profileExists: !!landlordData?.profile, 
+      userVerified: user?.verification_status === 'approved', 
+      totalProperties: landlordData?.stats?.total_properties 
+    })
     if (landlordData?.profile && user?.verification_status === 'approved' && landlordData?.stats?.total_properties === 0) {
+      console.log('🏠 [LANDLORD BANNER DEBUG] Returning no-properties banner')
       return { type: 'no-properties', data: null }
     }
 
+    console.log('🏠 [LANDLORD BANNER DEBUG] No active banner')
     return null
   }, [landlordData, viewingRequestsList, receivedPayments, paymentsLoading, agreements, applications, user?.verification_status])
 
@@ -2013,29 +2028,34 @@ export default function LandlordDashboard() {
 
             case 'pending-signature': {
               const agreement = activeBanner.data
+              const effectiveStatus = getEffectiveStatus(agreement)
+              const isTenantTurn = effectiveStatus === 'PENDING_TENANT'
               return (
-                <Card className="mb-8 border-purple-200 bg-gradient-to-r from-purple-50 to-violet-50 shadow-sm">
+                <Card className={`mb-8 border-2 ${isTenantTurn ? 'border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50' : 'border-purple-200 bg-gradient-to-r from-purple-50 to-violet-50'} shadow-sm`}>
                   <CardContent className="p-6">
                     <div className="flex items-start gap-4">
-                      <div className="h-12 w-12 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <div className={`h-12 w-12 ${isTenantTurn ? 'bg-blue-500' : 'bg-purple-500'} rounded-full flex items-center justify-center flex-shrink-0`}>
                         <FileCheck className="h-6 w-6 text-white" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-bold text-purple-900 mb-1">
-                          📝 Agreement Awaiting Your Signature
+                        <h3 className={`text-lg font-bold ${isTenantTurn ? 'text-blue-900' : 'text-purple-900'} mb-1`}>
+                          {isTenantTurn ? '📋 Agreement Awaiting Tenant Signature' : '📝 Agreement Awaiting Your Signature'}
                         </h3>
-                        <p className="text-purple-700 text-sm mb-3">
-                          A tenant has signed the agreement for '{agreement.property_title || 'Property'}'. Review and sign to finalize the rental agreement.
+                        <p className={`${isTenantTurn ? 'text-blue-700' : 'text-purple-700'} text-sm mb-3`}>
+                          {isTenantTurn 
+                            ? `The agreement for '${agreement.property_title || agreement.property?.title || 'Property'}' is ready for the tenant to review and sign.`
+                            : `A tenant has signed the agreement for '${agreement.property_title || agreement.property?.title || 'Property'}'. Review and sign to finalize the rental agreement.`
+                          }
                         </p>
                         <div className="flex items-center gap-3">
                           <Link href={`/landlord/agreements/${agreement.id}`}>
-                            <Button className="bg-purple-600 hover:bg-purple-700 text-white shadow-md">
-                              <FileCheck className="mr-2 h-4 w-4" />
-                              Review & Sign
+                            <Button className={`${isTenantTurn ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'} text-white shadow-md`}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              View Agreement
                             </Button>
                           </Link>
                           <Link href="/landlord/agreements">
-                            <Button variant="outline" className="border-purple-300 text-purple-700 hover:bg-purple-50">
+                            <Button variant="outline" className={isTenantTurn ? 'border-blue-300 text-blue-700 hover:bg-blue-50' : 'border-purple-300 text-purple-700 hover:bg-purple-50'}>
                               View All Agreements
                             </Button>
                           </Link>
@@ -2043,12 +2063,12 @@ export default function LandlordDashboard() {
                       </div>
                       <button
                         onClick={() => dismissBanner(buildBannerKey('landlord_signature', agreement.id))}
-                        className="hidden sm:block text-purple-400 hover:text-purple-600 transition-colors"
+                        className={`hidden sm:block ${isTenantTurn ? 'text-blue-400 hover:text-blue-600' : 'text-purple-400 hover:text-purple-600'} transition-colors`}
                       >
                         <X className="h-5 w-5" />
                       </button>
                       <div className="hidden sm:block">
-                        <div className="text-4xl">📝</div>
+                        <div className="text-4xl">{isTenantTurn ? '📋' : '📝'}</div>
                       </div>
                     </div>
                   </CardContent>
@@ -2363,20 +2383,120 @@ export default function LandlordDashboard() {
           </div>
         )}
 
-        {/* Stats — Optimized 4-card grid focused on property management */}
+        {/* Revenue & Payment Tracking Card */}
+        <div className="mb-12">
+          <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 shadow-md">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-2xl">
+                    <TrendingUp className="w-6 h-6 text-green-600" />
+                    Revenue &amp; Payments
+                  </CardTitle>
+                  <p className="text-sm text-slate-600 mt-1">Track rental income and payment collections</p>
+                </div>
+                <Link href="/landlord/payments">
+                  <Button variant="outline" size="sm" className="border-green-300 text-green-700 hover:bg-green-100">
+                    View All <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                console.log('💰 [REVENUE CARD DEBUG] Received payments:', receivedPayments.length)
+                console.log('💰 [REVENUE CARD DEBUG] Total collected:', totalPaymentsCollected)
+                console.log('💰 [REVENUE CARD DEBUG] In escrow:', totalPendingAmount)
+                console.log('💰 [REVENUE CARD DEBUG] Withdrawn:', totalWithdrawnAmount)
+                console.log('💰 [REVENUE CARD DEBUG] Agreements:', agreements.length)
+                console.log('💰 [REVENUE CARD DEBUG] Stats:', stats)
+                return null
+              })()}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="p-5 rounded-lg bg-white border-2 border-green-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-slate-600">Total Collected</p>
+                    <DollarSign className="w-5 h-5 text-green-600" />
+                  </div>
+                  <p className="text-3xl font-bold text-green-600 mb-1">{formatCurrency(totalPaymentsCollected)}</p>
+                  <p className="text-xs text-slate-500">All-time rent payments</p>
+                </div>
+                <div className="p-5 rounded-lg bg-white border-2 border-orange-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-slate-600">In Escrow</p>
+                    <Activity className="w-5 h-5 text-orange-600" />
+                  </div>
+                  <p className="text-3xl font-bold text-orange-600 mb-1">{formatCurrency(totalPendingAmount)}</p>
+                  <p className="text-xs text-slate-500">{totalPendingAmount > 0 ? 'Ready for release' : 'No pending funds'}</p>
+                </div>
+                <div className="p-5 rounded-lg bg-white border-2 border-emerald-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-slate-600">Withdrawn</p>
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <p className="text-3xl font-bold text-emerald-600 mb-1">{formatCurrency(totalWithdrawnAmount)}</p>
+                  <p className="text-xs text-slate-500">Released to your bank</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-green-100">
+                <div className="text-center p-3 rounded-lg bg-white/60">
+                  <p className="text-xs text-slate-500 mb-1">Occupied</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {/* ✅ FIX: Only count ACTIVE (paid) agreements as occupied.
+                        SIGNED agreements (both parties signed, awaiting payment)
+                        are NOT yet occupied — tenant hasn't paid first month rent. */}
+                    {agreements.filter((a: any) => {
+                      const effectiveStatus = getEffectiveStatus(a)
+                      return effectiveStatus === 'ACTIVE'
+                    }).length}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">properties</p>
+                </div>
+                <div className="text-center p-3 rounded-lg bg-white/60">
+                  <p className="text-xs text-slate-500 mb-1">Monthly Rate</p>
+                  <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.monthly_revenue || 0)}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">per month</p>
+                </div>
+                <div className="text-center p-3 rounded-lg bg-white/60">
+                  <p className="text-xs text-slate-500 mb-1">Pending Release</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {receivedPayments.filter((p: any) => p.disbursement_status !== 'released' && p.reconciliation_status === 'FULL_PAYMENT').length}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">payments</p>
+                </div>
+                <div className="text-center p-3 rounded-lg bg-white/60">
+                  <p className="text-xs text-slate-500 mb-1">Occupancy Rate</p>
+                  <p className="text-2xl font-bold text-emerald-600">
+                    {stats.total_properties > 0
+                      ? Math.round((agreements.filter((a: any) => {
+                          // ✅ FIX: Same as above — only ACTIVE (paid) counts as occupied
+                          const effectiveStatus = getEffectiveStatus(a)
+                          return effectiveStatus === 'ACTIVE'
+                        }).length / stats.total_properties) * 100)
+                      : 0}%
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">occupied</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Stats — Expanded grid with more activity and info */}
 
         <div className="mb-12">
 
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-6">Property Management Overview</h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          {/* 9 cards → 3x3 symmetric grid on large screens; 2 cols on sm; 1 on mobile */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
 
 
 
             <Link href="/landlord/properties">
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
                 <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="flex items-start gap-3 sm:gap-4">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
                       <Building2 className="h-5 w-5 sm:h-6 sm:w-6 text-amber-600" />
                     </div>
@@ -2543,17 +2663,20 @@ export default function LandlordDashboard() {
             <Link href="/landlord/occupied-properties">
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
                 <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="flex items-start gap-3 sm:gap-4">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
                       <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-600" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Active Leases</p>
                       {(() => {
-                        // Use agreements (fetched separately) as the reliable source.
-                        // stats.properties_occupied may be stale if property.status
-                        // was never synced when the agreement became ACTIVE.
-                        const activeLeaseCount = agreements.filter((a: any) => a.status === 'ACTIVE' || a.status === 'SIGNED').length
+                        // ✅ FIX: Only count ACTIVE agreements (payment received).
+                        // SIGNED agreements (both parties signed but tenant hasn't paid yet)
+                        // are counted in the new "Agreements Signed" card instead.
+                        const activeLeaseCount = agreements.filter((a: any) => {
+                          const effectiveStatus = getEffectiveStatus(a)
+                          return effectiveStatus === 'ACTIVE'
+                        }).length
                         const vacantCount = Math.max(0, stats.total_properties - stats.properties_pending - stats.properties_rejected - activeLeaseCount)
                         return (
                           <>
@@ -2580,88 +2703,274 @@ export default function LandlordDashboard() {
                 </CardContent>
               </Card>
             </Link>
+            
+            {/* Unread Messages */}
+            <Link href="/landlord/messages">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Messages</p>
+                      {(() => {
+                        console.log('💬 [STAT CARD DEBUG] Stats object:', stats)
+                        console.log('💬 [STAT CARD DEBUG] Unread messages:', stats.unread_messages)
+                        return (
+                          <>
+                            <p className="text-xl sm:text-3xl font-bold text-blue-600 truncate">
+                              {stats.unread_messages || 0}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              {(stats.unread_messages || 0) > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                  {stats.unread_messages} unread
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-400">all caught up</span>
+                              )}
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            
+            {/* Pending Viewings */}
+            <Link href="/landlord/viewings">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-amber-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Viewing Requests</p>
+                      {(() => {
+                        console.log('📅 [STAT CARD DEBUG] All viewing requests:', viewingRequests.map((v: any) => ({ id: v.id, status: v.status })))
+                        const pendingViewingCount = viewingsLoading ? 0 : viewingRequests.filter((v: any) => v.status === 'pending').length
+                        const confirmedViewingCount = viewingsLoading ? 0 : viewingRequests.filter((v: any) => v.status === 'confirmed').length
+                        console.log('📅 [STAT CARD DEBUG] Pending viewing count:', pendingViewingCount, 'Confirmed viewing count:', confirmedViewingCount)
+                        return (
+                          <>
+                            <p className="text-xl sm:text-3xl font-bold text-amber-600 truncate">
+                              {pendingViewingCount + confirmedViewingCount}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              {pendingViewingCount > 0 && (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                  {pendingViewingCount} pending
+                                </span>
+                              )}
+                              {confirmedViewingCount > 0 && (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                  {confirmedViewingCount} confirmed
+                                </span>
+                              )}
+                              {pendingViewingCount + confirmedViewingCount === 0 && (
+                                <span className="text-xs text-slate-400">no requests yet</span>
+                              )}
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            
+            {/* Pending Applications */}
+            <Link href="/landlord/applications">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Applications</p>
+                      {(() => {
+                        console.log('📄 [STAT CARD DEBUG] All applications:', applications.map((a: any) => ({ id: a.id, status: a.status })))
+                        const allAppsCount = applicationsLoading ? 0 : applications.length
+                        const pendingAppCount = applicationsLoading ? 0 : applications.filter((a: any) => a.status === 'pending' || a.status === 'submitted').length
+                        const approvedAppCount = applicationsLoading ? 0 : applications.filter((a: any) => a.status === 'approved').length
+                        // ✅ "Fully signed" = approved application whose agreement has been
+                        // counter-signed by both tenant and landlord. This is the count
+                        // the landlord most cares about for the demo: it shows that
+                        // their application has actually converted into a binding
+                        // agreement awaiting payment, even though it no longer shows
+                        // up as "pending".
+                        const fullySignedAppCount = applicationsLoading
+                          ? 0
+                          : applications.filter((a: any) => {
+                              if (a.status !== 'approved') return false
+                              const linkedAgreement = (agreements || []).find((ag: any) =>
+                                ag.application_id === a.id || ag.id === a.agreement_id
+                              )
+                              if (!linkedAgreement) return false
+                              return Boolean(linkedAgreement.tenant_signed_at && linkedAgreement.landlord_signed_at)
+                            }).length
+                        console.log('📄 [STAT CARD DEBUG] All:', allAppsCount, 'Pending:', pendingAppCount, 'Approved:', approvedAppCount, 'FullySigned:', fullySignedAppCount)
+                        return (
+                          <>
+                            <p className="text-xl sm:text-3xl font-bold text-purple-600 truncate">
+                              {allAppsCount}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              {fullySignedAppCount > 0 && (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                  {fullySignedAppCount} fully signed
+                                </span>
+                              )}
+                              {pendingAppCount > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-pulse" />
+                                  {pendingAppCount} pending review
+                                </span>
+                              ) : allAppsCount === 0 ? (
+                                <span className="text-xs text-slate-400">no applications yet</span>
+                              ) : pendingAppCount === 0 && fullySignedAppCount === 0 ? (
+                                <span className="text-xs text-slate-400">{approvedAppCount} approved</span>
+                              ) : null}
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            
+            {/* Agreements Signed — both parties signed (regardless of payment status) */}
+            <Link href="/landlord/agreements">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileCheck className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Agreements Signed</p>
+                      {(() => {
+                        console.log('📝 [STAT CARD DEBUG] All agreements:', agreements.map((a: any) => ({ 
+                          id: a.id, 
+                          status: a.status,
+                          effectiveStatus: getEffectiveStatus(a),
+                          tenant_signed_at: a.tenant_signed_at,
+                          landlord_signed_at: a.landlord_signed_at,
+                          property_title: a.property?.title || a.property_title
+                        })))
+                        // ✅ Counts ALL agreements where BOTH parties have signed
+                        // regardless of payment status. This includes:
+                        // - SIGNED agreements (awaiting payment)
+                        // - ACTIVE agreements (payment received)
+                        // This gives landlords a complete view of all signed agreements.
+                        const fullySignedCount = agreementsLoading
+                          ? 0
+                          : agreements.filter((a: any) => {
+                              const bothSigned = Boolean(a.tenant_signed_at && a.landlord_signed_at)
+                              return bothSigned
+                            }).length
+                        const awaitingPaymentCount = agreementsLoading
+                          ? 0
+                          : agreements.filter((a: any) => {
+                              const bothSigned = Boolean(a.tenant_signed_at && a.landlord_signed_at)
+                              const effectiveStatus = getEffectiveStatus(a)
+                              return bothSigned && effectiveStatus !== 'ACTIVE'
+                            }).length
+                        console.log('📝 [STAT CARD DEBUG] Fully signed count:', fullySignedCount, 'Awaiting payment:', awaitingPaymentCount)
+                        return (
+                          <>
+                            <p className="text-xl sm:text-3xl font-bold text-indigo-600 truncate">
+                              {fullySignedCount}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              {awaitingPaymentCount > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                                  {awaitingPaymentCount} awaiting payment
+                                </span>
+                              ) : fullySignedCount > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                  all paid
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-400">no signed agreements</span>
+                              )}
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+
+            {/* Pending Signatures */}
+            <Link href="/landlord/agreements">
+              <Card className="border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 bg-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileCheck className="h-5 w-5 sm:h-6 sm:w-6 text-pink-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Agreements to Sign</p>
+                      {(() => {
+                        console.log('📝 [STAT CARD DEBUG] All agreements:', agreements.map((a: any) => ({
+                          id: a.id,
+                          status: a.status,
+                          effectiveStatus: getEffectiveStatus(a),
+                          title: a.property?.title || a.property_title,
+                          tenant_signed_at: a.tenant_signed_at,
+                          landlord_signed_at: a.landlord_signed_at
+                        })))
+                        const pendingLandlordSignCount = agreementsLoading ? 0 : agreements.filter((a: any) => getEffectiveStatus(a) === 'PENDING_LANDLORD').length
+                        const pendingTenantSignCount = agreementsLoading ? 0 : agreements.filter((a: any) => getEffectiveStatus(a) === 'PENDING_TENANT').length
+                        const totalPending = pendingLandlordSignCount + pendingTenantSignCount
+                        console.log('📝 [STAT CARD DEBUG] Pending landlord sign count:', pendingLandlordSignCount, 'Pending tenant sign count:', pendingTenantSignCount)
+                        return (
+                          <>
+                            <p className="text-xl sm:text-3xl font-bold text-pink-600 truncate">
+                              {pendingLandlordSignCount}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              {pendingLandlordSignCount > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-pink-700 bg-pink-50 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-pink-500 animate-pulse" />
+                                  {pendingLandlordSignCount} waiting for you
+                                </span>
+                              ) : pendingTenantSignCount > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                                  {pendingTenantSignCount} tenant reviewing
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-400">all signed</span>
+                              )}
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
 
           </div>
-        </div>
-
-        {/* Revenue & Payment Tracking Card */}
-        <div className="mb-12">
-          <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 shadow-md">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-2xl">
-                    <TrendingUp className="w-6 h-6 text-green-600" />
-                    Revenue &amp; Payments
-                  </CardTitle>
-                  <p className="text-sm text-slate-600 mt-1">Track rental income and payment collections</p>
-                </div>
-                <Link href="/landlord/payments">
-                  <Button variant="outline" size="sm" className="border-green-300 text-green-700 hover:bg-green-100">
-                    View All <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="p-5 rounded-lg bg-white border-2 border-green-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-semibold text-slate-600">Total Collected</p>
-                    <DollarSign className="w-5 h-5 text-green-600" />
-                  </div>
-                  <p className="text-3xl font-bold text-green-600 mb-1">{formatCurrency(totalPaymentsCollected)}</p>
-                  <p className="text-xs text-slate-500">All-time rent payments</p>
-                </div>
-                <div className="p-5 rounded-lg bg-white border-2 border-orange-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-semibold text-slate-600">In Escrow</p>
-                    <Activity className="w-5 h-5 text-orange-600" />
-                  </div>
-                  <p className="text-3xl font-bold text-orange-600 mb-1">{formatCurrency(totalPendingAmount)}</p>
-                  <p className="text-xs text-slate-500">{totalPendingAmount > 0 ? 'Ready for release' : 'No pending funds'}</p>
-                </div>
-                <div className="p-5 rounded-lg bg-white border-2 border-emerald-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-semibold text-slate-600">Withdrawn</p>
-                    <CheckCircle className="w-5 h-5 text-emerald-600" />
-                  </div>
-                  <p className="text-3xl font-bold text-emerald-600 mb-1">{formatCurrency(totalWithdrawnAmount)}</p>
-                  <p className="text-xs text-slate-500">Released to your bank</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-green-100">
-                <div className="text-center p-3 rounded-lg bg-white/60">
-                  <p className="text-xs text-slate-500 mb-1">Occupied</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {agreements.filter((a: any) => a.status === 'ACTIVE' || a.status === 'SIGNED').length}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-0.5">properties</p>
-                </div>
-                <div className="text-center p-3 rounded-lg bg-white/60">
-                  <p className="text-xs text-slate-500 mb-1">Monthly Rate</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.monthly_revenue || 0)}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">per month</p>
-                </div>
-                <div className="text-center p-3 rounded-lg bg-white/60">
-                  <p className="text-xs text-slate-500 mb-1">Pending Release</p>
-                  <p className="text-2xl font-bold text-orange-600">
-                    {receivedPayments.filter((p: any) => p.disbursement_status !== 'released' && p.reconciliation_status === 'FULL_PAYMENT').length}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-0.5">payments</p>
-                </div>
-                <div className="text-center p-3 rounded-lg bg-white/60">
-                  <p className="text-xs text-slate-500 mb-1">Occupancy Rate</p>
-                  <p className="text-2xl font-bold text-emerald-600">
-                    {stats.total_properties > 0
-                      ? Math.round((agreements.filter((a: any) => a.status === 'ACTIVE' || a.status === 'SIGNED').length / stats.total_properties) * 100)
-                      : 0}%
-                  </p>
-                  <p className="text-xs text-slate-400 mt-0.5">occupied</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Main grid — 3/4 + 1/4 */}

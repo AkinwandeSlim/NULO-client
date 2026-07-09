@@ -155,34 +155,56 @@ export default function TenantPaymentDetailPage() {
     }
   }
 
-  // ─── Payment Schedule Calculation ────────────────────────────────────────────
-  const paymentSchedule = useMemo(() => {
-    if (!agreement?.lease_start_date) return null
+  // Calculate expected total as monthly rent × lease duration in months
+  const calculateExpected = () => {
+    if (!agreement?.lease_start_date || !agreement?.lease_end_date) return Number(agreement?.expected_payment_amount ?? agreement?.rent_amount ?? 0)
+    const leaseStart = new Date(agreement.lease_start_date)
+    const leaseEnd = new Date(agreement.lease_end_date)
+    const totalMonths = (leaseEnd.getFullYear() - leaseStart.getFullYear()) * 12 + 
+      (leaseEnd.getMonth() - leaseStart.getMonth())
+    return Number(agreement.rent_amount ?? 0) * totalMonths
+  }
+  const expected = calculateExpected()
+  const received = Number(agreement?.total_received_amount ?? 0)
+  const balance = Math.max(expected - received, 0)
+  const paymentPct = expected > 0 ? Math.min(100, Math.round((received / expected) * 100)) : 0
 
-    const freqMeta: Record<string, { label: string; periodsPerYear: number }> = {
-      MONTHLY: { label: "Monthly", periodsPerYear: 12 },
-      QUARTERLY: { label: "Quarterly", periodsPerYear: 4 },
-      SEMI_ANNUAL: { label: "Semi-annual", periodsPerYear: 2 },
-      ANNUAL: { label: "Annual", periodsPerYear: 1 },
+  // ─── Payment Schedule Calculation ─────────────────────────────────────────────
+  const paymentSchedule = useMemo(() => {
+    if (!agreement?.lease_start_date || !agreement?.lease_end_date) return null
+
+    const freqMeta: Record<string, { label: string; monthsPerPeriod: number }> = {
+      MONTHLY: { label: "Monthly", monthsPerPeriod: 1 },
+      QUARTERLY: { label: "Quarterly", monthsPerPeriod: 3 },
+      SEMI_ANNUAL: { label: "Semi-annual", monthsPerPeriod: 6 },
+      ANNUAL: { label: "Annual", monthsPerPeriod: 12 },
     }
 
     const freq = agreement.payment_frequency ?? "ANNUAL"
     const meta = freqMeta[freq] ?? freqMeta.ANNUAL
-    const totalRent = Number(agreement.rent_amount ?? 0)
-    const perPaymentAmount = Math.round(totalRent / meta.periodsPerYear)
+    const totalRent = calculateExpected()
+    
+    // Calculate lease duration in months
     const leaseStart = new Date(agreement.lease_start_date)
+    const leaseEnd = new Date(agreement.lease_end_date)
+    const totalMonths = (leaseEnd.getFullYear() - leaseStart.getFullYear()) * 12 + 
+      (leaseEnd.getMonth() - leaseStart.getMonth())
+    const numPeriods = Math.ceil(totalMonths / meta.monthsPerPeriod)
+    
+    // Rent amount is per month, so multiply by months per period
+    const perPaymentAmount = Math.round(Number(agreement.rent_amount ?? 0) * meta.monthsPerPeriod)
+    
     const today = new Date()
     const totalReceived = Number(agreement.total_received_amount ?? 0)
 
     const periods = []
-    const monthsPerPeriod = 12 / meta.periodsPerYear
 
-    for (let i = 0; i < meta.periodsPerYear; i++) {
+    for (let i = 0; i < numPeriods; i++) {
       const periodStart = new Date(leaseStart)
-      periodStart.setMonth(leaseStart.getMonth() + i * monthsPerPeriod)
+      periodStart.setMonth(leaseStart.getMonth() + i * meta.monthsPerPeriod)
       
       const periodEnd = new Date(periodStart)
-      periodEnd.setMonth(periodStart.getMonth() + monthsPerPeriod)
+      periodEnd.setMonth(periodStart.getMonth() + meta.monthsPerPeriod)
       periodEnd.setDate(periodEnd.getDate() - 1)
 
       const daysUntilDue = Math.ceil((periodStart.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
@@ -206,11 +228,15 @@ export default function TenantPaymentDetailPage() {
       })
     }
 
+    const paidPeriods = periods.filter(p => p.isPaid).length
+
     return {
       frequency: meta.label,
       periods,
       perPaymentAmount,
       totalRent,
+      numPeriods,
+      paidPeriods,
     }
   }, [agreement])
 
@@ -224,11 +250,6 @@ export default function TenantPaymentDetailPage() {
       </div>
     )
   }
-
-  const expected = Number(agreement.expected_payment_amount ?? agreement.rent_amount ?? 0)
-  const received = Number(agreement.total_received_amount ?? 0)
-  const balance = Math.max(expected - received, 0)
-  const paymentPct = expected > 0 ? Math.min(100, Math.round((received / expected) * 100)) : 0
 
   const paymentStatus = (() => {
     if (agreement.reconciliation_status === "FULL_PAYMENT" || (balance === 0 && received >= expected))
@@ -302,16 +323,15 @@ export default function TenantPaymentDetailPage() {
           <Card className="border-slate-200 bg-white/90">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Periods</p>
                 <Activity className="w-4 h-4 text-slate-500" />
               </div>
-              <Badge className={`${paymentStatus.cls} flex items-center gap-1 w-fit`}>
-                <paymentStatus.icon className="w-3 h-3" />
-                {paymentStatus.label}
-              </Badge>
               {paymentSchedule && (
-                <p className="text-xs text-slate-500 mt-2">{paymentSchedule.frequency} payments</p>
+                <p className="text-2xl font-bold text-slate-900">
+                  {paymentSchedule.paidPeriods} / {paymentSchedule.numPeriods}
+                </p>
               )}
+              <p className="text-xs text-slate-500 mt-1">{paymentSchedule?.frequency} periods paid</p>
             </CardContent>
           </Card>
         </div>
@@ -321,7 +341,14 @@ export default function TenantPaymentDetailPage() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-slate-900">Payment Progress</h3>
-              <span className="text-sm font-bold text-orange-600">{paymentPct}%</span>
+              <div className="flex items-center gap-4">
+                {paymentSchedule && (
+                  <span className="text-sm font-bold text-orange-600">
+                    {paymentSchedule.paidPeriods}/{paymentSchedule.numPeriods} periods
+                  </span>
+                )}
+                <span className="text-sm font-bold text-orange-600">{paymentPct}%</span>
+              </div>
             </div>
             <Progress value={paymentPct} className="h-3 mb-2" />
             <div className="flex items-center justify-between text-xs text-slate-500">
@@ -331,94 +358,7 @@ export default function TenantPaymentDetailPage() {
           </CardContent>
         </Card>
 
-        {/* ── Payment Schedule Timeline ── */}
-        {paymentSchedule && (
-          <Card className="border-orange-200 bg-white/90 shadow-sm mb-6">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <CalendarClock className="w-5 h-5 text-orange-600" />
-                    Payment Schedule
-                  </CardTitle>
-                  <CardDescription className="mt-1">
-                    {paymentSchedule.frequency} payments · {formatNGN(paymentSchedule.perPaymentAmount)} per period
-                  </CardDescription>
-                </div>
-                <Badge className="bg-orange-100 text-orange-700 border-orange-200">
-                  {paymentSchedule.frequency}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {paymentSchedule.periods.map((period) => (
-                  <div
-                    key={period.index}
-                    className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
-                      period.isPaid
-                        ? "bg-green-50 border-green-200"
-                        : period.isCurrent
-                        ? "bg-orange-50 border-orange-300 shadow-sm"
-                        : "bg-slate-50 border-slate-200"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${
-                          period.isPaid
-                            ? "bg-green-500"
-                            : period.isCurrent
-                            ? "bg-orange-500 animate-pulse"
-                            : "bg-slate-300"
-                        }`}
-                      >
-                        {period.isPaid ? (
-                          <CheckCircle2 className="h-5 w-5 text-white" />
-                        ) : period.isCurrent ? (
-                          <Clock className="h-5 w-5 text-white" />
-                        ) : (
-                          <span className="h-2.5 w-2.5 rounded-full bg-white" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className={`text-sm font-semibold ${
-                          period.isPaid ? "text-green-900" : period.isCurrent ? "text-orange-900" : "text-slate-600"
-                        }`}>
-                          Period {period.index} · {formatCompactDate(period.startDate)} – {formatCompactDate(period.endDate)}
-                        </p>
-                        <p className="text-xs text-slate-500">{formatNGN(period.amount)} due</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      {period.isPaid ? (
-                        <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">
-                          <CheckCircle2 className="w-3 h-3 mr-1" />Paid
-                        </Badge>
-                      ) : period.daysUntilDue !== null && period.daysUntilDue >= -30 && period.daysUntilDue <= 30 ? (
-                        <Badge className={`text-xs ${
-                          period.daysUntilDue <= 0
-                            ? "bg-red-100 text-red-700 border-red-200 animate-pulse"
-                            : period.daysUntilDue <= 7
-                            ? "bg-amber-100 text-amber-700 border-amber-200"
-                            : "bg-orange-100 text-orange-700 border-orange-200"
-                        }`}>
-                          {period.daysUntilDue <= 0 ? "Overdue" : `${period.daysUntilDue}d left`}
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-slate-100 text-slate-500 border-slate-200 text-xs">
-                          {period.isPast ? "Overdue" : "Upcoming"}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── Main grid: history (2/3) + NUBAN panel (1/3) ── */}
+        {/* ── Main grid: history (2/3) + Sidebar (1/3) ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
           {/* Payment History */}
@@ -478,7 +418,7 @@ export default function TenantPaymentDetailPage() {
                     <CardDescription className="mt-1">
                       {history.length === 0
                         ? "No payments recorded yet"
-                        : `${history.length} payment${history.length !== 1 ? "s" : ""} received`}
+                        : `${history.length} payment${history.length !== 1 ? "s" : ""} received · ${formatNGN(history.reduce((s, e) => s + Number(e.amount_received), 0))} total`}
                     </CardDescription>
                   </div>
                 </div>
@@ -498,43 +438,62 @@ export default function TenantPaymentDetailPage() {
                     (historyPage - 1) * HISTORY_PAGE_SIZE,
                     historyPage * HISTORY_PAGE_SIZE,
                   )
-                  const totalPaid = history.reduce((s, e) => s + Number(e.amount_received), 0)
 
                   return (
                     <>
-                      <div className="space-y-2 p-4">
+                      <div className="divide-y divide-slate-100">
                         {pageItems.map((entry) => (
-                          <div key={entry.id} className="flex items-start justify-between p-4 rounded-lg border border-slate-200 hover:border-orange-200 transition-colors">
-                            <div className="flex items-start gap-3 min-w-0">
-                              <div className="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center shrink-0">
-                                <CheckCircle2 className="h-5 w-5 text-green-600" />
-                              </div>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <p className="text-sm font-bold text-slate-900">{formatNGN(entry.amount_received)}</p>
-                                  {entry.reconciliation_result === "FULL_PAYMENT" && (
-                                    <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">Full Payment</Badge>
-                                  )}
-                                  {entry.reconciliation_result === "UNDERPAYMENT" && (
-                                    <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs">Partial</Badge>
-                                  )}
+                          <div key={entry.id} className="p-4 hover:bg-slate-50 transition-colors">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-start gap-3 min-w-0">
+                                <div className="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center shrink-0">
+                                  <CheckCircle2 className="h-5 w-5 text-green-600" />
                                 </div>
-                                <p className="text-xs text-slate-500">{formatDate(entry.created_at)}</p>
-                                {entry.sender_bank && (
-                                  <div className="flex items-center gap-1 mt-1 text-xs text-slate-400">
-                                    <Building2 className="w-3 h-3" />
-                                    <span>{entry.sender_bank}</span>
-                                  </div>
+                                <div className="min-w-0">
+                                  <p className="text-lg font-bold text-slate-900">{formatNGN(entry.amount_received)}</p>
+                                  <p className="text-xs text-slate-500">{formatDate(entry.created_at)}</p>
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-2 shrink-0">
+                                {entry.reconciliation_result === "FULL_PAYMENT" && (
+                                  <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">Full Payment</Badge>
                                 )}
+                                {entry.reconciliation_result === "UNDERPAYMENT" && (
+                                  <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs">Partial</Badge>
+                                )}
+                                {entry.reconciliation_result === "OVERPAYMENT" && (
+                                  <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-xs">Overpayment</Badge>
+                                )}
+                                <Button variant="ghost" size="sm"
+                                  onClick={handleDownloadReceipt} disabled={isDownloadingReceipt}
+                                  className="h-7 text-xs text-orange-700 hover:bg-orange-50 shrink-0 px-2">
+                                  {isDownloadingReceipt
+                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                    : <><Download className="w-3 h-3 mr-1" />Receipt</>}
+                                </Button>
                               </div>
                             </div>
-                            <Button variant="outline" size="sm"
-                              onClick={handleDownloadReceipt} disabled={isDownloadingReceipt}
-                              className="h-8 text-xs text-orange-700 border-orange-200 hover:bg-orange-50 shrink-0">
-                              {isDownloadingReceipt
-                                ? <Loader2 className="w-3 h-3 animate-spin" />
-                                : <><Download className="w-3 h-3 mr-1.5" />Receipt</>}
-                            </Button>
+                            
+                            <div className="grid grid-cols-2 gap-4 pl-13">
+                              {entry.sender_name && (
+                                <div>
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Sender</p>
+                                  <p className="text-xs text-slate-700">{entry.sender_name}</p>
+                                </div>
+                              )}
+                              {entry.sender_bank && (
+                                <div>
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Bank</p>
+                                  <p className="text-xs text-slate-700">{entry.sender_bank}</p>
+                                </div>
+                              )}
+                              {entry.nomba_transaction_id && (
+                                <div className="col-span-2">
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Transaction ID</p>
+                                  <p className="text-xs text-slate-500 font-mono truncate">{entry.nomba_transaction_id}</p>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -564,10 +523,10 @@ export default function TenantPaymentDetailPage() {
             </Card>
           </div>
 
-          {/* NUBAN / Payment Panel */}
+          {/* Sidebar */}
           <div className="space-y-5">
             {agreement.virtual_account_number ? (
-              <Card className="border-orange-300 bg-white/90 shadow-sm sticky top-6">
+              <Card className="border-orange-300 bg-white/90 shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-orange-700">
                     <CreditCard className="w-5 h-5" />
@@ -595,6 +554,23 @@ export default function TenantPaymentDetailPage() {
                     )}
                   </div>
 
+                  {/* Check if both parties have signed */}
+                  {!agreement.tenant_signed_at || !agreement.landlord_signed_at ? (
+                    <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 mb-4">
+                      <div className="flex items-start gap-2 mb-2">
+                        <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-amber-900 mb-0.5">
+                            Agreement not fully signed
+                          </p>
+                          <p className="text-xs text-amber-700">
+                            Please wait for both parties to sign the agreement before making payment.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  
                   {/* Payment status */}
                   {balance > 0 ? (
                     <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 mb-4">
@@ -682,16 +658,120 @@ export default function TenantPaymentDetailPage() {
                   <p className="text-slate-600 mb-6 text-sm">
                     Generate a dedicated account number to pay from any Nigerian bank.
                   </p>
-                  <Button onClick={async () => {
-                    if (!agreementId) return
-                    try {
-                      await paymentsAPI.provisionNomba(agreementId)
-                      toast.success("NUBAN generated successfully")
-                      fetchDetail()
-                    } catch { toast.error("Failed to generate NUBAN") }
-                  }} className="bg-orange-500 hover:bg-orange-600 text-white">
-                    <Building2 className="w-4 h-4 mr-2" />Generate NUBAN
-                  </Button>
+                  {/* Check if both parties have signed */}
+                  {!agreement.tenant_signed_at || !agreement.landlord_signed_at ? (
+                    <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 mb-4">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-amber-900 mb-0.5">
+                            Agreement not fully signed
+                          </p>
+                          <p className="text-xs text-amber-700">
+                            Please wait for both parties to sign the agreement before generating a NUBAN or making payment.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button onClick={async () => {
+                      if (!agreementId) return
+                      try {
+                        await paymentsAPI.provisionNomba(agreementId)
+                        toast.success("NUBAN generated successfully")
+                        fetchDetail()
+                      } catch { toast.error("Failed to generate NUBAN") }
+                    }} className="bg-orange-500 hover:bg-orange-600 text-white">
+                      <Building2 className="w-4 h-4 mr-2" />Generate NUBAN
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── Payment Schedule Timeline ── */}
+            {paymentSchedule && (
+              <Card className="border-orange-200 bg-white/90 shadow-sm">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-sm">
+                        <CalendarClock className="w-4 h-4 text-orange-600" />
+                        Payment Schedule
+                      </CardTitle>
+                      <CardDescription className="mt-1 text-xs">
+                        {paymentSchedule.frequency} payments · {formatNGN(paymentSchedule.perPaymentAmount)} per period
+                      </CardDescription>
+                    </div>
+                    <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">
+                      {paymentSchedule.frequency}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="max-h-96 overflow-y-auto">
+                  <div className="space-y-3">
+                    {paymentSchedule.periods.map((period) => (
+                      <div
+                        key={period.index}
+                        className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                          period.isPaid
+                            ? "bg-green-50 border-green-200"
+                            : period.isCurrent
+                            ? "bg-orange-50 border-orange-300 shadow-sm"
+                            : "bg-slate-50 border-slate-200"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 ${
+                              period.isPaid
+                                ? "bg-green-500"
+                                : period.isCurrent
+                                ? "bg-orange-500 animate-pulse"
+                                : "bg-slate-300"
+                            }`}
+                          >
+                            {period.isPaid ? (
+                              <CheckCircle2 className="h-4 w-4 text-white" />
+                            ) : period.isCurrent ? (
+                              <Clock className="h-4 w-4 text-white" />
+                            ) : (
+                              <span className="text-xs font-bold text-slate-600">{period.index}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className={`text-xs font-semibold ${
+                              period.isPaid ? "text-green-900" : period.isCurrent ? "text-orange-900" : "text-slate-600"
+                            }`}>
+                              {formatCompactDate(period.startDate)}
+                            </p>
+                            <p className="text-[10px] text-slate-500">{formatNGN(period.amount)}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {period.isPaid ? (
+                            <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">
+                              Paid
+                            </Badge>
+                          ) : period.daysUntilDue !== null && period.daysUntilDue >= -30 && period.daysUntilDue <= 30 ? (
+                            <Badge className={`text-[10px] ${
+                              period.daysUntilDue <= 0
+                                ? "bg-red-100 text-red-700 border-red-200 animate-pulse"
+                                : period.daysUntilDue <= 7
+                                ? "bg-amber-100 text-amber-700 border-amber-200"
+                                : "bg-orange-100 text-orange-700 border-orange-200"
+                            }`}>
+                              {period.daysUntilDue <= 0 ? "Overdue" : `${period.daysUntilDue}d left`}
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-slate-100 text-slate-500 border-slate-200 text-[10px]">
+                              {period.isPast ? "Overdue" : "Upcoming"}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             )}

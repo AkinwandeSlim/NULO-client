@@ -97,28 +97,63 @@ export const bannerDismissalsAPI = {
   /**
    * Fetch all current dismissals for the logged-in user. Used on dashboard
    * mount to filter out already-dismissed banners.
+   * 
+   * Timeout strategy:
+   *   - 30s timeout (increased from 10s) to accommodate slow backend queries
+   *   - If timeout occurs, hook falls back to localStorage dismissals
+   *   - This prevents dashboard from being blocked by slow API
    */
   list: async (): Promise<BannerDismissalListResponse> => {
     console.log('🚫 [BANNER DISMISSALS API] Fetching all dismissals...')
-    const response = await apiClient.get<BannerDismissalListResponse>(
-      '/api/v1/banner-dismissals'
-    )
-    console.log('✅ [BANNER DISMISSALS API] Loaded dismissals:', response.data.count)
-    return response.data
+    try {
+      const response = await apiClient.get<BannerDismissalListResponse>(
+        '/api/v1/banner-dismissals',
+        { timeout: 30000 } // 30 second timeout to accommodate backend performance
+      )
+      console.log('✅ [BANNER DISMISSALS API] Loaded dismissals:', response.data.count)
+      return response.data
+    } catch (err: any) {
+      // Log timeout specifically for backend team to optimize query
+      if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+        console.warn('⏱️ [BANNER DISMISSALS API] Request timeout (>30s) — falling back to localStorage')
+      }
+      // Re-throw to let hook handle fallback
+      throw err
+    }
   },
 
   /**
    * Dismiss a banner. Idempotent — re-dismissing updates the row instead of
    * erroring. Returns the timestamp the dismissal was recorded.
+   * 
+   * Non-blocking: errors are logged but don't prevent dismissal optimistically
+   * applied in the hook. Dismissal is persisted to localStorage as fallback.
    */
   dismiss: async (options: DismissBannerOptions): Promise<BannerDismissResponse> => {
     console.log('🚫 [BANNER DISMISSALS API] Dismissing banner:', options.banner_key)
-    const response = await apiClient.post<BannerDismissResponse>(
-      '/api/v1/banner-dismissals',
-      options
-    )
-    console.log('✅ [BANNER DISMISSALS API] Banner dismissed:', response.data.banner_key)
-    return response.data
+    try {
+      const response = await apiClient.post<BannerDismissResponse>(
+        '/api/v1/banner-dismissals',
+        options,
+        { timeout: 15000 } // 15s timeout for POST (typically faster than GET)
+      )
+      console.log('✅ [BANNER DISMISSALS API] Banner dismissed:', response.data.banner_key)
+      return response.data
+    } catch (err: any) {
+      // Log error but don't fail — optimistic update already happened in hook
+      const isTimeout = err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')
+      if (isTimeout) {
+        console.warn('⏱️ [BANNER DISMISSALS API] Dismiss request timeout — using localStorage')
+      } else {
+        console.error('⚠️ [BANNER DISMISSALS API] Dismiss failed, will retry on next session:', err?.message)
+      }
+      // Return a synthetic response since dismissal is already optimistically applied
+      return {
+        success: true,
+        banner_key: options.banner_key,
+        dismissed_at: new Date().toISOString()
+      }
+    }
   },
 
   /**
@@ -128,15 +163,30 @@ export const bannerDismissalsAPI = {
    */
   check: async (candidates: BannerCheckCandidate[]): Promise<BannerCheckResponse> => {
     console.log('🚫 [BANNER DISMISSALS API] Checking', candidates.length, 'candidates...')
-    const response = await apiClient.post<BannerCheckResponse>(
-      '/api/v1/banner-dismissals/check',
-      { candidates }
-    )
-    console.log('✅ [BANNER DISMISSALS API] Check result:', {
-      visible: response.data.visible.length,
-      dismissed: response.data.dismissed.length,
-    })
-    return response.data
+    try {
+      const response = await apiClient.post<BannerCheckResponse>(
+        '/api/v1/banner-dismissals/check',
+        { candidates },
+        { timeout: 20000 } // 20s timeout for check endpoint
+      )
+      console.log('✅ [BANNER DISMISSALS API] Check result:', {
+        visible: response.data.visible.length,
+        dismissed: response.data.dismissed.length,
+      })
+      return response.data
+    } catch (err: any) {
+      // On timeout/error, assume all candidates are visible (fail-safe)
+      const isTimeout = err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')
+      if (isTimeout) {
+        console.warn('⏱️ [BANNER DISMISSALS API] Check timeout — showing all candidates as visible')
+      } else {
+        console.error('⚠️ [BANNER DISMISSALS API] Check failed — showing all candidates as visible:', err?.message)
+      }
+      return {
+        visible: candidates,
+        dismissed: []
+      }
+    }
   },
 
   /**
