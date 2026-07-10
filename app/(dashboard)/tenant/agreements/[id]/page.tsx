@@ -827,12 +827,27 @@ export default function TenantAgreementDetailPage() {
                       <p className="text-slate-600 mb-4">
                         Your payment has been received and confirmed. Your tenancy is now active.
                       </p>
-                      <Link href="/tenant/payments">
-                        <Button variant="outline" className="border-green-300 text-green-700 hover:bg-green-50">
-                          <Eye className="mr-2 h-4 w-4" />
-                          View Payment History
+                      <div className="flex gap-3 justify-center">
+                        <Button 
+                          variant="outline" 
+                          className="border-green-300 text-green-700 hover:bg-green-50"
+                          onClick={async () => {
+                            await fetchAgreement()
+                            await checkExistingPayments()
+                            invalidateTenantCache?.()
+                            toast.success("Payment status refreshed!")
+                          }}
+                        >
+                          <Loader2 className="mr-2 h-4 w-4" />
+                          Refresh Status
                         </Button>
-                      </Link>
+                        <Link href="/tenant/payments">
+                          <Button variant="outline" className="border-green-300 text-green-700 hover:bg-green-50">
+                            <Eye className="mr-2 h-4 w-4" />
+                            View Payment History
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
                   ) : isPartiallyPaid ? (
                     /* Payment in progress — money has arrived but not the full

@@ -865,6 +865,18 @@ export default function LandlordDashboard() {
 
   const viewingRequestsList = useMemo(() => viewingRequests, [viewingRequests])
 
+  // Helper variables for banner logic - must be defined BEFORE activeBanner useMemo
+  const rawProperties = landlordData?.properties ?? []
+  const properties = useMemo(
+    () => (rawProperties ?? []).filter((p: any) => !p?.deleted_at),
+    [rawProperties]
+  )
+  const hasProperties = properties.length > 0
+  const hasActiveAgreements = agreements.some((a: any) => {
+    const effectiveStatus = getEffectiveStatus(a)
+    return effectiveStatus === 'ACTIVE'
+  })
+
 
 
   // Priority-based banner system for landlord dashboard
@@ -1469,27 +1481,7 @@ export default function LandlordDashboard() {
 
     return null
 
-  }, [landlordData, viewingRequestsList, receivedPayments, paymentsLoading, agreements, agreementsLoading, user?.verification_status])
-
-  // REG-08 fix (defense in depth): backend now also excludes soft-deleted
-  // properties by default, but a stale cache snapshot may still contain one.
-  // Filter here so the overview never renders a "Deleted"-labelled tile.
-  // Soft-delete data is preserved in the DB for admin / moderation access.
-  // NOTE: must live BEFORE the early returns below to satisfy Rules of Hooks.
-  const rawProperties = landlordData?.properties ?? []
-  const properties = useMemo(
-    () => (rawProperties ?? []).filter((p: any) => !p?.deleted_at),
-    [rawProperties]
-  )
-
-  // Helper variables for banner logic
-  const hasProperties = properties.length > 0
-  const hasActiveAgreements = agreements.some((a: any) => {
-    const effectiveStatus = getEffectiveStatus(a)
-    return effectiveStatus === 'ACTIVE'
-  })
-
-
+  }, [landlordData, viewingRequestsList, receivedPayments, paymentsLoading, agreements, agreementsLoading, user?.verification_status, hasProperties, hasActiveAgreements])
 
   // ─── Loading — same spinner as tenant ────────────────────────────────────────
 
