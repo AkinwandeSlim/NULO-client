@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTenantDashboard } from "@/contexts/DashboardContext"
 import { useNotifications } from "@/contexts/NotificationContext"
@@ -68,6 +68,7 @@ export default function TenantDashboard() {
   const { dismiss: dismissServerBanner, isReady: bannerDismissalsReady } = useBannerDismissals()
   const { notifications, unreadCount } = state
   const router = useRouter()
+  const pathname = usePathname()
 
   const [mounted, setMounted] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -235,7 +236,7 @@ export default function TenantDashboard() {
       .finally(() => {
         fetchInFlightRef.current = false
       })
-  }, [mounted, user?.id, user?.user_type])
+  }, [mounted, user?.id, user?.user_type, pathname])
 
   // Fetch tenant payments for banner notifications
   useEffect(() => {

@@ -341,7 +341,7 @@ export default function LandlordDashboard() {
     }
     // If user_type !== 'landlord' AND !userTypeConfirmed: wait silently
 
-  }, [mounted, user, userTypeConfirmed, router])
+  }, [mounted, user, userTypeConfirmed, router, pathname])
 
 
 
