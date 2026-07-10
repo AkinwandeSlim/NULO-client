@@ -243,14 +243,28 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 500) {
       const data = error.response.data;
       const hasContent = data && typeof data === 'object' && Object.keys(data).length > 0;
-      console.error('Server error (500):', {
-        url: error.config?.url,
-        method: error.config?.method?.toUpperCase(),
-        status: error.response.status,
-        statusText: error.response.statusText,
-        data: hasContent ? data : '(empty body)',
-        message: hasContent ? null : `Empty 500 response from ${error.config?.url} - check server logs for stack trace`,
-      });
+      const method = (error.config?.method ?? '').toUpperCase();
+      // Log 500 errors as warnings for GET requests (often transient, handled by retry logic)
+      // Log as errors for POST/PUT/DELETE (mutations that failed)
+      if (method === 'GET') {
+        console.warn('Server error (500) on GET request:', {
+          url: error.config?.url,
+          method: method,
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: hasContent ? data : '(empty body)',
+          message: hasContent ? null : `Empty 500 response from ${error.config?.url} - check server logs for stack trace`,
+        });
+      } else {
+        console.error('Server error (500) on mutation:', {
+          url: error.config?.url,
+          method: method,
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: hasContent ? data : '(empty body)',
+          message: hasContent ? null : `Empty 500 response from ${error.config?.url} - check server logs for stack trace`,
+        });
+      }
     }
 
     // ── Auto-retry on transient network errors / 502 / 503 ──────────────────

@@ -958,7 +958,7 @@ export default function LandlordDashboard() {
       const recentPayment = receivedPayments.find((p: any) =>
         p.disbursement_status === 'released' &&
         new Date(p.updated_at).getTime() > fortyEightHoursAgo &&
-        !isBannerDismissed(buildBannerKey('payment_confirmed', p.agreement_id))
+        !isBannerDismissed(buildBannerKey('payment_confirmed', p.id))
       )
       if (recentPayment) {
         return { type: 'payment-confirmed', data: recentPayment }
@@ -1220,9 +1220,9 @@ export default function LandlordDashboard() {
       // Only show banner if payment exists and hasn't been dismissed
       if (recentPayment && !isBannerDismissed(buildBannerKey('payment_confirmed', recentPayment.id))) {
 
-        const tenantName = recentPayment.tenant?.full_name || 'your tenant'
+        const tenantName = recentPayment.tenant_name || 'your tenant'
 
-        const propertyTitle = recentPayment.property?.title || 'your property'
+        const propertyTitle = recentPayment.property_title || 'your property'
 
         const isRent = recentPayment.transaction_type === 'rent_payment'
 
@@ -2161,8 +2161,8 @@ export default function LandlordDashboard() {
 
             case 'payment-confirmed': {
               const recentPayment = activeBanner.data
-              const tenantName = recentPayment.tenant?.full_name || 'your tenant'
-              const propertyTitle = recentPayment.property?.title || 'your property'
+              const tenantName = recentPayment.tenant_name || 'your tenant'
+              const propertyTitle = recentPayment.property_title || 'your property'
               const isRent = recentPayment.transaction_type === 'rent_payment'
               const isDeposit = recentPayment.transaction_type === 'security_deposit'
 
@@ -2716,20 +2716,25 @@ export default function LandlordDashboard() {
                       <p className="text-xs sm:text-sm font-medium text-slate-600 mb-1">Messages</p>
                       {(() => {
                         console.log('💬 [STAT CARD DEBUG] Stats object:', stats)
+                        console.log('💬 [STAT CARD DEBUG] Total messages:', stats.total_messages)
                         console.log('💬 [STAT CARD DEBUG] Unread messages:', stats.unread_messages)
+                        const totalMessages = stats.total_messages || 0
+                        const unreadMessages = stats.unread_messages || 0
                         return (
                           <>
                             <p className="text-xl sm:text-3xl font-bold text-blue-600 truncate">
-                              {stats.unread_messages || 0}
+                              {totalMessages}
                             </p>
                             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                              {(stats.unread_messages || 0) > 0 ? (
+                              {unreadMessages > 0 ? (
                                 <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
                                   <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                                  {stats.unread_messages} unread
+                                  {unreadMessages} unread
                                 </span>
+                              ) : totalMessages > 0 ? (
+                                <span className="text-xs text-slate-400">{totalMessages} total</span>
                               ) : (
-                                <span className="text-xs text-slate-400">all caught up</span>
+                                <span className="text-xs text-slate-400">no messages</span>
                               )}
                             </div>
                           </>
