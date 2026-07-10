@@ -872,12 +872,27 @@ export default function TenantAgreementDetailPage() {
                           <span className="font-semibold text-slate-900">{formatNGN(expectedAmount)}</span>.
                           Awaiting the remaining balance to fully reconcile.
                         </p>
-                        <Link href="/tenant/payments">
-                          <Button variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50">
-                            <Eye className="mr-2 h-4 w-4" />
-                            Check Payment Status
+                        <div className="flex gap-3 justify-center">
+                          <Button
+                            variant="outline"
+                            className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                            onClick={async () => {
+                              await fetchAgreement()
+                              await checkExistingPayments()
+                              invalidateTenantCache?.()
+                              toast.success("Payment status refreshed!")
+                            }}
+                          >
+                            <Loader2 className="mr-2 h-4 w-4" />
+                            Refresh Status
                           </Button>
-                        </Link>
+                          <Link href="/tenant/payments">
+                            <Button variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50">
+                              <Eye className="mr-2 h-4 w-4" />
+                              Check Payment Status
+                            </Button>
+                          </Link>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -1024,7 +1039,7 @@ export default function TenantAgreementDetailPage() {
                           </div>
 
                           {/* Simulate Payment Button (Demo Only) */}
-                          <div className="pt-3 border-t border-emerald-200">
+                          <div className="pt-3 border-t border-emerald-200 space-y-3">
                             <Button
                               onClick={handleSimulatePayment}
                               disabled={isSimulatingPayment}
@@ -1042,8 +1057,21 @@ export default function TenantAgreementDetailPage() {
                                 </>
                               )}
                             </Button>
+                            <Button
+                              variant="outline"
+                              className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                              onClick={async () => {
+                                await fetchAgreement()
+                                await checkExistingPayments()
+                                invalidateTenantCache?.()
+                                toast.success("Payment status refreshed!")
+                              }}
+                            >
+                              <Loader2 className="mr-2 h-4 w-4" />
+                              Refresh Status
+                            </Button>
                             <p className="text-xs text-slate-500 pt-2">
-                              After paying, this page will auto-refresh and show your payment as{" "}
+                              After paying, click Refresh Status to see your payment as{" "}
                               <span className="font-semibold text-green-700">Completed</span>.
                             </p>
                           </div>
