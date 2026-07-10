@@ -887,7 +887,9 @@ export default function LandlordDashboard() {
     }
 
     // Priority 1: Onboarding incomplete
-    if (!landlordData?.onboarding?.all_steps_completed) {
+    // Only show onboarding banner if truly incomplete AND landlord has no properties/agreements
+    const trulyNeedsOnboarding = !landlordData?.onboarding?.all_steps_completed && !hasProperties && !hasActiveAgreements
+    if (trulyNeedsOnboarding) {
       return { type: 'onboarding-incomplete', data: null }
     }
 
@@ -1008,8 +1010,11 @@ export default function LandlordDashboard() {
     }
 
     // ── State 1: Onboarding incomplete ────────────────────────────────────────
+    // Only show onboarding banner if truly incomplete AND landlord has no properties/agreements
+    // This prevents showing the banner for landlords who have already onboarded but have stale onboarding data
+    const trulyNeedsOnboarding = !landlordData?.onboarding?.all_steps_completed && !hasProperties && !hasActiveAgreements
 
-    if (!landlordData?.onboarding?.all_steps_completed) {
+    if (trulyNeedsOnboarding) {
 
       return (
 
