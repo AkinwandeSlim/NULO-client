@@ -47,30 +47,30 @@ export default function SignupPage() {
       </div>
 
       {/* Back Button */}
-      <Link 
-        href="/" 
-        className="absolute top-6 left-6 z-50 inline-flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-orange-600 transition-colors duration-300 rounded-lg hover:bg-white/50 backdrop-blur-sm"
+      <Link
+        href="/"
+        className="absolute top-4 left-4 z-50 inline-flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-orange-600 transition-colors duration-300 rounded-lg hover:bg-white/50 backdrop-blur-sm md:top-6 md:left-6 md:px-4 md:text-base"
       >
         <ArrowLeft className="h-4 w-4" />
         <span className="font-medium">Back to Home</span>
       </Link>
 
-      <div className="w-full max-w-4xl relative z-10">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <Link href="/" className="inline-block mb-6">
-            <div className="text-3xl font-bold">
+      <div className="w-full max-w-4xl relative z-10 px-4">
+        {/* Header with mobile-first spacing */}
+        <div className="text-center mb-8 pt-12 md:mb-10 md:pt-0">
+          <Link href="/" className="inline-block mb-4 md:mb-6">
+            <div className="text-2xl md:text-3xl font-bold">
               <span className="text-slate-800">Nulo</span>
               <span className="text-orange-600">Africa</span>
             </div>
           </Link>
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-3">
+          <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-slate-900 mb-2 md:mb-3">
             Join NuloAfrica 🏠
           </h1>
-          <p className="text-lg text-slate-600 mb-2">
+          <p className="text-sm md:text-lg text-slate-600 mb-1 md:mb-2">
             Let's get you started. What brings you here today?
           </p>
-          <p className="text-sm text-slate-500">
+          <p className="text-xs md:text-sm text-slate-500">
             Choose your role to get started with the best rental experience in Nigeria
           </p>
         </div>
