@@ -1482,6 +1482,13 @@ export default function LandlordDashboard() {
     [rawProperties]
   )
 
+  // Helper variables for banner logic
+  const hasProperties = properties.length > 0
+  const hasActiveAgreements = agreements.some((a: any) => {
+    const effectiveStatus = getEffectiveStatus(a)
+    return effectiveStatus === 'ACTIVE'
+  })
+
 
 
   // ─── Loading — same spinner as tenant ────────────────────────────────────────
