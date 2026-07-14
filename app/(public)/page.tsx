@@ -27,6 +27,7 @@ import { motion } from "framer-motion"
 import { useToast } from "@/hooks/use-toast"
 import { Toaster } from "@/components/ui/toaster"
 import { useTheme } from "@/contexts/ThemeContext"
+import { useAuth } from "@/contexts/AuthContext"
 import {
   Menu,
   X,
@@ -48,6 +49,19 @@ import {
   Eye,
   Sun,
   Moon,
+  LayoutGrid,
+  User,
+  LogOut,
+  Building2,
+  Home,
+  Calendar,
+  FileText,
+  MessageSquare,
+  Heart,
+  Settings,
+  BookOpen,
+  Info,
+  Bell,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Logo } from "@/components/logo"
@@ -57,6 +71,16 @@ import { TICKER_DATA } from "@/data/content"
 import { FeaturedPropertiesSection } from "@/components/home/FeaturedPropertiesSection"
 import { StatsSection } from "@/components/home/StatsSection"
 import { Footer } from "@/components/footer"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { NotificationBell } from "@/components/notifications/NotificationBell"
 
 /* ------------------------------------------------------------------ */
 /*  Design tokens (shared class strings — the source of alignment)     */
@@ -96,6 +120,12 @@ const NAV_PRODUCTS = [
   { label: "Property Management", href: "/landlord", description: "For Property Managers" },
   { label: "NEST", href: WAITLIST_URL, description: "For Investors" },
   { label: "PropFlow", href: "#", description: "AI Agent for Rentals", isComingSoon: true },
+]
+
+const NAV_GET_STARTED = [
+  { label: "I'm looking for a property", href: "/signup/tenant", description: "Tenant — Find & rent verified homes", icon: "home" as const },
+  { label: "I'm listing properties", href: "/signup/landlord", description: "Landlord — Manage your portfolio", icon: "building" as const },
+  { label: "I want to invest", href: WAITLIST_URL, description: "Investor — Co-own via NEST", icon: "trending" as const },
 ]
 
 const PRODUCTS = [
@@ -224,7 +254,7 @@ const FOUNDERS = [
   },
   {
     name: "Fakorede Akinwande Alexander",
-    role: "CTO / Tech Lead",
+    role: "Product/Tech Lead",
     bio: "Technology architect building scalable platforms and AI-powered solutions for African real estate markets.",
     image: "/images/cto.jpg",
   },
@@ -295,6 +325,7 @@ export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0)
   const [showTop, setShowTop] = useState(false)
   const [productsOpen, setProductsOpen] = useState(false)
+  const [getStartedOpen, setGetStartedOpen] = useState(false)
   const { toast } = useToast()
   const { theme, toggleTheme } = useTheme()
 
@@ -445,14 +476,14 @@ export default function LandingPage() {
         <div className={`w-full border-b border-orange-500/20 backdrop-blur-sm ${theme === "dark" ? "bg-black/60" : "bg-white/80"}`}>
           <MarqueeTicker items={TICKER_DATA} speed={40} theme={theme} />
         </div>
-        <Header scrolled={scrolled} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} productsOpen={productsOpen} setProductsOpen={setProductsOpen} toast={toast} theme={theme} toggleTheme={toggleTheme} />
+        <Header scrolled={scrolled} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} productsOpen={productsOpen} setProductsOpen={setProductsOpen} getStartedOpen={getStartedOpen} setGetStartedOpen={setGetStartedOpen} toast={toast} theme={theme} toggleTheme={toggleTheme} />
       </div>
 
       <main className="flex-1">
         {/* ======================= HERO ======================= */}
         <section
           id="hero"
-          className="nulo-hero-gradient relative z-[1] -mt-[150px] flex min-h-screen w-full flex-col items-center justify-center overflow-hidden text-center"
+          className="nulo-hero-gradient relative z-[1] -mt-[100px] sm:-mt-[120px] md:-mt-[150px] flex min-h-screen w-full flex-col items-center justify-center overflow-hidden text-center"
         >
           {/* Particle network background */}
           <div className="absolute inset-0 z-0">
@@ -467,27 +498,27 @@ export default function LandingPage() {
               transition={{ duration: 0.6, ease: "easeOut" }}
               className="mx-auto max-w-3xl"
             >
-              <p className={cx(EYEBROW, "mb-4 tracking-[0.12em]")}>Africa&apos;s Premier Property Platform</p>
-              <h1 className="mb-6 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl lg:text-[55px] lg:leading-[1.15]">
+              <p className={cx(EYEBROW, "mb-3 sm:mb-4 tracking-[0.12em] text-[11px] sm:text-[13px]")}>Africa&apos;s Premier Property Platform</p>
+              <h1 className="mb-5 sm:mb-6 text-[28px] sm:text-4xl font-semibold leading-tight tracking-tight md:text-5xl lg:text-[55px] lg:leading-[1.15]">
                 <span className={theme === "dark" ? "text-white" : "text-slate-900"}>One Home for </span>
                 <span className="nulo-gradient-text">Renting, Managing &amp; Investing</span>
                 <span className={theme === "dark" ? "text-white" : "text-slate-900"}> in African Property</span>
               </h1>
-              <p className={`mx-auto mb-10 max-w-2xl text-[15px] leading-relaxed tracking-wide ${theme === "dark" ? "text-white/70" : "text-slate-700"}`}>
+              <p className={`mx-auto mb-8 sm:mb-10 max-w-2xl text-[14px] sm:text-[15px] leading-relaxed tracking-wide ${theme === "dark" ? "text-white/70" : "text-slate-700"}`}>
                 NuloAfrica connects you with verified rentals, gives landlords a complete
                 management dashboard, and lets you co-own high-yield properties through NEST.
                 Discover, rent, list, and invest — with confidence.
               </p>
 
-              <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-                <Link href="/properties">
-                  <Button className={cx(BTN_PRIMARY, "group px-8 py-6 text-sm font-medium transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/20 hover:-translate-y-0.5")}>
+              <div className="flex flex-col items-stretch justify-center gap-3 sm:items-center sm:flex-row sm:gap-4">
+                <Link href="/properties" className="sm:inline-flex">
+                  <Button className={cx(BTN_PRIMARY, "group w-full sm:w-auto px-6 sm:px-8 py-5 sm:py-6 text-sm font-medium transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/20 hover:-translate-y-0.5")}>
                     Explore Rentals
                     <ChevronRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </Button>
                 </Link>
-                <Link href={WAITLIST_URL}>
-                  <Button variant="outline" className={cx(BTN_OUTLINE, "px-8 py-6 text-sm font-medium transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/10 hover:-translate-y-0.5")}>
+                <Link href={WAITLIST_URL} className="sm:inline-flex">
+                  <Button variant="outline" className={cx(BTN_OUTLINE, "w-full sm:w-auto px-6 sm:px-8 py-5 sm:py-6 text-sm font-medium transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/10 hover:-translate-y-0.5")}>
                     Explore NEST
                   </Button>
                 </Link>
@@ -496,7 +527,7 @@ export default function LandingPage() {
 
             {/* scroll indicator */}
             <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 animate-bounce">
-              <div className="flex h-10 w-6 items-start justify-center rounded-full border-2 border-white/30 p-1.5">
+              <div className={`flex h-10 w-6 items-start justify-center rounded-full border-2 p-1.5 ${theme === "dark" ? "border-white/30" : "border-slate-400/30"}`}>
                 <div className="h-3 w-1.5 animate-pulse rounded-full bg-orange-500" />
               </div>
             </div>
@@ -510,11 +541,11 @@ export default function LandingPage() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.6, ease: "easeOut" }}
-            className="grid items-start gap-12 lg:grid-cols-2"
+            className="grid items-start gap-8 sm:gap-12 lg:grid-cols-2"
           >
             <div>
               <p className={cx(EYEBROW, "mb-3")}>Who We Are</p>
-              <h2 className="mb-6 text-[28px] font-semibold leading-tight sm:text-[32px] lg:text-[38px]">
+              <h2 className="mb-5 sm:mb-6 text-[22px] sm:text-[28px] font-semibold leading-tight lg:text-[38px]">
                 Where African Ambition{" "}
                 <span className="nulo-gradient-text">Meets a Place to Belong</span>
               </h2>
@@ -570,7 +601,7 @@ export default function LandingPage() {
               subtitle="Whether you're looking for a home, managing a portfolio, or investing for the first time — NuloAfrica has a product built for you."
               theme={theme}
             />
-            <div className="grid items-stretch gap-8 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid items-stretch gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
               {PRODUCTS.map((p, index) => (
                 <motion.div
                   key={p.title}
@@ -610,7 +641,7 @@ export default function LandingPage() {
               subtitle="Three reasons thousands of tenants, landlords, and investors choose to build their next chapter with us."
               theme={theme}
             />
-            <div className="grid items-stretch gap-8 md:grid-cols-3">
+            <div className="grid items-stretch gap-5 sm:gap-8 md:grid-cols-3">
               {VALUE_CARDS.map((v, index) => (
                 <motion.div
                   key={v.title}
@@ -646,7 +677,7 @@ export default function LandingPage() {
               subtitle="A simple four-step path from discovery to move-in — or your first rental investment."
               theme={theme}
             />
-            <div className="grid gap-12 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-8 sm:gap-12 md:grid-cols-2 lg:grid-cols-4">
               {STEPS.map((s, index) => (
                 <motion.div
                   key={s.num}
@@ -734,12 +765,12 @@ export default function LandingPage() {
               </div>
 
               {/* media — Instagram reel shown in its native portrait shape (uncropped) */}
-              <div className="mx-auto w-full max-w-[380px]">
+              <div className="mx-auto w-full max-w-[320px] sm:max-w-[380px]">
                 <div className="overflow-hidden rounded-2xl border border-orange-500/20 bg-black shadow-2xl shadow-orange-500/10">
                   <iframe
                     src="https://www.instagram.com/reel/DaC7ekCtXzi/embed"
                     title="NEST explainer — Instagram reel"
-                    className="block h-[680px] w-full"
+                    className="block h-[500px] sm:h-[680px] w-full"
                     loading="lazy"
                     scrolling="no"
                     allow="encrypted-media; picture-in-picture; web-share"
@@ -789,7 +820,7 @@ export default function LandingPage() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-50px" }}
                 transition={{ duration: 0.5, delay: 0.15, ease: "easeOut" }}
-                className={`relative mx-auto max-w-5xl cursor-pointer overflow-hidden rounded-3xl transition-shadow duration-300 hover:shadow-xl ${
+                className={`relative mx-auto max-w-5xl cursor-pointer overflow-hidden rounded-2xl sm:rounded-3xl transition-shadow duration-300 hover:shadow-xl ${
                   theme === "dark"
                     ? "bg-gradient-to-br from-[#1c1008] to-[#120a04] shadow-orange-500/5 hover:shadow-orange-500/10"
                     : "bg-gradient-to-br from-[#fff8ed] to-[#fff1dc] shadow-orange-500/5 hover:shadow-orange-500/15"
@@ -819,10 +850,10 @@ export default function LandingPage() {
                 </div>
 
                 {/* Content: text left + play right */}
-                <div className="relative flex items-center gap-8 p-8 sm:p-10 lg:p-14">
+                <div className="relative flex flex-col sm:flex-row items-center gap-6 sm:gap-8 p-6 sm:p-8 lg:p-14">
                   {/* Left — text content */}
-                  <div className="flex-1">
-                    <div className="mb-4 flex items-center gap-2">
+                  <div className="flex-1 text-center sm:text-left">
+                    <div className="mb-4 flex items-center justify-center sm:justify-start gap-2">
                       <div className="h-1.5 w-8 rounded-full bg-orange-500" />
                       <span className={`text-xs font-semibold uppercase tracking-[0.16em] ${
                         theme === "dark" ? "text-orange-400/80" : "text-orange-600"
@@ -841,7 +872,7 @@ export default function LandingPage() {
                     </p>
 
                     {/* Quick feature pills */}
-                    <div className="mt-6 flex flex-wrap gap-2">
+                    <div className="mt-6 flex flex-wrap gap-2 justify-center sm:justify-start">
                       {["Verified Listings", "Digital Agreements", "Rent Collection", "NEST Co-Ownership"].map((label) => (
                         <span
                           key={label}
@@ -873,7 +904,7 @@ export default function LandingPage() {
                 </div>
 
                 {/* Bottom bar — duration + CTA hint */}
-                <div className={`relative flex items-center justify-between border-t px-8 py-3 sm:px-10 lg:px-14 ${
+                <div className={`relative flex items-center justify-between border-t px-6 py-3 sm:px-8 lg:px-14 ${
                   theme === "dark" ? "border-white/5" : "border-orange-500/10"
                 }`}>
                   <span className={`text-xs font-medium ${
@@ -924,11 +955,11 @@ export default function LandingPage() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.6, ease: "easeOut" }}
-            className="grid items-start gap-12 lg:grid-cols-2 lg:gap-16"
+            className="grid items-start gap-10 sm:gap-12 lg:grid-cols-2 lg:gap-16"
           >
             <div>
               <p className={cx(EYEBROW, "mb-3")}>Message from the CEO</p>
-              <h2 className="mb-6 text-[28px] font-semibold leading-tight sm:text-[32px] lg:text-[38px]">
+              <h2 className="mb-5 sm:mb-6 text-[22px] sm:text-[28px] font-semibold leading-tight lg:text-[38px]">
                 Building the Future of{" "}
                 <span className="nulo-gradient-text">Housing in Africa</span>
               </h2>
@@ -1167,7 +1198,7 @@ export default function LandingPage() {
               title={<>Let&apos;s <span className="nulo-gradient-text">Talk</span></>}
               theme={theme}
             />
-            <div className="grid gap-16 lg:grid-cols-2">
+            <div className="grid gap-10 sm:gap-16 lg:grid-cols-2">
             {/* form */}
             <form onSubmit={(e) => e.preventDefault()} className={cx(getCardClass(theme), "p-6 lg:p-8")}>
               <div className="mb-5">
@@ -1295,7 +1326,7 @@ function Section({
     <section
       id={id}
       className={cx(
-        "relative scroll-mt-28 py-24 lg:py-32",
+        "relative scroll-mt-28 py-16 sm:py-20 lg:py-32",
         variant === "surface" && (theme === "dark" ? "bg-[#0A0A0A]" : "bg-white"),
         variant === "gradient-light" && (theme === "dark" ? "bg-gradient-to-b from-[#0A0A0A] to-[#151515]" : "bg-gradient-to-b from-white to-slate-50"),
         variant === "gradient-dark" && (theme === "dark" ? "bg-gradient-to-b from-[#050505] to-[#0A0A0A]" : "bg-gradient-to-b from-slate-50 to-orange-50"),
@@ -1335,17 +1366,17 @@ function SectionHeading({
   return (
     <div
       className={cx(
-        "mb-16 lg:mb-20",
+        "mb-10 sm:mb-14 lg:mb-20",
         align === "center" ? "mx-auto max-w-2xl text-center" : "max-w-2xl",
         className
       )}
     >
       <p className={cx(EYEBROW, "mb-3 tracking-[0.12em]")}>{eyebrow}</p>
-      <h2 className="text-[28px] font-semibold leading-tight tracking-tight sm:text-[32px] lg:text-[38px]">
+      <h2 className="text-[22px] sm:text-[28px] font-semibold leading-tight tracking-tight md:text-[32px] lg:text-[38px]">
         {title}
       </h2>
       {subtitle && (
-        <p className={`mt-4 text-[15px] leading-relaxed tracking-wide ${theme === "dark" ? "text-white/60" : "text-slate-800"}`}>{subtitle}</p>
+        <p className={`mt-3 sm:mt-4 text-[14px] sm:text-[15px] leading-relaxed tracking-wide ${theme === "dark" ? "text-white/60" : "text-slate-800"}`}>{subtitle}</p>
       )}
     </div>
   )
@@ -1361,6 +1392,8 @@ function Header({
   setMobileOpen,
   productsOpen,
   setProductsOpen,
+  getStartedOpen,
+  setGetStartedOpen,
   toast,
   theme,
   toggleTheme,
@@ -1370,11 +1403,23 @@ function Header({
   setMobileOpen: (v: boolean) => void
   productsOpen: boolean
   setProductsOpen: (v: boolean) => void
+  getStartedOpen: boolean
+  setGetStartedOpen: (v: boolean) => void
   toast: any
   theme: "dark" | "light"
   toggleTheme: () => void
 }) {
+  const { user, signOut } = useAuth()
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const getStartedRef = useRef<HTMLDivElement>(null)
+  const isAuthenticated = !!user
+  const userType = user?.user_type || 'tenant'
+
+  const dashboardUrl = userType === 'admin' ? '/admin' : userType === 'landlord' ? '/landlord/overview' : '/tenant'
+
+  const userInitials = user?.full_name
+    ? user.full_name.split(' ').map((n: string) => n[0]).join('')
+    : user?.email?.[0]?.toUpperCase() || 'U'
 
   const handleProductClick = (product: any) => {
     if (product.isComingSoon) {
@@ -1387,6 +1432,12 @@ function Header({
     }
   }
 
+  const handleLogout = () => {
+    signOut().catch(() => {
+      window.location.href = '/'
+    })
+  }
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -1397,11 +1448,23 @@ function Header({
     if (productsOpen) {
       document.addEventListener('mousedown', handleClickOutside)
     }
+    if (getStartedOpen) {
+      const handleClickOutsideGS = (event: MouseEvent) => {
+        if (getStartedRef.current && !getStartedRef.current.contains(event.target as Node)) {
+          setGetStartedOpen(false)
+        }
+      }
+      document.addEventListener('mousedown', handleClickOutsideGS)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+        document.removeEventListener('mousedown', handleClickOutsideGS)
+      }
+    }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [productsOpen, setProductsOpen])
+  }, [productsOpen, setProductsOpen, getStartedOpen, setGetStartedOpen])
 
   return (
     <header
@@ -1409,18 +1472,20 @@ function Header({
         "backdrop-blur-md transition-all duration-300",
         scrolled
           ? theme === "dark"
-            ? "bg-black/95 py-4 shadow-lg shadow-black/40"
-            : "bg-white/95 py-4 shadow-lg shadow-slate-200"
-          : "bg-transparent py-6"
+            ? "bg-black/95 py-3.5 md:py-4 shadow-lg shadow-black/40"
+            : "bg-white/95 py-3.5 md:py-4 shadow-lg shadow-slate-200"
+          : "bg-transparent py-4 md:py-6"
       )}
     >
       <div className={cx(CONTAINER, "flex items-center justify-between")}>
         <Link href="/">
-          <Logo size={50} variant={theme === "dark" ? "light" : "default"} />
+          <div className="h-8 w-auto md:h-auto">
+            <Logo size={50} variant={theme === "dark" ? "light" : "default"} />
+          </div>
         </Link>
 
         {/* desktop nav */}
-        <nav className="hidden items-center gap-14 md:flex">
+        <nav className="hidden items-center gap-10 md:flex">
           {NAV_LINKS.map((l) => (
             <a
               key={l.href}
@@ -1463,13 +1528,104 @@ function Header({
           >
             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </button>
+          {isAuthenticated ? (
+            <>
+              <NotificationBell />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition-colors ${theme === "dark" ? "hover:bg-white/10" : "hover:bg-slate-100"}`}>
+                    <Avatar className="h-8 w-8 border-2 border-orange-500/30">
+                      <AvatarFallback className="bg-orange-500 text-white text-xs font-semibold">
+                        {userInitials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="hidden lg:block text-left">
+                      <p className={`text-sm font-medium leading-tight ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
+                        {user?.full_name || user?.email?.split('@')[0] || 'User'}
+                      </p>
+                      <p className={`text-xs leading-tight mt-0.5 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>
+                        {userType === 'admin' ? 'Administrator' : userType === 'landlord' ? 'Property Manager' : 'Tenant'}
+                      </p>
+                    </div>
+                    <ChevronDown className={`h-4 w-4 hidden lg:block transition-transform ${theme === "dark" ? "text-white/60" : "text-slate-500"}`} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className={`w-60 z-[150] rounded-lg border shadow-xl ${theme === "dark" ? "border-white/10 bg-[#0A0A0A]" : "border-slate-200 bg-white"}`}>
+                  <DropdownMenuLabel>
+                    <div className="flex flex-col">
+                      <span className={`text-sm font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
+                        {user?.full_name || user?.email?.split('@')[0] || 'User'}
+                      </span>
+                      <span className={`text-xs font-normal ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
+                        {user?.email || 'No email'}
+                      </span>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className={theme === "dark" ? "bg-white/10" : "bg-slate-100"} />
+                  <DropdownMenuItem asChild>
+                    <Link href={dashboardUrl} className={`cursor-pointer flex items-center gap-2.5 ${theme === "dark" ? "text-white/90 focus:bg-white/5 focus:text-white" : "text-slate-700 focus:bg-slate-50 focus:text-slate-900"}`}>
+                      <LayoutGrid className="h-4 w-4 text-orange-400" />
+                      Dashboard
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href={userType === 'landlord' ? '/landlord/profile' : '/tenant/profile'} className={`cursor-pointer flex items-center gap-2.5 ${theme === "dark" ? "text-white/90 focus:bg-white/5 focus:text-white" : "text-slate-700 focus:bg-slate-50 focus:text-slate-900"}`}>
+                      <User className="h-4 w-4 text-orange-400" />
+                      Profile
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className={theme === "dark" ? "bg-white/10" : "bg-slate-100"} />
+                  <DropdownMenuItem onClick={handleLogout} className={`cursor-pointer flex items-center gap-2.5 text-red-500 focus:text-red-500 ${theme === "dark" ? "focus:bg-red-500/10" : "focus:bg-red-50"}`}>
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          ) : null}
         </nav>
 
-        <Link href="/properties" className="hidden md:inline-flex">
-          <Button className={cx(BTN_PRIMARY, "px-8 py-3 text-base font-semibold")}>
-            Get Started
-          </Button>
-        </Link>
+        {!isAuthenticated && (
+          <div className="hidden md:flex items-center gap-3">
+            <Link href="/signin">
+              <Button className={cx(BTN_OUTLINE, "px-6 py-3 text-base font-semibold")}>
+                Login
+              </Button>
+            </Link>
+            <div className="relative" ref={getStartedRef}>
+              <button
+                type="button"
+                onClick={() => setGetStartedOpen(!getStartedOpen)}
+                className={cx(BTN_PRIMARY, "flex items-center gap-1.5 px-7 py-3 text-base font-semibold")}
+              >
+                Get Started
+                <ChevronDown className={cx("h-4 w-4 transition-transform duration-200", getStartedOpen && "rotate-180")} />
+              </button>
+              {getStartedOpen && (
+                <div className={`absolute top-full right-0 mt-2 w-72 rounded-xl border backdrop-blur-md shadow-2xl overflow-hidden ${theme === "dark" ? "border-white/10 bg-black/95" : "border-slate-200 bg-white/95"}`}>
+                  {NAV_GET_STARTED.map((item) => (
+                    <a
+                      key={item.label}
+                      href={item.href}
+                      onClick={() => setGetStartedOpen(false)}
+                      className={`flex items-start gap-3.5 px-4 py-3.5 transition-colors ${theme === "dark" ? "hover:bg-white/5" : "hover:bg-slate-50"}`}
+                    >
+                      <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-orange-500/10">
+                        {item.icon === "home" && <Home className="h-4.5 w-4.5 text-orange-400" />}
+                        {item.icon === "building" && <Building2 className="h-4.5 w-4.5 text-orange-400" />}
+                        {item.icon === "trending" && <TrendingUp className="h-4.5 w-4.5 text-orange-400" />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className={`text-sm font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{item.label}</div>
+                        <div className={`text-xs mt-0.5 ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{item.description}</div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* mobile toggle */}
         <button
@@ -1524,11 +1680,106 @@ function Header({
                 </div>
               )}
             </div>
-            <Link href="/properties" onClick={() => setMobileOpen(false)} className="mt-2">
-              <Button className={cx(BTN_PRIMARY, "w-full text-sm font-medium")}>
-                Get Started
-              </Button>
-            </Link>
+            {!isAuthenticated ? (
+              <>
+                <Link href="/signin" onClick={() => setMobileOpen(false)} className="mt-2">
+                  <Button className={cx(BTN_OUTLINE, "w-full text-sm font-medium")}>
+                    Login
+                  </Button>
+                </Link>
+                <div className={`border-t pt-2 mt-2 ${theme === "dark" ? "border-white/10" : "border-slate-200"}`}>
+                  <button
+                    type="button"
+                    onClick={() => setGetStartedOpen(!getStartedOpen)}
+                    className={`flex w-full items-center justify-between py-2 text-sm font-semibold transition-colors ${theme === "dark" ? "text-orange-400" : "text-orange-600"}`}
+                  >
+                    Get Started
+                    <ChevronDown className={cx("h-4 w-4 transition-transform duration-200", getStartedOpen && "rotate-180")} />
+                  </button>
+                  {getStartedOpen && (
+                    <div className="mt-1 space-y-1 pl-0">
+                      {NAV_GET_STARTED.map((item) => (
+                        <a
+                          key={item.label}
+                          href={item.href}
+                          onClick={() => setMobileOpen(false)}
+                          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${theme === "dark" ? "hover:bg-white/5" : "hover:bg-slate-50"}`}
+                        >
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-orange-500/10">
+                            {item.icon === "home" && <Home className="h-4 w-4 text-orange-400" />}
+                            {item.icon === "building" && <Building2 className="h-4 w-4 text-orange-400" />}
+                            {item.icon === "trending" && <TrendingUp className="h-4 w-4 text-orange-400" />}
+                          </div>
+                          <div>
+                            <div className={`text-sm font-medium ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{item.label}</div>
+                            <div className={`text-xs ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{item.description}</div>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={`flex items-center gap-3 p-3 rounded-lg mt-2 ${theme === "dark" ? "bg-white/5" : "bg-slate-100"}`}>
+                  <Avatar className="h-10 w-10 border-2 border-orange-500/30">
+                    <AvatarFallback className="bg-orange-500 text-white text-xs font-semibold">
+                      {userInitials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <p className={`text-sm font-medium ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
+                      {user?.full_name || user?.email?.split('@')[0] || 'User'}
+                    </p>
+                    <p className={`text-xs ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
+                      {userType === 'admin' ? 'Administrator' : userType === 'landlord' ? 'Property Manager' : 'Tenant'}
+                    </p>
+                  </div>
+                </div>
+                <Link href={dashboardUrl} onClick={() => setMobileOpen(false)} className="mt-2">
+                  <Button className={cx(BTN_PRIMARY, "w-full text-sm font-medium")}>
+                    Dashboard
+                  </Button>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleLogout()
+                    setMobileOpen(false)
+                  }}
+                  className="mt-2 w-full"
+                >
+                  <Button className={cx(BTN_OUTLINE, "w-full text-sm font-medium")}>
+                    Sign Out
+                  </Button>
+                </button>
+              </>
+            )}
+            {/* Mobile theme toggle */}
+            <div className={`flex items-center justify-between border-t pt-3 mt-3 ${theme === "dark" ? "border-white/10" : "border-slate-200"}`}>
+              <span className={`text-xs font-medium ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
+                {theme === "dark" ? "Dark Mode" : "Light Mode"}
+              </span>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${theme === "dark" ? "text-white/80 hover:bg-white/10" : "text-slate-700 hover:bg-slate-100"}`}
+                aria-label="Toggle theme"
+              >
+                {theme === "dark" ? (
+                  <>
+                    <Sun className="h-4 w-4 text-orange-400" />
+                    <span className="text-xs font-medium">Switch to Light</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="h-4 w-4 text-orange-500" />
+                    <span className="text-xs font-medium">Switch to Dark</span>
+                  </>
+                )}
+              </button>
+            </div>
           </nav>
         </div>
       )}
@@ -1639,7 +1890,7 @@ function ProductCard({
   }
 
   return (
-    <div className={cx(getCardClass(theme), getCardHoverClass(), "group flex h-full flex-col border-t-2 border-t-transparent hover:border-t-orange-500 p-6 lg:p-8 transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/5")}>
+    <div className={cx(getCardClass(theme), getCardHoverClass(), "group flex h-full flex-col border-t-2 border-t-transparent hover:border-t-orange-500 p-5 sm:p-6 lg:p-8 transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/5")}>
       <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-orange-500/10 ring-1 ring-orange-500/20">
         <Icon className="h-6 w-6 text-orange-400" />
       </div>

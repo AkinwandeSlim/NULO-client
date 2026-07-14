@@ -2,17 +2,18 @@
 
 import Link from "next/link"
 import { useEffect, useState } from "react"
-import { Home, User, Building, CheckCircle, ArrowLeft, Shield, Crown } from "lucide-react"
+import { Home, User, Building, CheckCircle, ArrowLeft, Shield, TrendingUp, Crown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { toast } from "sonner"
+
+const WAITLIST_URL = "https://nest-by-nulo.vercel.app/"
 
 export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false)
 
   // Redirect if already logged in
   useEffect(() => {
-    // Check if user is logged in via localStorage or session
     const checkAuth = () => {
       const user = localStorage.getItem('user')
       if (user) {
@@ -25,7 +26,6 @@ export default function SignupPage() {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true)
-      // Redirect to sign in page with Google OAuth
       window.location.href = '/signin?provider=google'
     } catch (error: any) {
       toast.error('Google sign-in failed', {
@@ -55,7 +55,7 @@ export default function SignupPage() {
         <span className="font-medium">Back to Home</span>
       </Link>
 
-      <div className="w-full max-w-4xl relative z-10 px-4">
+      <div className="w-full max-w-5xl relative z-10 px-4">
         {/* Header with mobile-first spacing */}
         <div className="text-center mb-8 pt-12 md:mb-10 md:pt-0">
           <Link href="/" className="inline-block mb-4 md:mb-6">
@@ -65,10 +65,10 @@ export default function SignupPage() {
             </div>
           </Link>
           <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-slate-900 mb-2 md:mb-3">
-            Join NuloAfrica 🏠
+            Join NuloAfrica
           </h1>
           <p className="text-sm md:text-lg text-slate-600 mb-1 md:mb-2">
-            Let's get you started. What brings you here today?
+            Let&apos;s get you started. What brings you here today?
           </p>
           <p className="text-xs md:text-sm text-slate-500">
             Choose your role to get started with the best rental experience in Nigeria
@@ -76,10 +76,11 @@ export default function SignupPage() {
         </div>
 
         {/* Role Selection Cards */}
-        <div className="grid md:grid-cols-2 gap-6 mb-8">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+
           {/* Tenant Card */}
           <Link href="/signup/tenant">
-            <Card className="relative overflow-hidden border-2 border-slate-200 hover:border-orange-300 hover:shadow-lg transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 rounded-2xl cursor-pointer group">
+            <Card className="relative overflow-hidden border-2 border-slate-200 hover:border-orange-300 hover:shadow-lg transition-all duration-300 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 rounded-2xl cursor-pointer group h-full">
               <CardContent className="p-8">
                 <div className="flex flex-col items-center text-center">
                   {/* Icon */}
@@ -89,7 +90,7 @@ export default function SignupPage() {
 
                   {/* Title */}
                   <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-3">
-                    I'm looking for a property
+                    I&apos;m looking for a property
                   </h3>
 
                   {/* Description */}
@@ -118,9 +119,9 @@ export default function SignupPage() {
                   </div>
 
                   {/* Call to Action */}
-                  <div className="mt-6">
-                    <Button 
-                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold transition-all duration-300 group-hover:bg-orange-700 group-hover:scale-105"
+                  <div className="mt-6 w-full">
+                    <Button
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold transition-all duration-300 group-hover:bg-orange-700"
                       size="lg"
                     >
                       Get Started as Tenant
@@ -133,7 +134,7 @@ export default function SignupPage() {
 
           {/* Landlord Card */}
           <Link href="/signup/landlord">
-            <Card className="relative overflow-hidden border-2 border-slate-200 hover:border-orange-300 hover:shadow-lg transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 rounded-2xl cursor-pointer group">
+            <Card className="relative overflow-hidden border-2 border-slate-200 hover:border-orange-300 hover:shadow-lg transition-all duration-300 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 rounded-2xl cursor-pointer group h-full">
               <CardContent className="p-8">
                 <div className="flex flex-col items-center text-center">
                   {/* Icon */}
@@ -143,7 +144,7 @@ export default function SignupPage() {
 
                   {/* Title */}
                   <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-3">
-                    I'm listing properties
+                    I&apos;m listing properties
                   </h3>
 
                   {/* Description */}
@@ -172,9 +173,9 @@ export default function SignupPage() {
                   </div>
 
                   {/* Call to Action */}
-                  <div className="mt-6">
-                    <Button 
-                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold transition-all duration-300 group-hover:bg-orange-700 group-hover:scale-105"
+                  <div className="mt-6 w-full">
+                    <Button
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold transition-all duration-300 group-hover:bg-orange-700"
                       size="lg"
                     >
                       Get Started as Landlord
@@ -184,16 +185,79 @@ export default function SignupPage() {
               </CardContent>
             </Card>
           </Link>
+
+          {/* Investor / NEST Card */}
+          <Link href={WAITLIST_URL} target="_blank" rel="noopener noreferrer">
+            <Card className="relative overflow-hidden border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 hover:border-orange-400 hover:shadow-lg hover:shadow-orange-100 transition-all duration-300 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 rounded-2xl cursor-pointer group h-full">
+              {/* Premium shimmer accent */}
+              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-orange-200/40 to-transparent rounded-bl-full" />
+              <CardContent className="p-8 relative">
+                <div className="flex flex-col items-center text-center">
+                  {/* Badge */}
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-100 text-orange-700 text-[11px] font-semibold uppercase tracking-wider mb-4">
+                    <Crown className="h-3 w-3" />
+                    Coming Soon
+                  </div>
+
+                  {/* Icon */}
+                  <div className="w-20 h-20 rounded-2xl bg-orange-200/60 flex items-center justify-center mb-5 transition-all duration-300 group-hover:bg-orange-300/60 group-hover:scale-110">
+                    <TrendingUp className="h-10 w-10 text-orange-600" />
+                  </div>
+
+                  {/* Title */}
+                  <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-3">
+                    I want to invest
+                  </h3>
+
+                  {/* Description */}
+                  <p className="text-sm text-slate-600 mb-4">
+                    Co-own high-yield rental properties through NEST and earn monthly returns
+                  </p>
+
+                  {/* Benefits */}
+                  <div className="space-y-2 w-full">
+                    <div className="flex items-center gap-2 text-xs text-slate-700">
+                      <CheckCircle className="h-3.5 w-3.5 text-orange-500 flex-shrink-0" />
+                      <span>Start with small amounts</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-700">
+                      <CheckCircle className="h-3.5 w-3.5 text-orange-500 flex-shrink-0" />
+                      <span>Monthly rental income</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-700">
+                      <CheckCircle className="h-3.5 w-3.5 text-orange-500 flex-shrink-0" />
+                      <span>Fully managed properties</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-700">
+                      <CheckCircle className="h-3.5 w-3.5 text-orange-500 flex-shrink-0" />
+                      <span>Transparent reporting</span>
+                    </div>
+                  </div>
+
+                  {/* Call to Action */}
+                  <div className="mt-6 w-full">
+                    <Button
+                      className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold transition-all duration-300 group-hover:bg-slate-800"
+                      size="lg"
+                    >
+                      Join NEST Waitlist
+                      <Crown className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
 
         {/* Admin Access */}
-        <div className="text-center mt-8">
+        <div className="text-center mt-6">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-lg">
             <Shield className="h-4 w-4 text-slate-600" />
             <span className="text-sm text-slate-600">Admin Access?</span>
           </div>
-          <Link 
-            href="/signup/admin" 
+          <Link
+            href="/signup/admin"
             className="ml-2 text-sm font-medium text-orange-600 hover:text-orange-700 transition-colors"
           >
             Register as Administrator
