@@ -42,6 +42,21 @@ export default function RootLayout({
 
   return (
     <html lang="en" data-scroll-behavior="smooth">
+      <head>
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            body {
+              background-color: #000000 !important;
+            }
+            html.dark body {
+              background-color: #000000 !important;
+            }
+            html:not(.dark) body {
+              background-color: #ffffff !important;
+            }
+          `
+        }} />
+      </head>
       <body className="font-sans antialiased has-navbar">
         <AuthProvider>
           <NotificationProvider>

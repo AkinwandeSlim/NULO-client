@@ -326,10 +326,16 @@ export default function LandingPage() {
   const [showTop, setShowTop] = useState(false)
   const [productsOpen, setProductsOpen] = useState(false)
   const [getStartedOpen, setGetStartedOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const { toast } = useToast()
   const { theme, toggleTheme } = useTheme()
 
   const carouselRef = useRef<HTMLDivElement>(null)
+
+  // Prevent hydration flash
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Sticky header + scroll-to-top visibility
   useEffect(() => {
@@ -446,11 +452,14 @@ export default function LandingPage() {
   }
 
   return (
-    <div className={`flex min-h-screen flex-col font-sans antialiased ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
+    <div className={`flex min-h-screen flex-col font-sans antialiased ${theme === "dark" ? "text-white bg-black" : "text-slate-900 bg-white"}`}>
       {/* ---------------------------------------------------------- */}
       {/*  Brand styles (orange, scoped to this page)                */}
       {/* ---------------------------------------------------------- */}
       <style jsx global>{`
+        body {
+          background-color: ${theme === "dark" ? "#000000" : "#ffffff"} !important;
+        }
         .nulo-gradient-text {
           background: linear-gradient(135deg, #ea580c, #fb923c, #f97316);
           -webkit-background-clip: text;
@@ -472,7 +481,7 @@ export default function LandingPage() {
           In normal flow (sticky, not fixed) so it reserves its own height —
           the hero no longer needs a large top offset, which removes the
           stretched empty gradient the fixed marquee used to force. */}
-      <div className="sticky top-0 z-50">
+      <div className={`sticky top-0 z-50 ${theme === "dark" ? "bg-black" : "bg-white"}`}>
         <div className={`w-full border-b border-orange-500/20 backdrop-blur-sm ${theme === "dark" ? "bg-black/60" : "bg-white/80"}`}>
           <MarqueeTicker items={TICKER_DATA} speed={40} theme={theme} />
         </div>
@@ -483,7 +492,7 @@ export default function LandingPage() {
         {/* ======================= HERO ======================= */}
         <section
           id="hero"
-          className="nulo-hero-gradient relative z-[1] -mt-[100px] sm:-mt-[120px] md:-mt-[150px] flex min-h-screen w-full flex-col items-center justify-center overflow-hidden text-center"
+          className="nulo-hero-gradient relative z-[1] flex min-h-screen w-full flex-col items-center justify-center overflow-hidden text-center"
         >
           {/* Particle network background */}
           <div className="absolute inset-0 z-0">
