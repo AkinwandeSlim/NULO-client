@@ -332,7 +332,7 @@ export default function LandingPage() {
 
   const carouselRef = useRef<HTMLDivElement>(null)
 
-  // Prevent hydration flash
+  // Prevent hydration flashes
   useEffect(() => {
     setMounted(true)
   }, [])
