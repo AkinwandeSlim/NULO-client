@@ -524,13 +524,6 @@ export default function LandingPage() {
                 </Link>
               </div>
             </motion.div>
-
-            {/* scroll indicator */}
-            <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 animate-bounce">
-              <div className={`flex h-10 w-6 items-start justify-center rounded-full border-2 p-1.5 ${theme === "dark" ? "border-white/30" : "border-slate-400/30"}`}>
-                <div className="h-3 w-1.5 animate-pulse rounded-full bg-orange-500" />
-              </div>
-            </div>
           </div>
         </section>
 
