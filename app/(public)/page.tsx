@@ -492,7 +492,7 @@ export default function LandingPage() {
         {/* ======================= HERO ======================= */}
         <section
           id="hero"
-          className="nulo-hero-gradient relative z-[1] flex min-h-screen w-full flex-col items-center justify-center overflow-hidden text-center"
+          className="nulo-hero-gradient relative z-[1] flex min-h-[85vh] w-full flex-col items-center justify-center overflow-hidden text-center pt-20"
         >
           {/* Particle network background */}
           <div className="absolute inset-0 z-0">
