@@ -5,6 +5,7 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { Loader2, MapPin } from 'lucide-react'
 import type { PropertySearchResponse, Property } from '@/lib/types/property'
+import { useTheme } from '@/contexts/ThemeContext'
 
 // Set your Mapbox access token
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
@@ -61,6 +62,9 @@ function PropertyMapOptimized({
   currentPage = 1,
   itemsPerPage = 20
 }: PropertyMapProps) {
+  // Theme
+  const { theme } = useTheme()
+  
   // Refs
   const map = useRef<mapboxgl.Map | null>(null)
   const mapContainer = useRef<HTMLDivElement>(null)
@@ -112,9 +116,12 @@ function PropertyMapOptimized({
     if (!isMounted || !mapContainer.current || map.current) return
     
     try {
+      // Use light map style for both themes for better contrast
+      const mapStyle = 'mapbox://styles/mapbox/streets-v12'
+      
       const mapInstance = new mapboxgl.Map({
         container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/streets-v12',
+        style: mapStyle,
         center: center || [3.3792, 6.5244], // Lagos default
         zoom,
         attributionControl: false,
@@ -162,105 +169,56 @@ function PropertyMapOptimized({
 
   // Create popup with property details
   const createPropertyPopup = useCallback((property: Property): mapboxgl.Popup => {
+    const isDark = theme === 'dark'
     const popupContent = document.createElement('div')
-    popupContent.className = 'bg-white rounded-lg shadow-2xl overflow-hidden max-w-sm'
+    popupContent.className = `${isDark ? 'bg-[#0A0A0A] border border-white/10' : 'bg-white'} rounded-lg shadow-2xl overflow-hidden max-w-sm`
     popupContent.innerHTML = `
       <div class="relative">
-        <!-- Property image -->
         ${property.images?.[0] ? `
           <img src="${property.images[0]}" alt="${property.title}" class="w-full h-40 object-cover">
         ` : `
-          <div class="w-full h-40 bg-gradient-to-br from-orange-100 to-orange-50 flex items-center justify-center">
-            <svg class="w-12 h-12 text-orange-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="w-full h-40 ${isDark ? 'bg-gradient-to-br from-orange-900/20 to-orange-800/10' : 'bg-gradient-to-br from-orange-100 to-orange-50'} flex items-center justify-center">
+            <svg class="w-12 h-12 ${isDark ? 'text-orange-400/30' : 'text-orange-300'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 16l4-4m0 0l4 4m-4-4V5m0 16H5a2 2 0 01-2-2v-5.5M9 7h1m4 0h1m4 0h1"></path>
             </svg>
           </div>
         `}
-        
-        <!-- Status badge -->
         <div class="absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-semibold ${
           property.status === 'vacant' ? 'bg-green-500 text-white' : 'bg-orange-500 text-white'
-        }">
-          ${property.status === 'vacant' ? 'Available' : 'Rented'}
-        </div>
-        
-        <!-- Price overlay -->
-        <div class="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm px-2 py-1 rounded-md shadow-md">
+        }">${property.status === 'vacant' ? 'Available' : 'Rented'}</div>
+        <div class="absolute bottom-2 left-2 ${isDark ? 'bg-black/70' : 'bg-white/95'} backdrop-blur-sm px-2 py-1 rounded-md shadow-md">
           <span class="text-sm font-bold text-orange-600">
             ₦${(property.price || 0).toLocaleString()}
-            <span class="text-xs font-normal text-slate-400">/mo</span>
+            <span class="text-xs font-normal ${isDark ? 'text-white/40' : 'text-slate-400'}">/mo</span>
           </span>
         </div>
       </div>
-      
       <div class="p-4">
-        <!-- Title -->
-        <h3 class="font-semibold text-slate-900 mb-2 line-clamp-2">${property.title}</h3>
-        
-        <!-- Location -->
-        <p class="text-sm text-slate-600 mb-3 flex items-center gap-1">
+        <h3 class="font-semibold ${isDark ? 'text-white' : 'text-slate-900'} mb-2 line-clamp-2">${property.title}</h3>
+        <p class="text-sm ${isDark ? 'text-white/60' : 'text-slate-600'} mb-3 flex items-center gap-1">
           <svg class="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
           </svg>
           ${property.location || `${property.city}, ${property.state}`}
         </p>
-        
-        <!-- Specs -->
-        <div class="flex items-center gap-4 text-sm text-slate-600 mb-3">
-          ${property.beds ? `
-            <span class="flex items-center gap-1">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 16l4-4m0 0l4 4m-4-4V5m0 16H5a2 2 0 01-2-2v-5.5M9 7h1m4 0h1m4 0h1"></path>
-              </svg>
-              ${property.beds} Beds
-            </span>
-          ` : ''}
-          ${property.baths ? `
-            <span class="flex items-center gap-1">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
-              </svg>
-              ${property.baths} Baths
-            </span>
-          ` : ''}
-          ${property.sqft ? `
-            <span class="flex items-center gap-1">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
-              </svg>
-              ${property.sqft} sqft
-            </span>
-          ` : ''}
+        <div class="flex items-center gap-4 text-sm ${isDark ? 'text-white/60' : 'text-slate-600'} mb-3">
+          ${property.beds ? `<span class="flex items-center gap-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9"></path></svg>${property.beds} Beds</span>` : ''}
+          ${property.baths ? `<span class="flex items-center gap-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>${property.baths} Baths</span>` : ''}
+          ${property.sqft ? `<span class="flex items-center gap-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5"></path></svg>${property.sqft} sqft</span>` : ''}
         </div>
-        
-        <!-- Verified badge -->
         ${property.landlord?.verified ? `
-          <div class="flex items-center gap-1 text-xs text-green-600 font-medium mb-3">
+          <div class="flex items-center gap-1 text-xs ${isDark ? 'text-green-400' : 'text-green-600'} font-medium mb-3">
             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
             </svg>
             Verified Landlord
           </div>
         ` : ''}
-        
-        <!-- View details button -->
-        <button 
-          onclick="window.location.href='/properties/${property.id}'"
-          class="w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm"
-        >
-          View Full Details
-        </button>
+        <button onclick="window.location.href='/properties/${property.id}'" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm">View Full Details</button>
       </div>
     `
-
-    return new mapboxgl.Popup({ 
-      offset: 25, 
-      maxWidth: 'none',
-      closeButton: true,
-      closeOnClick: false
-    }).setDOMContent(popupContent)
-  }, [])
+    return new mapboxgl.Popup({ offset: 25, maxWidth: 'none', closeButton: true, closeOnClick: false }).setDOMContent(popupContent)
+  }, [theme])
   
   // Single effect for all marker updates — runs only when properties list changes
   useEffect(() => {

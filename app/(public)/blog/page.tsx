@@ -1,31 +1,47 @@
-'use client';
+"use client"
 
-import React, { useState } from 'react';
+/**
+ * Blog Page — Articles & Guides
+ * ------------------------------------------------------------------
+ * Comprehensive blog page with categorized articles for NEST,
+ * landlords, tenants, and general real estate topics.
+ * ------------------------------------------------------------------
+ */
+
+import { useState, useEffect } from "react"
+import Link from "next/link"
+import { motion } from "framer-motion"
+import { useTheme } from "@/contexts/ThemeContext"
 import { 
-  FileText, 
   Search, 
-  Calendar, 
   User, 
   Clock, 
   ChevronRight, 
-  Home, 
-  TrendingUp, 
-  Shield, 
-  CreditCard, 
-  MapPin, 
-  Users, 
-  Building,
-  Key,
   BookOpen,
   Lightbulb,
-  AlertCircle,
+  FileText,
   Star,
-  Heart,
   MessageSquare,
-  Share2,
-  Bookmark
-} from 'lucide-react';
-import Link from 'next/link';
+  Shield,
+  Users,
+  AlertCircle,
+  MapPin,
+  CreditCard,
+  Building
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Footer } from "@/components/footer"
+
+const CONTAINER = "mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8"
+const EYEBROW = "text-[13px] font-medium uppercase tracking-[0.18em] text-orange-400"
+
+const getCardClass = (theme: "dark" | "light") =>
+  `rounded-2xl border ${theme === "dark" ? "border-white/[0.06] bg-[#0A0A0A]" : "border-slate-200/80 bg-white"}`
+const getCardHoverClass = () =>
+  "transition-all duration-300 hover:-translate-y-1 hover:border-orange-500/40 hover:shadow-lg hover:shadow-orange-500/5"
+
+const cx = (...classes: Array<string | false | null | undefined>) =>
+  classes.filter(Boolean).join(" ")
 
 interface BlogPost {
   id: string;
@@ -202,25 +218,37 @@ const popularTags = [
 ];
 
 export default function BlogPage() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All Posts');
-  const [sortBy, setSortBy] = useState('latest');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All Posts");
+  const [sortBy, setSortBy] = useState("latest");
+  const { theme } = useTheme()
+
+  useEffect(() => {
+    document.body.classList.remove("has-navbar")
+    document.body.style.paddingTop = "0"
+    document.body.style.backgroundColor = theme === "dark" ? "#000000" : "#ffffff"
+    return () => {
+      document.body.classList.add("has-navbar")
+      document.body.style.paddingTop = ""
+      document.body.style.backgroundColor = ""
+    }
+  }, [theme])
 
   const filteredPosts = blogPosts.filter(post => {
     const matchesSearch = post.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          post.excerpt.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          post.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesCategory = selectedCategory === 'All Posts' || post.category === selectedCategory;
+    const matchesCategory = selectedCategory === "All Posts" || post.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
   const sortedPosts = [...filteredPosts].sort((a, b) => {
     switch (sortBy) {
-      case 'popular':
+      case "popular":
         return b.views - a.views;
-      case 'most_liked':
+      case "most_liked":
         return b.likes - a.likes;
-      case 'most_commented':
+      case "most_commented":
         return b.comments - a.comments;
       default: // latest
         return new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime();
@@ -231,286 +259,293 @@ export default function BlogPage() {
   const regularPosts = sortedPosts.filter(post => !post.featured);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
-      {/* Hero Section */}
-      <section className="bg-gradient-to-br from-orange-600 via-orange-500 to-orange-400 text-white py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <BookOpen className="h-16 w-16 mx-auto mb-6 text-orange-200" />
-            <h1 className="text-4xl md:text-5xl font-bold mb-6">
-              NuloAfrica Blog
-            </h1>
-            <p className="text-xl text-orange-100 max-w-2xl mx-auto mb-8">
-              Expert guides, tips, and insights for navigating Nigeria's rental market
-            </p>
-            
-            {/* Search Bar */}
-            <div className="max-w-2xl mx-auto relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search articles, topics, or keywords..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-300"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
+    <div className={`flex min-h-screen flex-col font-sans antialiased ${theme === "dark" ? "text-white bg-black" : "text-slate-900 bg-white"}`}>
+      <style jsx global>{`
+        body {
+          background-color: ${theme === "dark" ? "#000000" : "#ffffff"} !important;
+        }
+        .nulo-gradient-text {
+          background: linear-gradient(135deg, #ea580c, #fb923c, #f97316);
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          color: transparent;
+        }
+      `}</style>
 
-      {/* Stats Bar */}
-      <section className="bg-white border-b border-gray-200 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-            <div>
-              <div className="text-2xl font-bold text-orange-600">{blogPosts.length}</div>
-              <div className="text-gray-600">Articles</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-orange-600">15K+</div>
-              <div className="text-gray-600">Monthly Readers</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-orange-600">50+</div>
-              <div className="text-gray-600">Expert Contributors</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-orange-600">100K+</div>
-              <div className="text-gray-600">Total Views</div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <main className="flex-1 pt-8">
+        {/* Hero */}
+        <section className={`relative py-20 sm:py-24 ${theme === "dark" ? "bg-gradient-to-b from-black to-[#0A0A0A]" : "bg-gradient-to-b from-white to-slate-50"}`}>
+          <div className={cx(CONTAINER)}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="text-center max-w-3xl mx-auto"
+            >
+              <p className={cx(EYEBROW, "mb-4")}>Blog & Resources</p>
+              <h1 className="text-[36px] sm:text-[44px] font-bold leading-tight mb-6 lg:text-[52px]">
+                Expert Guides for <span className="nulo-gradient-text">African Real Estate</span>
+              </h1>
+              <p className={`text-[15px] sm:text-[16px] leading-relaxed ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
+                Expert guides, tips, and insights for navigating Nigeria's rental market and building wealth through real estate.
+              </p>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid lg:grid-cols-4 gap-8">
-          {/* Sidebar */}
-          <div className="lg:col-span-1">
-            {/* Categories */}
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Categories</h3>
-              <div className="space-y-2">
-                {categories.map(category => {
-                  const Icon = category.icon;
-                  return (
-                    <button
-                      key={category.name}
-                      onClick={() => setSelectedCategory(category.name)}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
-                        selectedCategory === category.name
-                          ? 'bg-orange-100 text-orange-700'
-                          : 'hover:bg-gray-50 text-gray-700'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <Icon className="h-4 w-4 mr-2" />
-                        <span className="text-sm">{category.name}</span>
-                      </div>
-                      <span className="text-xs text-gray-500">{category.count}</span>
-                    </button>
-                  );
-                })}
+              {/* Search */}
+              <div className="max-w-xl mx-auto relative mt-8">
+                <Search className={`absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
+                <input
+                  type="text"
+                  placeholder="Search articles, topics, or keywords..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className={`w-full pl-12 pr-4 py-4 rounded-2xl text-[15px] transition-colors duration-200 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500/30 ${theme === "dark" ? "border-white/10 bg-black/50 text-white placeholder:text-white/25" : "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400"}`}
+                />
               </div>
-            </div>
+            </motion.div>
+          </div>
+        </section>
 
-            {/* Popular Tags */}
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Popular Tags</h3>
-              <div className="flex flex-wrap gap-2">
-                {popularTags.map(tag => (
-                  <button
-                    key={tag}
-                    onClick={() => setSearchTerm(tag)}
-                    className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm hover:bg-orange-100 hover:text-orange-700 transition-colors"
+        {/* Categories */}
+        <section className={`py-16 sm:py-20 ${theme === "dark" ? "bg-[#0A0A0A]" : "bg-white"}`}>
+          <div className={cx(CONTAINER)}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+            >
+              <div className="text-center mb-12 sm:mb-16">
+                <p className={cx(EYEBROW, "mb-3")}>Browse by Category</p>
+                <h2 className="text-[28px] sm:text-[34px] font-bold leading-tight lg:text-[40px]">
+                  Find What <span className="nulo-gradient-text">You Need</span>
+                </h2>
+              </div>
+
+              <div className="grid gap-6 sm:gap-8 md:grid-cols-2 lg:grid-cols-4">
+                {categories.map((category, index) => (
+                  <motion.button
+                    key={category.name}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, margin: "-50px" }}
+                    transition={{ duration: 0.5, delay: index * 0.1, ease: "easeOut" }}
+                    onClick={() => setSelectedCategory(category.name)}
+                    className={cx(
+                      getCardClass(theme),
+                      getCardHoverClass(),
+                      "flex flex-col items-center gap-4 p-6 text-center",
+                      selectedCategory === category.name && "border-orange-500/50"
+                    )}
                   >
-                    #{tag}
-                  </button>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/10 ring-1 ring-orange-500/25">
+                      <category.icon className="h-6 w-6 text-orange-400" />
+                    </div>
+                    <div>
+                      <h3 className={`mb-1 text-[17px] font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{category.name}</h3>
+                      <p className={`text-[13px] ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{category.count} articles</p>
+                    </div>
+                  </motion.button>
                 ))}
               </div>
-            </div>
-
-            {/* Newsletter Signup */}
-            <div className="bg-gradient-to-br from-orange-600 to-orange-500 rounded-lg p-6 text-white">
-              <BookOpen className="h-8 w-8 mb-3 text-orange-200" />
-              <h3 className="font-semibold mb-2">Stay Updated</h3>
-              <p className="text-orange-100 text-sm mb-4">
-                Get the latest rental tips and market insights delivered to your inbox
-              </p>
-              <input
-                type="email"
-                placeholder="Your email"
-                className="w-full px-3 py-2 rounded text-gray-900 text-sm mb-3"
-              />
-              <button className="w-full bg-white text-orange-600 px-3 py-2 rounded font-semibold text-sm hover:bg-orange-50 transition-colors">
-                Subscribe
-              </button>
-            </div>
+            </motion.div>
           </div>
+        </section>
 
-          {/* Main Content */}
-          <div className="lg:col-span-3">
-            {/* Sort Options */}
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-2xl font-bold text-gray-900">
-                {selectedCategory === 'All Posts' ? 'Latest Articles' : selectedCategory}
-              </h2>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+        {/* Featured Posts */}
+        {featuredPosts.length > 0 && (
+          <section className={`py-16 sm:py-20 ${theme === "dark" ? "bg-gradient-to-b from-[#050505] to-[#0A0A0A]" : "bg-gradient-to-b from-slate-50 to-orange-50"}`}>
+            <div className={cx(CONTAINER)}>
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
               >
-                <option value="latest">Latest</option>
-                <option value="popular">Most Popular</option>
-                <option value="most_liked">Most Liked</option>
-                <option value="most_commented">Most Commented</option>
-              </select>
-            </div>
+                <div className="text-center mb-12 sm:mb-16">
+                  <p className={cx(EYEBROW, "mb-3")}>Featured</p>
+                  <h2 className="text-[28px] sm:text-[34px] font-bold leading-tight lg:text-[40px]">
+                    Top <span className="nulo-gradient-text">Articles</span>
+                  </h2>
+                </div>
 
-            {/* Featured Posts */}
-            {featuredPosts.length > 0 && (
-              <div className="mb-12">
-                <h3 className="text-xl font-semibold text-gray-900 mb-6">Featured Articles</h3>
-                <div className="grid md:grid-cols-2 gap-6">
-                  {featuredPosts.map(post => (
-                    <FeaturedPostCard key={post.id} post={post} />
+                <div className="grid gap-6 sm:gap-8 md:grid-cols-2">
+                  {featuredPosts.map((post, index) => (
+                    <motion.div
+                      key={post.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, margin: "-50px" }}
+                      transition={{ duration: 0.5, delay: index * 0.1, ease: "easeOut" }}
+                      className={cx(getCardClass(theme), getCardHoverClass(), "overflow-hidden")}
+                    >
+                      <div className="relative h-48 bg-gradient-to-br from-orange-400 to-orange-600">
+                        <div className="absolute inset-0 bg-black/20" />
+                        <div className="absolute bottom-4 left-4 text-white">
+                          <span className="inline-block px-3 py-1 bg-orange-600 rounded-full text-xs font-semibold mb-2">
+                            {post.category}
+                          </span>
+                          <h3 className="text-xl font-bold line-clamp-2">{post.title}</h3>
+                        </div>
+                      </div>
+                      <div className="p-6">
+                        <p className={theme === "dark" ? "text-white/60 mb-4 line-clamp-2" : "text-slate-600 mb-4 line-clamp-2"}>{post.excerpt}</p>
+                        <div className={`flex items-center justify-between text-sm ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
+                          <div className="flex items-center space-x-4">
+                            <span className="flex items-center">
+                              <Clock className="h-4 w-4 mr-1" />
+                              {post.readTime}
+                            </span>
+                            <span className="flex items-center">
+                              <User className="h-4 w-4 mr-1" />
+                              {post.author}
+                            </span>
+                          </div>
+                          <ChevronRight className="h-4 w-4" />
+                        </div>
+                      </div>
+                    </motion.div>
                   ))}
                 </div>
-              </div>
-            )}
+              </motion.div>
+            </div>
+          </section>
+        )}
 
-            {/* Regular Posts */}
-            <div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-6">Recent Articles</h3>
+        {/* All Posts */}
+        <section className={`py-16 sm:py-20 ${theme === "dark" ? "bg-[#0A0A0A]" : "bg-white"}`}>
+          <div className={cx(CONTAINER)}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+            >
+              <div className="flex justify-between items-center mb-12">
+                <div>
+                  <p className={cx(EYEBROW, "mb-3")}>All Articles</p>
+                  <h2 className="text-[28px] sm:text-[34px] font-bold leading-tight lg:text-[40px]">
+                    {selectedCategory === "All Posts" ? "Latest" : selectedCategory}
+                  </h2>
+                </div>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className={`px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 ${theme === "dark" ? "bg-[#0A0A0A] border-white/10 text-white" : "border border-slate-200 bg-white text-slate-900"}`}
+                >
+                  <option value="latest">Latest</option>
+                  <option value="popular">Most Popular</option>
+                  <option value="most_liked">Most Liked</option>
+                  <option value="most_commented">Most Commented</option>
+                </select>
+              </div>
+
               {sortedPosts.length === 0 ? (
                 <div className="text-center py-12">
-                  <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No articles found</h3>
-                  <p className="text-gray-600">Try searching with different keywords or browse all categories.</p>
+                  <FileText className={`h-16 w-16 mx-auto mb-4 ${theme === "dark" ? "text-white/20" : "text-slate-300"}`} />
+                  <h3 className={`text-lg font-semibold mb-2 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>No articles found</h3>
+                  <p className={theme === "dark" ? "text-white/60" : "text-slate-600"}>Try searching with different keywords or browse all categories.</p>
                 </div>
               ) : (
-                <div className="space-y-6">
-                  {regularPosts.map(post => (
-                    <BlogPostCard key={post.id} post={post} />
+                <div className="space-y-6 max-w-4xl mx-auto">
+                  {regularPosts.map((post, index) => (
+                    <motion.div
+                      key={post.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, margin: "-50px" }}
+                      transition={{ duration: 0.5, delay: index * 0.05, ease: "easeOut" }}
+                      className={cx(getCardClass(theme), getCardHoverClass(), "p-6")}
+                    >
+                      <div className="flex items-start space-x-4">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <span className="inline-block px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
+                              {post.category}
+                            </span>
+                            <span className={`text-sm ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{post.publishDate}</span>
+                            <span className={`text-sm ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>•</span>
+                            <span className={`text-sm ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{post.readTime}</span>
+                          </div>
+                          
+                          <h3 className={`text-xl font-semibold mb-2 group-hover:text-orange-600 transition-colors ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
+                            {post.title}
+                          </h3>
+                          
+                          <p className={theme === "dark" ? "text-white/60 mb-4 line-clamp-2" : "text-slate-600 mb-4 line-clamp-2"}>{post.excerpt}</p>
+                          
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            {post.tags.slice(0, 3).map(tag => (
+                              <button
+                                key={tag}
+                                onClick={() => setSearchTerm(tag)}
+                                className={`px-2 py-1 rounded text-xs transition-colors ${theme === "dark" ? "bg-white/10 text-white/70 hover:bg-orange-500/20 hover:text-orange-400" : "bg-slate-100 text-slate-600 hover:bg-orange-100 hover:text-orange-600"}`}
+                              >
+                                #{tag}
+                              </button>
+                            ))}
+                          </div>
+                          
+                          <div className="flex items-center justify-between">
+                            <div className={`flex items-center space-x-4 text-sm ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
+                              <span className="flex items-center">
+                                <User className="h-4 w-4 mr-1" />
+                                {post.author}
+                              </span>
+                              <span className="flex items-center">
+                                <Star className="h-4 w-4 mr-1" />
+                                {post.likes}
+                              </span>
+                              <span className="flex items-center">
+                                <MessageSquare className="h-4 w-4 mr-1" />
+                                {post.comments}
+                              </span>
+                            </div>
+                            <ChevronRight className={`h-4 w-4 ${theme === "dark" ? "text-white/30" : "text-slate-400"}`} />
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
                   ))}
                 </div>
               )}
-            </div>
+            </motion.div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      {/* Call to Action */}
-      <section className="py-16 bg-gray-50">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <Lightbulb className="h-16 w-16 text-orange-600 mx-auto mb-6" />
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">
-            Want to Contribute to Our Blog?
-          </h2>
-          <p className="text-xl text-gray-600 mb-8">
-            Share your expertise and help thousands of Nigerians navigate the rental market
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="inline-flex items-center px-8 py-4 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors">
-              <FileText className="h-5 w-5 mr-2" />
-              Submit Article
-            </button>
-            <Link 
-              href="/contact"
-              className="inline-flex items-center px-8 py-4 bg-white text-orange-600 border-2 border-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors"
+        {/* CTA */}
+        <section className={`py-16 sm:py-20 ${theme === "dark" ? "bg-gradient-to-b from-[#050505] to-black" : "bg-gradient-to-b from-slate-50 to-white"}`}>
+          <div className={cx(CONTAINER)}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="text-center"
             >
-              <MessageSquare className="h-5 w-5 mr-2" />
-              Contact Us
-            </Link>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
+              <h2 className="mb-4 text-[28px] sm:text-[34px] font-bold leading-tight lg:text-[40px]">
+                Want to <span className="nulo-gradient-text">Contribute?</span>
+              </h2>
+              <p className={`mx-auto mb-8 max-w-2xl text-[14px] sm:text-[15px] leading-relaxed ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
+                Share your expertise and help thousands of Nigerians navigate the rental market and build wealth through real estate.
+              </p>
 
-function FeaturedPostCard({ post }: { post: BlogPost }) {
-  return (
-    <div className="bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow overflow-hidden group cursor-pointer">
-      <div className="relative h-48 bg-gradient-to-br from-orange-400 to-orange-600">
-        <div className="absolute inset-0 bg-black opacity-20"></div>
-        <div className="absolute bottom-4 left-4 text-white">
-          <span className="inline-block px-3 py-1 bg-orange-600 rounded-full text-xs font-semibold mb-2">
-            {post.category}
-          </span>
-          <h3 className="text-xl font-bold line-clamp-2">{post.title}</h3>
-        </div>
-      </div>
-      <div className="p-6">
-        <p className="text-gray-600 mb-4 line-clamp-2">{post.excerpt}</p>
-        <div className="flex items-center justify-between text-sm text-gray-500">
-          <div className="flex items-center space-x-4">
-            <span className="flex items-center">
-              <Clock className="h-4 w-4 mr-1" />
-              {post.readTime}
-            </span>
-            <span className="flex items-center">
-              <User className="h-4 w-4 mr-1" />
-              {post.author}
-            </span>
+              <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+                <Button className="rounded-lg border border-orange-500 bg-orange-500 text-black font-semibold transition-all duration-200 hover:bg-orange-400 hover:border-orange-400 hover:shadow-lg hover:shadow-orange-500/25 px-8 py-4 text-[15px]">
+                  Submit Article
+                </Button>
+                <Link href="/contact">
+                  <Button className="rounded-lg border border-orange-500/70 bg-transparent text-orange-400 font-semibold transition-all duration-200 hover:bg-orange-500 hover:border-orange-500 hover:text-black px-8 py-4 text-[15px]">
+                    Contact Us
+                  </Button>
+                </Link>
+              </div>
+            </motion.div>
           </div>
-          <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-        </div>
-      </div>
-    </div>
-  );
-}
+        </section>
+      </main>
 
-function BlogPostCard({ post }: { post: BlogPost }) {
-  return (
-    <div className="bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow p-6 group cursor-pointer">
-      <div className="flex items-start space-x-4">
-        <div className="flex-1">
-          <div className="flex items-center space-x-3 mb-2">
-            <span className="inline-block px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
-              {post.category}
-            </span>
-            <span className="text-sm text-gray-500">{post.publishDate}</span>
-            <span className="text-sm text-gray-500">•</span>
-            <span className="text-sm text-gray-500">{post.readTime}</span>
-          </div>
-          
-          <h3 className="text-xl font-semibold text-gray-900 mb-2 group-hover:text-orange-600 transition-colors">
-            {post.title}
-          </h3>
-          
-          <p className="text-gray-600 mb-4 line-clamp-2">{post.excerpt}</p>
-          
-          <div className="flex flex-wrap gap-2 mb-4">
-            {post.tags.slice(0, 3).map(tag => (
-              <button
-                key={tag}
-                className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs hover:bg-orange-100 hover:text-orange-600 transition-colors"
-              >
-                #{tag}
-              </button>
-            ))}
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4 text-sm text-gray-500">
-              <span className="flex items-center">
-                <User className="h-4 w-4 mr-1" />
-                {post.author}
-              </span>
-              <span className="flex items-center">
-                <Star className="h-4 w-4 mr-1" />
-                {post.likes}
-              </span>
-              <span className="flex items-center">
-                <MessageSquare className="h-4 w-4 mr-1" />
-                {post.comments}
-              </span>
-            </div>
-            <ChevronRight className="h-4 w-4 text-gray-400 group-hover:translate-x-1 transition-transform" />
-          </div>
-        </div>
-      </div>
+      <Footer />
     </div>
-  );
+  )
 }

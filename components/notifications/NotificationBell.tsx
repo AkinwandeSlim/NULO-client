@@ -95,6 +95,11 @@ export function NotificationBell() {
     }
   };
 
+  // Prevent hydration mismatch - don't render until mounted
+  if (!mounted) {
+    return null;
+  }
+
   return (
     <div className="relative" ref={dropdownRef}>
       {/* Notification Bell */}
@@ -106,7 +111,7 @@ export function NotificationBell() {
         <Bell className="w-5 h-5" />
 
         {/* Unread count badge */}
-        {mounted && state.unreadCount > 0 && (
+        {state.unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
             {state.unreadCount > 9 ? '9+' : state.unreadCount}
           </span>
@@ -114,7 +119,7 @@ export function NotificationBell() {
       </button>
 
       {/* Dropdown */}
-      {mounted && isOpen && (
+      {isOpen && (
         <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-200">

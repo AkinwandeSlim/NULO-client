@@ -41,6 +41,7 @@ import { notificationsAPI } from "@/lib/api/notifications"
 import { calculateAgreementBreakdown } from "@/lib/utils/rentalCalculations"
 import { agreementsAPI } from "@/lib/api/agreements"
 import { ReportIssueModal } from "@/components/maintenance/ReportIssueModal"
+import PropFlowChat from "@/components/propflow/PropFlowChat"
 import {
   isBannerDismissed,
   dismissBanner as persistBannerDismissal,
@@ -1836,6 +1837,9 @@ export default function TenantDashboard() {
         }))}
         onSuccess={() => { invalidateTenantCache() }}
       />
+
+      {/* PropFlow AI Agent — floating rental assistant */}
+      <PropFlowChat />
     </div>
   )
 }

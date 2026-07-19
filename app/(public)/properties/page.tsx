@@ -16,6 +16,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { useTheme } from '@/contexts/ThemeContext'
 import { useSignupCallbackUrl } from '@/hooks/useSignupCallbackUrl'
 import { toast } from 'sonner'
 import { propertiesAPI } from '@/lib/api/properties'
@@ -32,6 +33,8 @@ import SaveFavoriteModal from '@/components/SaveFavoriteModal'
 import PropertyCard from '@/components/properties/PropertyCard'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { MarketplaceHeader } from '@/components/navigation/MarketplaceHeader'
+import { AdvancedFiltersModal } from '@/components/properties/AdvancedFiltersModal'
 import { 
   Filter, 
   Home, 
@@ -42,16 +45,15 @@ import {
   Bed,
   Bath,
 } from 'lucide-react'
-import { Navbar } from '@/components/navigation/Navbar'
 
 // Lazy load optimized map
 const PropertyMapOptimized = dynamic(() => import('@/components/PropertyMapOptimized'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-slate-100">
+    <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-white/5">
       <div className="text-center">
         <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto mb-2" />
-        <p className="text-slate-600 text-sm">Loading map...</p>
+        <p className="text-slate-600 dark:text-white/60 text-sm">Loading map...</p>
       </div>
     </div>
   )
@@ -87,6 +89,7 @@ export default function PropertiesPage() {
   const searchParams = useSearchParams()
   const { user, loading: authLoading } = useAuth()
   const { invalidateTenantCache } = useDashboard()
+  const { theme } = useTheme()
   useSignupCallbackUrl()
 
   // State
@@ -113,6 +116,9 @@ export default function PropertiesPage() {
   const [minBeds, setMinBeds] = useState(() => { const b = searchParams?.get('beds'); return b ? parseInt(b) : 0 })
   const [minBaths, setMinBaths] = useState(() => { const b = searchParams?.get('baths'); return b ? parseInt(b) : 0 })
   const [sortBy, setSortBy] = useState(() => searchParams?.get('sort') || 'featured')
+  
+  // Quick filter state
+  const [quickFilter, setQuickFilter] = useState<'all' | 'vacant' | 'rented' | 'favorites'>('all')
 
   // Modals
   const [showMobileFilters, setShowMobileFilters] = useState(false)
@@ -167,6 +173,15 @@ export default function PropertiesPage() {
         sort: sortBy as any,
         page,
         limit: ITEMS_PER_PAGE,
+      }
+
+      // Apply quick filter
+      if (quickFilter === 'vacant') {
+        (filters as any).status = 'vacant'
+      } else if (quickFilter === 'rented') {
+        (filters as any).status = 'rented'
+      } else if (quickFilter === 'favorites' && favorites.length > 0) {
+        (filters as any).favorite_ids = favorites
       }
 
       console.log('🔍 [PROPERTIES] Fetching...', { 
@@ -410,7 +425,7 @@ export default function PropertiesPage() {
   // Load properties when filters change
   useEffect(() => {
     fetchProperties(currentPage)
-  }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy, currentPage])
+  }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy, currentPage, quickFilter])
 
   // Load favorites on page arrival and when user changes
   // force=true bypasses the 2s debounce so hearts are red immediately on load
@@ -426,97 +441,28 @@ export default function PropertiesPage() {
 
   return (
     <>
-      <Navbar />
-      <div className="min-h-screen bg-slate-50">
+      <MarketplaceHeader 
+        searchQuery={searchQuery}
+        onSearchChange={(query) => {
+          setSearchQuery(query)
+          setCurrentPage(1)
+        }}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        propertyType={selectedType}
+        onPropertyTypeChange={(type) => {
+          setSelectedType(type)
+          setCurrentPage(1)
+        }}
+        onOpenFiltersModal={() => setShowMobileFilters(true)}
+        propertiesCount={pagination?.total || properties.length}
+      />
+      <div className="min-h-screen bg-slate-50 dark:bg-black">
 
-        {/* ── Sticky search header ───────────────────────────────────────── */}
-        <div className="bg-white border-b border-slate-200 sticky top-[64px] z-40">
-          <div className="container mx-auto px-4 lg:px-6 py-3">
-            <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center">
-              <div className="flex-1">
-                <SearchBar
-                  searchQuery={searchQuery}
-                  onSearchChange={debouncedSearch}
-                  onSearchSubmit={(query) => setSearchQuery(query)}
-                  onClear={clearAllFilters}
-                  placeholder="Search by location, property type..."
-                  className="w-full"
-                />
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <ViewModeToggle viewMode={viewMode} onViewModeChange={setViewMode} />
-                {/* Desktop: re-open the collapsed sidebar */}
-                {sidebarCollapsed && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSidebarCollapsed(false)}
-                    className="hidden md:flex items-center gap-2 border-slate-300 rounded-full px-4"
-                    aria-label="Show filters"
-                    title="Show filters"
-                  >
-                    <Filter className="h-3.5 w-3.5" />
-                    <span className="text-sm">Filters</span>
-                    {(priceRange[0] > 0 || priceRange[1] < FILTER_PRICE_MAX || selectedType !== 'all' || minBeds > 0 || minBaths > 0) && (
-                      <span className="bg-orange-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                        {[
-                          priceRange[0] > 0,
-                          priceRange[1] < FILTER_PRICE_MAX,
-                          selectedType !== 'all',
-                          minBeds > 0,
-                          minBaths > 0,
-                        ].filter(Boolean).length}
-                      </span>
-                    )}
-                  </Button>
-                )}
-                {(searchQuery || priceRange[0] > 0 || selectedType !== 'all') && (
-                  <Button variant="ghost" size="sm" onClick={clearAllFilters}
-                    className="text-slate-500 hover:text-slate-900 text-sm px-2">
-                    Clear
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" onClick={() => setShowMobileFilters(true)}
-                  className="md:hidden flex items-center gap-2 border-slate-300 rounded-full px-4">
-                  <Filter className="h-3.5 w-3.5" />
-                  <span className="text-sm">Filters</span>
-                  {(priceRange[0] > 0 || selectedType !== 'all' || minBeds > 0 || minBaths > 0) && (
-                    <span className="bg-orange-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                      {[priceRange[0] > 0, selectedType !== 'all', minBeds > 0, minBaths > 0].filter(Boolean).length}
-                    </span>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* ── Main layout: content only (no sidebar) ─── */}
+        <div className="w-full">
 
-        {/* ── Main layout: persistent filter sidebar (desktop) + content ─── */}
-        <div className="flex items-start">
-
-          {/* Sidebar — desktop: sticky left column, always visible.
-              Mobile: hidden here, the same component renders a slide-up
-              sheet at the bottom of the page (controlled by showMobileFilters). */}
-          <PropertyFiltersSidebar
-            filters={{ priceRange, propertyType: selectedType, bedrooms: minBeds, bathrooms: minBaths }}
-            onFiltersChange={(next) => {
-              if (next.priceRange) setPriceRange(next.priceRange)
-              if (next.propertyType !== undefined) setSelectedType(next.propertyType)
-              if (next.bedrooms !== undefined) setMinBeds(next.bedrooms)
-              if (next.bathrooms !== undefined) setMinBaths(next.bathrooms)
-              setCurrentPage(1)
-            }}
-            onClearAll={clearAllFilters}
-            mobileOpen={showMobileFilters}
-            onMobileClose={() => setShowMobileFilters(false)}
-            collapsed={sidebarCollapsed}
-            onToggleCollapse={() => setSidebarCollapsed(v => !v)}
-          />
-
-          {/* Content area: split view or grid view */}
-          <div className="flex-1 min-w-0">
-
-          {/* ── Inline error banner — map stays mounted ────────────────────── */}
+          {/* Inline error banner — map stays mounted ────────────────────── */}
           {renderState === 'error' && (
           <div className="bg-red-50 border-b border-red-200 px-4 py-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -536,7 +482,7 @@ export default function PropertiesPage() {
           <div style={{ height: 'calc(100vh - 130px)' }} className="flex overflow-hidden">
 
             {/* List panel — 42% width, scrollable */}
-            <div className="w-[42%] flex-shrink-0 h-full overflow-y-auto bg-white border-r border-slate-200"
+            <div className={`w-[42%] flex-shrink-0 h-full overflow-y-auto border-r ${theme === "dark" ? "bg-black border-white/10" : "bg-white border-slate-200"}`}
                  id="property-list-panel">
               <div className="p-4">
 
@@ -546,14 +492,14 @@ export default function PropertiesPage() {
                     {isLoading ? (
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
-                        <span className="text-sm text-slate-500">Searching...</span>
+                        <span className={`text-sm ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>Searching...</span>
                       </div>
                     ) : (
-                      <span className="text-sm font-semibold text-slate-900">
+                      <span className={`text-sm font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                         {properties.length.toLocaleString()}
-                        <span className="font-normal text-slate-500"> {properties.length === 1 ? 'property' : 'properties'}</span>
+                        <span className={`font-normal ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}> {properties.length === 1 ? 'property' : 'properties'}</span>
                         {searchQuery && (
-                          <span className="font-normal text-slate-500"> in <span className="text-orange-600 font-medium">{searchQuery}</span></span>
+                          <span className={`font-normal ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}> in <span className="text-orange-600 font-medium">{searchQuery}</span></span>
                         )}
                       </span>
                     )}
@@ -565,11 +511,11 @@ export default function PropertiesPage() {
                   <div className="grid grid-cols-2 gap-3">
                     {[...Array(6)].map((_, i) => (
                       <div key={i} className="animate-pulse">
-                        <div className="h-32 bg-slate-200 rounded-xl mb-2" />
+                        <div className={`h-32 rounded-xl mb-2 ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
                         <div className="space-y-2">
-                          <div className="h-3 bg-slate-200 rounded w-3/4" />
-                          <div className="h-3 bg-slate-200 rounded w-1/2" />
-                          <div className="h-4 bg-slate-200 rounded w-1/3" />
+                          <div className={`h-3 rounded w-3/4 ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
+                          <div className={`h-3 rounded w-1/2 ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
+                          <div className={`h-4 rounded w-1/3 ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
                         </div>
                       </div>
                     ))}
@@ -579,11 +525,11 @@ export default function PropertiesPage() {
                 {/* Empty state inline */}
                 {!isLoading && renderState === 'empty' && (
                   <div className="flex flex-col items-center py-16 text-center">
-                    <div className="bg-slate-100 rounded-full p-6 mb-3">
-                      <Home className="h-8 w-8 text-slate-400" />
+                    <div className={`rounded-full p-6 mb-3 ${theme === "dark" ? "bg-white/10" : "bg-slate-100"}`}>
+                      <Home className={`h-8 w-8 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                     </div>
-                    <p className="text-sm font-semibold text-slate-900 mb-1">No properties found</p>
-                    <p className="text-xs text-slate-500 mb-3">Try adjusting your filters</p>
+                    <p className={`text-sm font-semibold mb-1 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>No properties found</p>
+                    <p className={`text-xs mb-3 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>Try adjusting your filters</p>
                     <Button size="sm" onClick={clearAllFilters}
                       className="bg-orange-500 hover:bg-orange-600 text-white text-xs">
                       Clear filters
@@ -598,10 +544,10 @@ export default function PropertiesPage() {
                       <div
                         key={property.id}
                         id={`property-card-${property.id}`}
-                        className={`group bg-white rounded-xl border overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-orange-300 ${
+                        className={`group rounded-xl border overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-orange-300 ${
                           selectedProperty?.id === property.id
                             ? 'border-orange-400 shadow-lg ring-2 ring-orange-200'
-                            : 'border-slate-200'
+                            : theme === "dark" ? "border-white/10 bg-black" : "border-slate-200 bg-white"
                         }`}
                         onClick={() => {
                           // Select property for map sync (don't navigate)
@@ -613,7 +559,7 @@ export default function PropertiesPage() {
                         }}
                       >
                         {/* Image container */}
-                        <div className="relative h-32 overflow-hidden bg-slate-100">
+                        <div className={`relative h-32 overflow-hidden ${theme === "dark" ? "bg-white/5" : "bg-slate-100"}`}>
                           {property.images?.[0] ? (
                             <img
                               src={property.images[0]}
@@ -622,7 +568,7 @@ export default function PropertiesPage() {
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
-                              <Home className="h-8 w-8 text-slate-300" />
+                              <Home className={`h-8 w-8 ${theme === "dark" ? "text-white/20" : "text-slate-300"}`} />
                             </div>
                           )}
                           
@@ -641,19 +587,19 @@ export default function PropertiesPage() {
                               e.stopPropagation(); 
                               handleFavoriteClick(property.id) 
                             }}
-                            className="absolute top-2 left-2 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center shadow-md hover:bg-white transition-colors"
+                            className={`absolute top-2 left-2 w-7 h-7 rounded-full flex items-center justify-center shadow-md hover:bg-white transition-colors ${theme === "dark" ? "bg-black/50" : "bg-white/90"}`}
                           >
-                            <svg className={`w-4 h-4 ${favorites.includes(String(property.id)) ? 'fill-red-500 text-red-500' : 'text-slate-400 fill-none stroke-current stroke-[1.5]'}`}
+                            <svg className={`w-4 h-4 ${favorites.includes(String(property.id)) ? 'fill-red-500 text-red-500' : theme === "dark" ? "text-white/40" : "text-slate-400"} fill-none stroke-current stroke-[1.5]`}
                               viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd"/>
                             </svg>
                           </button>
 
                           {/* Price overlay */}
-                          <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm px-2 py-1 rounded-md shadow-md">
+                          <div className={`absolute bottom-2 left-2 px-2 py-1 rounded-md shadow-md ${theme === "dark" ? "bg-black/70" : "bg-white/95 backdrop-blur-sm"}`}>
                             <span className="text-sm font-bold text-orange-600">
                               ₦{(property.price || 0).toLocaleString()}
-                              <span className="text-xs font-normal text-slate-400">/mo</span>
+                              <span className={`text-xs font-normal ${theme === "dark" ? "text-white/60" : "text-slate-400"}`}>/mo</span>
                             </span>
                           </div>
                         </div>
@@ -661,12 +607,12 @@ export default function PropertiesPage() {
                         {/* Content */}
                         <div className="p-3">
                           {/* Title */}
-                          <h3 className="text-sm font-semibold text-slate-900 leading-tight line-clamp-2 group-hover:text-orange-600 transition-colors mb-1">
+                          <h3 className={`text-sm font-semibold leading-tight line-clamp-2 group-hover:text-orange-600 transition-colors mb-1 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                             {property.title}
                           </h3>
 
                           {/* Location */}
-                          <p className="text-xs text-slate-500 truncate flex items-center gap-1 mb-2">
+                          <p className={`text-xs truncate flex items-center gap-1 mb-2 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>
                             <MapPin className="h-3 w-3 text-orange-400 flex-shrink-0" />
                             {property.location || `${property.city}, ${property.state}`}
                           </p>
@@ -675,11 +621,11 @@ export default function PropertiesPage() {
                           <div className="flex items-center gap-2 text-xs mb-2">
                             {property.beds && (
                               <div 
-                                className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded hover:bg-orange-50 transition-colors group relative"
+                                className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-orange-50 transition-colors group relative ${theme === "dark" ? "bg-white/5" : "bg-slate-50"}`}
                                 title={`${property.beds} Bedroom${property.beds !== 1 ? 's' : ''}`}
                               >
                                 <Bed className="w-3 h-3 text-orange-500" />
-                                <span className="font-semibold text-slate-700">{property.beds}</span>
+                                <span className={`font-semibold ${theme === "dark" ? "text-white" : "text-slate-700"}`}>{property.beds}</span>
                                 {/* Tooltip - positioned to avoid covering location */}
                                 <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-lg">
                                   {property.beds} Bedroom{property.beds !== 1 ? 's' : ''}
@@ -688,11 +634,11 @@ export default function PropertiesPage() {
                             )}
                             {property.baths && (
                               <div 
-                                className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded hover:bg-blue-50 transition-colors group relative"
+                                className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors group relative ${theme === "dark" ? "bg-white/5" : "bg-slate-50"}`}
                                 title={`${property.baths} Bathroom${property.baths !== 1 ? 's' : ''}`}
                               >
                                 <Bath className="w-3 h-3 text-blue-500" />
-                                <span className="font-semibold text-slate-700">{property.baths}</span>
+                                <span className={`font-semibold ${theme === "dark" ? "text-white" : "text-slate-700"}`}>{property.baths}</span>
                                 {/* Tooltip - positioned to avoid covering location */}
                                 <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-lg">
                                   {property.baths} Bathroom{property.baths !== 1 ? 's' : ''}
@@ -700,7 +646,7 @@ export default function PropertiesPage() {
                               </div>
                             )}
                             {property.sqft && (
-                              <div className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded text-slate-700">
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded ${theme === "dark" ? "bg-white/5 text-white" : "bg-slate-50 text-slate-700"}`}>
                                 <span className="text-[10px] font-semibold">{Math.round(property.sqft / 100) * 100}</span>
                               </div>
                             )}
@@ -730,7 +676,7 @@ export default function PropertiesPage() {
                               className={`flex-1 text-xs py-1.5 px-2 rounded-md font-medium transition-colors ${
                                 selectedProperty?.id === property.id
                                   ? 'bg-orange-100 text-orange-700 border border-orange-200'
-                                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                  : theme === "dark" ? "bg-white/10 text-white hover:bg-white/20" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                               }`}
                             >
                               {selectedProperty?.id === property.id ? '📍 Selected' : '📍 View on Map'}
@@ -768,10 +714,10 @@ export default function PropertiesPage() {
             <div className="flex-1 h-full relative">
               {/* Translucent shimmer during search — map tiles stay visible */}
               {isLoading && (
-                <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] z-10 flex items-center justify-center pointer-events-none">
-                  <div className="bg-white rounded-full px-4 py-2 shadow-lg flex items-center gap-2">
+                <div className={`absolute inset-0 backdrop-blur-[1px] z-10 flex items-center justify-center pointer-events-none ${theme === "dark" ? "bg-black/30" : "bg-white/40"}`}>
+                  <div className={`rounded-full px-4 py-2 shadow-lg flex items-center gap-2 ${theme === "dark" ? "bg-black/70" : "bg-white"}`}>
                     <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
-                    <span className="text-sm font-medium text-slate-700">Updating...</span>
+                    <span className={`text-sm font-medium ${theme === "dark" ? "text-white" : "text-slate-700"}`}>Updating...</span>
                   </div>
                 </div>
               )}
@@ -796,10 +742,10 @@ export default function PropertiesPage() {
           /* Full-screen map view */
           <div style={{ height: 'calc(100vh - 130px)' }} className="relative">
             {isLoading && (
-              <div className="absolute inset-0 bg-white/40 z-10 flex items-center justify-center pointer-events-none">
-                <div className="bg-white rounded-full px-4 py-2 shadow-lg flex items-center gap-2">
+              <div className={`absolute inset-0 z-10 flex items-center justify-center pointer-events-none ${theme === "dark" ? "bg-black/30" : "bg-white/40"}`}>
+                <div className={`rounded-full px-4 py-2 shadow-lg flex items-center gap-2 ${theme === "dark" ? "bg-black/70" : "bg-white"}`}>
                   <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
-                  <span className="text-sm text-slate-700">Updating...</span>
+                  <span className={`text-sm ${theme === "dark" ? "text-white" : "text-slate-700"}`}>Updating...</span>
                 </div>
               </div>
             )}
@@ -817,25 +763,25 @@ export default function PropertiesPage() {
             {isLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                 {[...Array(12)].map((_, i) => (
-                  <div key={i} className="rounded-xl border border-slate-200 overflow-hidden animate-pulse">
-                    <div className="h-32 bg-slate-200" />
+                  <div key={i} className={`rounded-xl border overflow-hidden animate-pulse ${theme === "dark" ? "border-white/10" : "border-slate-200"}`}>
+                    <div className={`h-32 ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
                     <div className="p-3 space-y-2">
-                      <div className="h-3 bg-slate-200 rounded w-3/4" />
-                      <div className="h-2 bg-slate-200 rounded w-1/2" />
-                      <div className="h-3 bg-slate-200 rounded w-1/3" />
+                      <div className={`h-3 rounded w-3/4 ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
+                      <div className={`h-2 rounded w-1/2 ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
+                      <div className={`h-3 rounded w-1/3 ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
                     </div>
                   </div>
                 ))}
               </div>
             ) : renderState === 'empty' ? (
               <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
-                <div className="bg-slate-100 rounded-full p-8 mb-6">
-                  <Home className="h-14 w-14 text-slate-400" />
+                <div className={`rounded-full p-8 mb-6 ${theme === "dark" ? "bg-white/10" : "bg-slate-100"}`}>
+                  <Home className={`h-14 w-14 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                 </div>
-                <h3 className="text-xl font-bold text-slate-900 mb-3">
+                <h3 className={`text-xl font-bold mb-3 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                   {searchQuery ? `No results for "${searchQuery}"` : 'No properties found'}
                 </h3>
-                <p className="text-slate-500 mb-6">Try adjusting your search or filters</p>
+                <p className={`mb-6 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>Try adjusting your search or filters</p>
                 <Button onClick={clearAllFilters} className="bg-orange-500 hover:bg-orange-600 text-white">
                   Clear filters
                 </Button>
@@ -843,8 +789,8 @@ export default function PropertiesPage() {
             ) : (
               <>
                 {properties.length > 0 && (
-                  <p className="text-sm text-slate-600 mb-6">
-                    <span className="font-semibold text-slate-900">{properties.length.toLocaleString()}</span> properties found
+                  <p className={`text-sm mb-6 ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
+                    <span className={`font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{properties.length.toLocaleString()}</span> properties found
                     {searchQuery && <> in <span className="text-orange-600 font-medium">{searchQuery}</span></>}
                   </p>
                 )}
@@ -871,10 +817,32 @@ export default function PropertiesPage() {
           </div>
         )}
 
-          </div>{/* /flex-1 content wrapper */}
-        </div>{/* /flex items-start outer wrapper */}
+        </div>{/* /main layout */}
 
         {/* ── Modals ──────────────────────────────────────────────────────── */}
+        
+        {/* Advanced Filters Modal */}
+        <AdvancedFiltersModal
+          isOpen={showMobileFilters}
+          onClose={() => setShowMobileFilters(false)}
+          filters={{
+            priceRange,
+            propertyType: selectedType,
+            bedrooms: minBeds,
+            bathrooms: minBaths,
+          }}
+          onApply={(filters) => {
+            setPriceRange(filters.priceRange)
+            setSelectedType(filters.propertyType)
+            setMinBeds(filters.bedrooms)
+            setMinBaths(filters.bathrooms)
+            setCurrentPage(1)
+          }}
+          onClear={clearAllFilters}
+          maxPrice={FILTER_PRICE_MAX}
+        />
+
+        {/* Save Favorite Modal */}
         {showSaveFavoriteModal && (
           <SaveFavoriteModal
             isOpen={showSaveFavoriteModal}

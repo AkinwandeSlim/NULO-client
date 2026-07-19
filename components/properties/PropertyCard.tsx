@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import Image from 'next/image'
 import { formatPrice, formatLocation } from '@/lib/utils/format'
+import { useTheme } from '@/contexts/ThemeContext'
 
 interface PropertyCardProps {
   property: any
@@ -30,6 +31,7 @@ export default function PropertyCard({
   isPendingFavorite = false
 }: PropertyCardProps) {
   const router = useRouter()
+  const { theme } = useTheme()
   const [imageError, setImageError] = useState(false)
   const [imageLoaded, setImageLoaded] = useState(false)
 
@@ -57,11 +59,15 @@ export default function PropertyCard({
   if (compact) {
     return (
       <div
-        className="group flex flex-col bg-white rounded-xl overflow-hidden border border-slate-200 hover:border-orange-300 hover:shadow-md transition-all duration-200 cursor-pointer"
+        className={`group flex flex-col rounded-xl overflow-hidden border transition-all duration-200 cursor-pointer ${
+          theme === "dark"
+            ? "bg-[#0A0A0A] border-white/10 hover:border-orange-400/50 hover:shadow-lg hover:shadow-orange-500/10"
+            : "bg-white border-slate-200 hover:border-orange-300 hover:shadow-md"
+        }`}
         onClick={handleCardClick}
       >
         {/* Image container */}
-        <div className="relative h-32 overflow-hidden bg-slate-100">
+        <div className={`relative h-32 overflow-hidden ${theme === "dark" ? "bg-white/5" : "bg-slate-100"}`}>
           {!imageError ? (
             <Image
               src={mainImage}
@@ -76,11 +82,11 @@ export default function PropertyCard({
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
-              <Home className="h-8 w-8 text-slate-300" />
+              <Home className={`h-8 w-8 ${theme === "dark" ? "text-white/20" : "text-slate-300"}`} />
             </div>
           )}
           {!imageLoaded && !imageError && (
-            <div className="absolute inset-0 bg-slate-200 animate-pulse" />
+            <div className={`absolute inset-0 animate-pulse ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
           )}
           
           {/* Status badge - Improved visibility */}
@@ -93,7 +99,9 @@ export default function PropertyCard({
           </div>
           
           {/* Price overlay */}
-          <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded shadow-md">
+          <div className={`absolute bottom-2 left-2 backdrop-blur-sm px-2 py-1 rounded shadow-md ${
+            theme === "dark" ? "bg-black/70" : "bg-white/90"
+          }`}>
             <span className="text-xs font-bold text-orange-600">
               {formatPrice(property.price)}
             </span>
@@ -103,25 +111,33 @@ export default function PropertyCard({
         {/* Content */}
         <div className="p-3 flex-1 flex flex-col">
           {/* Title */}
-          <h3 className="text-sm font-semibold text-slate-900 leading-tight line-clamp-2 group-hover:text-orange-600 transition-colors mb-1">
+          <h3 className={`text-sm font-semibold leading-tight line-clamp-2 group-hover:text-orange-600 transition-colors mb-1 ${
+            theme === "dark" ? "text-white" : "text-slate-900"
+          }`}>
             {property.title}
           </h3>
 
           {/* Location */}
-          <p className="text-xs text-slate-500 line-clamp-1 mb-2 flex items-center gap-1">
+          <p className={`text-xs line-clamp-1 mb-2 flex items-center gap-1 ${
+            theme === "dark" ? "text-white/60" : "text-slate-500"
+          }`}>
             <MapPin className="w-3 h-3 text-orange-500 flex-shrink-0" />
             {location}
           </p>
 
           {/* Specs - Improved with better icons and tooltips */}
-          <div className="flex items-center gap-3 text-xs text-slate-600 mb-2">
+          <div className="flex items-center gap-3 text-xs mb-2">
             {/* Bedrooms */}
             <div 
-              className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-md hover:bg-orange-50 transition-colors group relative"
+              className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors group relative ${
+                theme === "dark" 
+                  ? "bg-white/5 hover:bg-orange-500/10" 
+                  : "bg-slate-50 hover:bg-orange-50"
+              }`}
               title={`${property.beds} Bedroom${property.beds !== 1 ? 's' : ''}`}
             >
               <Bed className="w-3.5 h-3.5 text-orange-500" />
-              <span className="font-semibold text-slate-700">{property.beds}</span>
+              <span className={`font-semibold ${theme === "dark" ? "text-white" : "text-slate-700"}`}>{property.beds}</span>
               {/* Tooltip on hover */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
                 {property.beds} Bedroom{property.beds !== 1 ? 's' : ''}
@@ -130,11 +146,15 @@ export default function PropertyCard({
 
             {/* Bathrooms */}
             <div 
-              className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-md hover:bg-blue-50 transition-colors group relative"
+              className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors group relative ${
+                theme === "dark" 
+                  ? "bg-white/5 hover:bg-blue-500/10" 
+                  : "bg-slate-50 hover:bg-blue-50"
+              }`}
               title={`${property.baths} Bathroom${property.baths !== 1 ? 's' : ''}`}
             >
               <Bath className="w-3.5 h-3.5 text-blue-500" />
-              <span className="font-semibold text-slate-700">{property.baths}</span>
+              <span className={`font-semibold ${theme === "dark" ? "text-white" : "text-slate-700"}`}>{property.baths}</span>
               {/* Tooltip on hover */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
                 {property.baths} Bathroom{property.baths !== 1 ? 's' : ''}
@@ -143,10 +163,14 @@ export default function PropertyCard({
 
             {/* View count - Always show if available */}
           {(property.view_count || 0) >= 0 && (
-            <div className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-md hover:bg-blue-50 transition-colors group relative"
+            <div className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors group relative ${
+              theme === "dark" 
+                ? "bg-white/5 hover:bg-blue-500/10" 
+                : "bg-slate-50 hover:bg-blue-50"
+            }`}
                  title={`${property.view_count || 0} view${(property.view_count || 0) !== 1 ? 's' : ''}`}>
               <Eye className="w-3.5 h-3.5 text-blue-500" />
-              <span className="font-semibold text-slate-700 text-xs">{property.view_count || 0}</span>
+              <span className={`font-semibold text-xs ${theme === "dark" ? "text-white" : "text-slate-700"}`}>{property.view_count || 0}</span>
               {/* Tooltip on hover */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
                 {property.view_count || 0} view{(property.view_count || 0) !== 1 ? 's' : ''}
@@ -157,11 +181,15 @@ export default function PropertyCard({
           {/* Size if available */}
           {property.sqft && (
             <div 
-              className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-md hover:bg-purple-50 transition-colors group relative"
+              className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors group relative ${
+                theme === "dark" 
+                  ? "bg-white/5 hover:bg-purple-500/10" 
+                  : "bg-slate-50 hover:bg-purple-50"
+              }`}
               title={`${property.sqft} sq ft`}
             >
               <Square className="w-3.5 h-3.5 text-purple-500" />
-              <span className="font-semibold text-slate-700 text-[10px]">{Math.round(property.sqft / 100) * 100}<span className="text-[8px] ml-0.5">sqft</span></span>
+              <span className={`font-semibold text-[10px] ${theme === "dark" ? "text-white" : "text-slate-700"}`}>{Math.round(property.sqft / 100) * 100}<span className="text-[8px] ml-0.5">sqft</span></span>
               {/* Tooltip on hover */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
                 {property.sqft.toLocaleString()} sq ft
@@ -174,7 +202,11 @@ export default function PropertyCard({
           <div className="flex items-center justify-between mt-auto">
             {/* Verified badge */}
             {property.landlord?.verified && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-100 rounded-full px-1.5 py-0.5">
+              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-1.5 py-0.5 ${
+                theme === "dark"
+                  ? "text-green-400 bg-green-500/10 border border-green-500/20"
+                  : "text-green-700 bg-green-50 border border-green-100"
+              }`}>
                 <svg viewBox="0 0 20 20" fill="currentColor" width="8" height="8"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/></svg>
                 Verified
               </span>
@@ -183,7 +215,7 @@ export default function PropertyCard({
             {/* Favorite button */}
             <button
               className={`h-6 w-6 rounded-full flex items-center justify-center transition-colors ${
-                isFavorite ? 'text-red-500' : 'text-slate-300 hover:text-red-400'
+                isFavorite ? 'text-red-500' : theme === "dark" ? "text-white/30 hover:text-red-400" : "text-slate-300 hover:text-red-400"
               }`}
               onClick={handleFavorite}
               disabled={isAuthLoading || isPendingFavorite}

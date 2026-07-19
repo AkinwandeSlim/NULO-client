@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Grid, Map, Split } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-export type ViewMode = 'list' | 'map' | 'split'
+export type ViewMode = 'list' | 'map' | 'split' | 'grid'
 
 interface ViewModeToggleProps {
   viewMode: ViewMode

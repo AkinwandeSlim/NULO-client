@@ -1,35 +1,60 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
-import { Navbar } from "@/components/navigation/Navbar"
-import { ThemeProvider } from "@/contexts/ThemeContext"
+import { useTheme } from "@/contexts/ThemeContext"
+import { PublicHeader } from "@/components/navigation/PublicHeader"
+import { MarketplaceHeader } from "@/components/navigation/MarketplaceHeader"
+import { ReactNode } from "react"
+
+function PublicLayoutContent({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
+  const { theme, toggleTheme } = useTheme()
+
+  // The landing page ("/") has its own layout with hero section
+  // It will render the header itself
+  const isLanding = pathname === "/"
+
+  // The marketplace pages get their own dedicated header
+  const isMarketplace = pathname?.startsWith("/properties")
+
+  if (isLanding) {
+    return <>{children}</>
+  }
+
+  if (isMarketplace) {
+    return (
+      <div className={`min-h-screen ${theme === "dark" ? "bg-black text-white" : "bg-white text-slate-900"}`}>
+        <main className="pt-0">{children}</main>
+      </div>
+    )
+  }
+
+  // All other public pages get the shared header
+  return (
+    <div className={`min-h-screen ${theme === "dark" ? "bg-black text-white" : "bg-white text-slate-900"}`}>
+      <PublicHeader theme={theme} toggleTheme={toggleTheme} />
+
+      {/* Main Content with padding to account for sticky header */}
+      <main className="pt-0">{children}</main>
+    </div>
+  )
+}
 
 export default function PublicLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: ReactNode
 }) {
-  const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
 
-  // ✅ The landing page ("/") ships its own dark sticky header + footer
-  // (see app/(public)/page.tsx). Render it bare — no shared Navbar, no
-  // light warm-ivory wrapper, no top padding — so the dark full-bleed
-  // hero can sit flush against the viewport top.
-  const isLanding = pathname === "/"
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
-  if (isLanding) {
-    return <ThemeProvider>{children}</ThemeProvider>
-  }
+  if (!mounted) return null
 
   return (
-    <ThemeProvider>
-      <div className="min-h-screen bg-warm-ivory-gradient">
-        {/* ✅ Clean: Navbar as separate component */}
-        <Navbar />
-
-        {/* Main Content - Adjusted Padding */}
-        <main className="pt-[7.5rem] sm:pt-20">{children}</main>
-      </div>
-    </ThemeProvider>
+    <PublicLayoutContent>{children}</PublicLayoutContent>
   )
 }

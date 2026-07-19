@@ -22,6 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { toast } from 'sonner'
 import { viewingRequestsAPI } from '@/lib/api/viewingRequestsTenant'
 import { formatPrice, formatLocation } from '@/lib/utils/format'
+import { useTheme } from '@/contexts/ThemeContext'
 
 interface ViewingRequestModalProps {
   property: any
@@ -48,6 +49,7 @@ export default function ViewingRequestModal({
   viewingType = 'PHYSICAL' as 'PHYSICAL' | 'VIRTUAL' | 'LIVE_VIDEO',
   landlordResponseTime = "within 2 hours"
 }: ViewingRequestModalProps) {
+  const { theme } = useTheme()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [successData, setSuccessData] = useState<any>(null)
@@ -251,31 +253,31 @@ export default function ViewingRequestModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleDialogOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="space-y-3 pb-4 border-b border-slate-200">
+      <DialogContent className={`sm:max-w-2xl max-h-[90vh] overflow-y-auto ${theme === "dark" ? "bg-black border-white/10" : ""}`}>
+        <DialogHeader className={`space-y-3 pb-4 border-b ${theme === "dark" ? "border-white/10" : "border-slate-200"}`}>
           {showSuccess && successData ? (
             <div className="flex items-center gap-3">
               <CheckCircle2 className="h-6 w-6 text-green-500" />
               <div>
-                <DialogTitle className="text-2xl font-bold text-slate-900">
+                <DialogTitle className={`text-2xl font-bold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                   Viewing Request Sent!
                 </DialogTitle>
-                <DialogDescription className="text-sm text-slate-600 mt-1">
+                <DialogDescription className={`text-sm mt-1 ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
                   Your viewing request for "{property.title}" has been submitted successfully
                 </DialogDescription>
               </div>
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-orange-100 rounded-lg">
+              <div className={`p-2 rounded-lg ${theme === "dark" ? "bg-orange-900/20" : "bg-orange-100"}`}>
                 <Calendar className="h-6 w-6 text-orange-600" />
               </div>
               <div>
-                <DialogTitle className="text-2xl font-bold text-slate-900">
+                <DialogTitle className={`text-2xl font-bold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                   Schedule Property Viewing
                 </DialogTitle>
-                <DialogDescription className="text-sm text-slate-600 mt-1">
-                  Request a viewing for <strong className="text-slate-900">"{property.title}"</strong>
+                <DialogDescription className={`text-sm mt-1 ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
+                  Request a viewing for <strong className={theme === "dark" ? "text-white" : "text-slate-900"}>"{property.title}"</strong>
                 </DialogDescription>
               </div>
             </div>
@@ -286,17 +288,17 @@ export default function ViewingRequestModal({
           {showSuccess && successData ? (
             <div className="flex flex-col items-center justify-center py-8">
               <CheckCircle2 className="h-16 w-16 text-green-500 mb-4" />
-              <p className="text-slate-700 mb-4 text-center max-w-md">
-                Your request for <strong>{property.title}</strong> was submitted successfully.<br />
+              <p className={`mb-4 text-center max-w-md ${theme === "dark" ? "text-white/80" : "text-slate-700"}`}>
+                Your request for <strong className={theme === "dark" ? "text-white" : ""}>{property.title}</strong> was submitted successfully.<br />
                 The landlord will respond {landlordResponseTime}.<br />
                 You'll receive confirmation via SMS and email.
               </p>
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 w-full max-w-md">
-              <h4 className="font-medium text-blue-900 mb-3 flex items-center gap-2">
+              <div className={`rounded-xl p-4 mb-6 w-full max-w-md ${theme === "dark" ? "bg-blue-900/20 border-blue-500/30" : "bg-blue-50 border-blue-200"} border`}>
+              <h4 className={`font-medium mb-3 flex items-center gap-2 ${theme === "dark" ? "text-blue-400" : "text-blue-900"}`}>
                 <Calendar className="w-4 h-4" />
                 Viewing Details
               </h4>
-              <div className="text-sm text-blue-800 space-y-2">
+              <div className={`text-sm space-y-2 ${theme === "dark" ? "text-blue-300" : "text-blue-800"}`}>
                 <div className="flex items-center justify-between">
                   <span><strong>📅 Date:</strong></span>
                   <span>{formatDate(successData.preferred_date) || successData.preferred_date || 'TBD'}</span>
@@ -349,20 +351,20 @@ export default function ViewingRequestModal({
                     Go to Dashboard
                   </Button>
                   <Button 
-                    className="flex-1 h-12 bg-white border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 rounded-lg" 
+                    className={`flex-1 h-12 border-2 text-slate-700 font-semibold rounded-lg ${theme === "dark" ? "bg-white/10 border-white/20 hover:bg-white/20 text-white" : "bg-white border-slate-300 hover:bg-slate-50"}`} 
                     onClick={handleBrowseMore}
                   >
                     Browse More
                   </Button>
                 </div>
                 <Button
-                  className="w-full h-10 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg text-sm"
+                  className={`w-full h-10 font-medium rounded-lg text-sm ${theme === "dark" ? "bg-white/10 hover:bg-white/20 text-white" : "bg-slate-200 hover:bg-slate-300 text-slate-700"}`}
                   onClick={handleResetAndClose}
                 >
                   Close (Stay on Property)
                 </Button>
-                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-xs text-blue-800">
+                <div className={`mt-2 p-3 rounded-lg ${theme === "dark" ? "bg-blue-900/20 border-blue-500/30" : "bg-blue-50 border-blue-200"} border`}>
+                  <p className={`text-xs ${theme === "dark" ? "text-blue-300" : "text-blue-800"}`}>
                     {/* <strong>📋 Next Step:</strong> The landlord will review your viewing request. Once confirmed, you'll be able to apply directly from your dashboard. */}
                     <strong>📋 Next Step:</strong> You've scheduled your viewing. Ready to apply? Submit your application now and stand out before the landlord confirms.
                   </p>
@@ -373,10 +375,10 @@ export default function ViewingRequestModal({
           // ...existing code for the form and property summary...
           <>
             {/* Property Summary Card - Enhanced */}
-            <div className="bg-gradient-to-r from-slate-50 to-orange-50 rounded-lg p-4 border border-orange-100">
+            <div className={`rounded-lg p-4 border ${theme === "dark" ? "bg-gradient-to-r from-slate-900/50 to-orange-900/20 border-orange-500/30" : "bg-gradient-to-r from-slate-50 to-orange-50 border-orange-100"}`}>
               <div className="flex gap-4">
                 {/* Property Image */}
-                <div className="w-24 h-24 bg-slate-200 rounded-lg flex-shrink-0 overflow-hidden">
+                <div className={`w-24 h-24 rounded-lg flex-shrink-0 overflow-hidden ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`}>
                   {property.images?.[0] ? (
                     <img
                       src={property.images[0]}
@@ -384,15 +386,15 @@ export default function ViewingRequestModal({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-slate-300">
-                      <MapPin className="h-8 w-8 text-slate-600" />
+                    <div className={`w-full h-full flex items-center justify-center ${theme === "dark" ? "bg-white/10" : "bg-slate-300"}`}>
+                      <MapPin className={`h-8 w-8 ${theme === "dark" ? "text-white/40" : "text-slate-600"}`} />
                     </div>
                   )}
                 </div>
                 {/* Property Details */}
                 <div className="flex-1">
-                  <h3 className="font-semibold text-slate-900 text-base">{property.title}</h3>
-                  <p className="text-sm text-slate-600 flex items-center gap-1 mt-1">
+                  <h3 className={`font-semibold text-base ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{property.title}</h3>
+                  <p className={`text-sm flex items-center gap-1 mt-1 ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
                     <MapPin className="h-3.5 w-3.5" />
                     {formatLocation(property.location || property.address || 'Location TBD')}
                   </p>
@@ -405,11 +407,11 @@ export default function ViewingRequestModal({
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Bed className="h-4 w-4 text-slate-600" />
+                      <Bed className={`h-4 w-4 ${theme === "dark" ? "text-white/60" : "text-slate-600"}`} />
                       <span>{property.beds || 0} bed{property.beds !== 1 ? 's' : ''}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Bath className="h-4 w-4 text-slate-600" />
+                      <Bath className={`h-4 w-4 ${theme === "dark" ? "text-white/60" : "text-slate-600"}`} />
                       <span>{property.baths || 0} bath{property.baths !== 1 ? 's' : ''}</span>
                     </div>
                   </div>
@@ -421,7 +423,7 @@ export default function ViewingRequestModal({
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Name Input */}
               <div className="space-y-2">
-                <Label htmlFor="tenant_name" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                <Label htmlFor="tenant_name" className={`text-sm font-semibold flex items-center gap-2 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                   <User className="h-4 w-4 text-orange-500" />
                   Your Full Name
                   <span className="text-red-500">*</span>
@@ -432,7 +434,7 @@ export default function ViewingRequestModal({
                   placeholder="Enter your full name"
                   value={formData.tenant_name}
                   onChange={(e) => handleInputChange('tenant_name', e.target.value)}
-                  className={`h-12 text-base ${errors.tenant_name ? 'border-red-500 focus:ring-red-500' : 'focus:ring-orange-500'}`}
+                  className={`h-12 text-base ${errors.tenant_name ? 'border-red-500 focus:ring-red-500' : 'focus:ring-orange-500'} ${theme === "dark" ? "bg-black border-white/10 text-white" : ""}`}
                 />
                 {errors.tenant_name && (
                   <p className="text-xs text-red-600 flex items-center gap-1">
@@ -444,7 +446,7 @@ export default function ViewingRequestModal({
 
               {/* Contact Number */}
               <div className="space-y-2">
-                <Label htmlFor="contact_number" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                <Label htmlFor="contact_number" className={`text-sm font-semibold flex items-center gap-2 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                   <Phone className="h-4 w-4 text-orange-500" />
                   Your Contact Number
                   <span className="text-red-500">*</span>
@@ -455,7 +457,7 @@ export default function ViewingRequestModal({
                   placeholder="Enter your phone number"
                   value={formData.contact_number}
                   onChange={(e) => handleInputChange('contact_number', e.target.value)}
-                  className={`h-12 text-base ${errors.contact_number ? 'border-red-500 focus:ring-red-500' : 'focus:ring-orange-500'}`}
+                  className={`h-12 text-base ${errors.contact_number ? 'border-red-500 focus:ring-red-500' : 'focus:ring-orange-500'} ${theme === "dark" ? "bg-black border-white/10 text-white" : ""}`}
                   autoComplete="tel"
                 />
                 {errors.contact_number && (
@@ -468,7 +470,7 @@ export default function ViewingRequestModal({
 
               {/* Date Picker */}
               <div className="space-y-2">
-                <Label htmlFor="preferred_date" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                <Label htmlFor="preferred_date" className={`text-sm font-semibold flex items-center gap-2 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                   <Calendar className="h-4 w-4 text-orange-500" />
                   Preferred Viewing Date
                   <span className="text-red-500">*</span>
@@ -480,11 +482,11 @@ export default function ViewingRequestModal({
                   max={getMaxDate()}
                   value={formData.preferred_date}
                   onChange={(e) => handleInputChange('preferred_date', e.target.value)}
-                  className={`h-12 text-base ${errors.preferred_date ? 'border-red-500 focus:ring-red-500' : 'focus:ring-orange-500'}`}
+                  className={`h-12 text-base ${errors.preferred_date ? 'border-red-500 focus:ring-red-500' : 'focus:ring-orange-500'} ${theme === "dark" ? "bg-black border-white/10 text-white" : ""}`}
                 />
                 {formData.preferred_date && !errors.preferred_date && (
-                  <div className="p-2 bg-green-50 border border-green-200 rounded-md">
-                    <p className="text-xs text-green-700 flex items-center gap-1 font-medium">
+                  <div className={`p-2 rounded-md ${theme === "dark" ? "bg-green-900/20 border-green-500/30" : "bg-green-50 border-green-200"} border`}>
+                    <p className={`text-xs flex items-center gap-1 font-medium ${theme === "dark" ? "text-green-400" : "text-green-700"}`}>
                       <CheckCircle2 className="h-3.5 w-3.5" />
                       {formatDate(formData.preferred_date)}
                     </p>
@@ -500,7 +502,7 @@ export default function ViewingRequestModal({
 
               {/* Time Slot Selector */}
               <div className="space-y-3">
-                <Label className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                <Label className={`text-sm font-semibold flex items-center gap-2 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                   <Clock className="h-4 w-4 text-orange-500" />
                   Preferred Time Slot
                   <span className="text-red-500">*</span>
@@ -514,16 +516,16 @@ export default function ViewingRequestModal({
                       className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
                         formData.time_slot === slot.value
                           ? 'border-orange-500 bg-orange-50 shadow-md scale-105'
-                          : 'border-slate-200 hover:border-orange-300 hover:bg-slate-50'
+                          : theme === "dark" ? 'border-white/10 hover:border-orange-500/50 hover:bg-white/5' : 'border-slate-200 hover:border-orange-300 hover:bg-slate-50'
                       }`}
                     >
                       <span className="text-3xl mb-2">{slot.icon}</span>
                       <p className={`font-semibold text-sm ${
-                        formData.time_slot === slot.value ? 'text-orange-700' : 'text-slate-700'
+                        formData.time_slot === slot.value ? 'text-orange-700' : theme === "dark" ? 'text-white/70' : 'text-slate-700'
                       }`}>
                         {slot.label}
                       </p>
-                      <p className="text-xs text-slate-500 mt-1">{slot.time}</p>
+                      <p className={`text-xs mt-1 ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{slot.time}</p>
                       {formData.time_slot === slot.value && (
                         <CheckCircle2 className="h-5 w-5 text-orange-500 mt-2" />
                       )}
@@ -540,10 +542,10 @@ export default function ViewingRequestModal({
 
               {/* Message */}
               <div className="space-y-2">
-                <Label htmlFor="message" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                <Label htmlFor="message" className={`text-sm font-semibold flex items-center gap-2 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                   <MessageSquare className="h-4 w-4 text-orange-500" />
                   Additional Message
-                  <span className="text-xs text-slate-500 font-normal ml-1">(Optional)</span>
+                  <span className={`text-xs font-normal ml-1 ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>(Optional)</span>
                 </Label>
                 <Textarea
                   id="message"
@@ -552,21 +554,21 @@ export default function ViewingRequestModal({
                   onChange={(e) => handleInputChange('message', e.target.value)}
                   maxLength={500}
                   rows={4}
-                  className="resize-none text-base focus:ring-orange-500"
+                  className={`resize-none text-base focus:ring-orange-500 ${theme === "dark" ? "bg-black border-white/10 text-white" : ""}`}
                 />
-                <p className="text-xs text-slate-500 text-right">
+                <p className={`text-xs text-right ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
                   {formData.message.length}/500 characters
                 </p>
               </div>
 
               {/* Viewing Summary */}
               {formData.preferred_date && selectedTimeSlot && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                  <h4 className="font-medium text-blue-900 mb-3 flex items-center gap-2">
+                <div className={`rounded-xl p-4 ${theme === "dark" ? "bg-blue-900/20 border-blue-500/30" : "bg-blue-50 border-blue-200"} border`}>
+                  <h4 className={`font-medium mb-3 flex items-center gap-2 ${theme === "dark" ? "text-blue-400" : "text-blue-900"}`}>
                     <CheckCircle2 className="w-4 h-4" />
                     Viewing Summary
                   </h4>
-                  <div className="text-sm text-blue-800 space-y-2">
+                  <div className={`text-sm space-y-2 ${theme === "dark" ? "text-blue-300" : "text-blue-800"}`}>
                     <p><strong>📅 Date:</strong> {formatDate(formData.preferred_date)}</p>
                     <p><strong>🕐 Time:</strong> {selectedTimeSlot.time}</p>
                     <p><strong>📍 Property:</strong> {property.title}</p>
@@ -577,27 +579,27 @@ export default function ViewingRequestModal({
 
               {/* Info Banners */}
               <div className="space-y-3 pt-2">
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                  <p className="text-sm text-blue-800 text-center">
+                <div className={`p-4 rounded-xl ${theme === "dark" ? "bg-blue-900/20 border-blue-500/30" : "bg-blue-50 border-blue-200"} border`}>
+                  <p className={`text-sm text-center ${theme === "dark" ? "text-blue-300" : "text-blue-800"}`}>
                     <strong>⚡ Quick Response:</strong> Landlord typically responds {landlordResponseTime}.
                     You'll receive confirmation via SMS and email.
                   </p>
                 </div>
 
-                <div className="p-4 bg-green-50 border border-green-200 rounded-xl">
-                  <p className="text-sm text-green-800 text-center">
+                <div className={`p-4 rounded-xl ${theme === "dark" ? "bg-green-900/20 border-green-500/30" : "bg-green-50 border-green-200"} border`}>
+                  <p className={`text-sm text-center ${theme === "dark" ? "text-green-300" : "text-green-800"}`}>
                     🛡️ <strong>Protected by Nulo:</strong> All viewing requests are logged and monitored for your safety.
                   </p>
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4 border-t border-slate-200">
+              <div className={`flex flex-col-reverse sm:flex-row gap-3 pt-4 border-t ${theme === "dark" ? "border-white/10" : "border-slate-200"}`}>
                 <Button
                   onClick={handleClose}
                   variant="outline"
                   disabled={isSubmitting}
-                  className="flex-1 h-13 border-2 border-slate-300 hover:bg-slate-50 font-semibold text-base"
+                  className={`flex-1 h-13 border-2 font-semibold text-base ${theme === "dark" ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-300 hover:bg-slate-50 text-slate-700"}`}
                 >
                   Cancel
                 </Button>

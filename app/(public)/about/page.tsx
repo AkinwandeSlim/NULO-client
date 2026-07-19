@@ -1,363 +1,390 @@
-import React from 'react';
-import { 
-  Home, 
-  Shield, 
-  Users, 
-  MapPin, 
-  CheckCircle, 
-  Star,
-  TrendingUp,
-  Heart,
-  Lock,
-  MessageSquare,
-  Building,
-  Zap,
-  Award,
-  ChevronRight
-} from 'lucide-react';
-import Link from 'next/link';
+"use client"
 
-export const metadata = {
-  title: 'About NuloAfrica - Zero Agency Fee Rental Platform',
-  description: 'Learn about NuloAfrica, Nigeria\'s leading zero agency fee rental platform. Discover our mission to connect verified tenants with verified landlords across Lagos, Abuja, and Port Harcourt.',
-  keywords: 'about NuloAfrica, rental platform Nigeria, zero agency fees, verified landlords, verified tenants, Lagos rentals, Abuja rentals, Port Harcourt rentals',
-  openGraph: {
-    title: 'About NuloAfrica - Zero Agency Fee Rental Platform',
-    description: 'Discover how NuloAfrica is revolutionizing the Nigerian rental market with zero agency fees and verified users.',
-    url: 'https://nuloafrica.com/about',
-    siteName: 'NuloAfrica',
-    locale: 'en_NG',
-    type: 'website',
+/**
+ * About Page — CEO Letter + Founders
+ * ------------------------------------------------------------------
+ * Moved from landing page to give investors/users a dedicated space
+ * to learn about the people and story behind NuloAfrica.
+ * ------------------------------------------------------------------
+ */
+
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { motion } from "framer-motion"
+import { useTheme } from "@/contexts/ThemeContext"
+import { ChevronRight, Eye, Target, ShieldCheck, MapPin, Mail, Phone, TrendingUp } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Logo } from "@/components/logo"
+import { Footer } from "@/components/footer"
+
+const CONTAINER = "mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8"
+const EYEBROW = "text-[13px] font-medium uppercase tracking-[0.18em] text-orange-400"
+
+const getCardClass = (theme: "dark" | "light") =>
+  `rounded-2xl border ${theme === "dark" ? "border-white/[0.06] bg-[#0A0A0A]" : "border-slate-200/80 bg-white"}`
+const getCardHoverClass = () =>
+  "transition-all duration-300 hover:-translate-y-1 hover:border-orange-500/40 hover:shadow-lg hover:shadow-orange-500/5"
+
+const cx = (...classes: Array<string | false | null | undefined>) =>
+  classes.filter(Boolean).join(" ")
+
+const FOUNDERS = [
+  {
+    name: "Terver Orbunde (MBA)",
+    role: "Founder & Chief Executive Officer",
+    bio: "Visionary leader driving the trust infrastructure for Africa's housing economy through technology, data, and innovative financing models.",
+    image: "/images/ceo.jpg",
   },
-}
+  {
+    name: "Fakorede Akinwande Alexander",
+    role: "Product/Tech Lead",
+    bio: "Technology architect building scalable platforms and AI-powered solutions for African real estate markets.",
+    image: "/images/cto2.png",
+  },
+]
 
 export default function AboutPage() {
+  const { theme } = useTheme()
+
+  useEffect(() => {
+    document.body.classList.remove("has-navbar")
+    document.body.style.paddingTop = "0"
+    document.body.style.backgroundColor = theme === "dark" ? "#000000" : "#ffffff"
+    return () => {
+      document.body.classList.add("has-navbar")
+      document.body.style.paddingTop = ""
+      document.body.style.backgroundColor = ""
+    }
+  }, [theme])
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-orange-600 via-orange-500 to-orange-400 text-white">
-        <div className="absolute inset-0 bg-black opacity-10"></div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
-          <div className="text-center">
-            <h1 className="text-5xl md:text-6xl font-bold mb-6">
-              About NuloAfrica
-            </h1>
-            <p className="text-xl md:text-2xl mb-8 text-orange-100 max-w-3xl mx-auto">
-              Zero agency fee rental platform connecting verified tenants with verified landlords across Nigeria
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link 
-                href="/properties"
-                className="inline-flex items-center px-8 py-4 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors"
-              >
-                Browse Properties
-                <ChevronRight className="ml-2 h-5 w-5" />
-              </Link>
-              <Link 
-                href="/auth/signup"
-                className="inline-flex items-center px-8 py-4 bg-orange-700 text-white rounded-lg font-semibold hover:bg-orange-800 transition-colors"
-              >
-                Get Started
-                <ChevronRight className="ml-2 h-5 w-5" />
-              </Link>
-            </div>
-          </div>
-        </div>
-        
-        {/* Decorative Elements */}
-        <div className="absolute top-20 left-10 w-20 h-20 bg-orange-300 rounded-full opacity-20"></div>
-        <div className="absolute bottom-20 right-10 w-32 h-32 bg-orange-300 rounded-full opacity-20"></div>
-        <div className="absolute top-40 right-20 w-16 h-16 bg-yellow-300 rounded-full opacity-20"></div>
-      </section>
+    <div className={`flex min-h-screen flex-col font-sans antialiased ${theme === "dark" ? "text-white bg-black" : "text-slate-900 bg-white"}`}>
+      <style jsx global>{`
+        body {
+          background-color: ${theme === "dark" ? "#000000" : "#ffffff"} !important;
+        }
+        .nulo-gradient-text {
+          background: linear-gradient(135deg, #ea580c, #fb923c, #f97316);
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          color: transparent;
+        }
+      `}</style>
 
-      {/* Mission Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-gray-900 mb-4">Our Mission</h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              To revolutionize the Nigerian rental market by eliminating agency fees and creating a trusted, transparent platform for tenants and landlords
-            </p>
-          </div>
-          
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center p-8 bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Shield className="h-8 w-8 text-orange-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">Zero Agency Fees</h3>
-              <p className="text-gray-600">
-                Save thousands of naira by connecting directly with verified landlords without middlemen
-              </p>
-            </div>
-            
-            <div className="text-center p-8 bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle className="h-8 w-8 text-green-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">Verified Users</h3>
-              <p className="text-gray-600">
-                All tenants and landlords undergo thorough verification to ensure safety and trust
-              </p>
-            </div>
-            
-            <div className="text-center p-8 bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Lock className="h-8 w-8 text-blue-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">Secure Payments</h3>
-              <p className="text-gray-600">
-                Escrow-based payment system protects both tenants and landlords throughout the rental process
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* How It Works */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-gray-900 mb-4">How NuloAfrica Works</h2>
-            <p className="text-xl text-gray-600">Simple, transparent, and secure rental process</p>
-          </div>
-          
-          <div className="grid md:grid-cols-4 gap-8">
-            <div className="relative">
-              <div className="text-center">
-                <div className="w-20 h-20 bg-orange-600 text-white rounded-full flex items-center justify-center mx-auto mb-6 text-2xl font-bold">
-                  1
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Sign Up & Verify</h3>
-                <p className="text-gray-600">
-                  Create your account and complete our quick verification process
-                </p>
-              </div>
-            </div>
-            
-            <div className="relative">
-              <div className="text-center">
-                <div className="w-20 h-20 bg-orange-600 text-white rounded-full flex items-center justify-center mx-auto mb-6 text-2xl font-bold">
-                  2
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Browse Properties</h3>
-                <p className="text-gray-600">
-                  Search verified properties in Lagos, Abuja, and Port Harcourt
-                </p>
-              </div>
-            </div>
-            
-            <div className="relative">
-              <div className="text-center">
-                <div className="w-20 h-20 bg-orange-600 text-white rounded-full flex items-center justify-center mx-auto mb-6 text-2xl font-bold">
-                  3
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Connect & View</h3>
-                <p className="text-gray-600">
-                  Schedule viewings and communicate directly with landlords
-                </p>
-              </div>
-            </div>
-            
-            <div className="relative">
-              <div className="text-center">
-                <div className="w-20 h-20 bg-orange-600 text-white rounded-full flex items-center justify-center mx-auto mb-6 text-2xl font-bold">
-                  4
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Apply & Pay</h3>
-                <p className="text-gray-600">
-                  Submit applications and pay securely through our platform
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-gray-900 mb-4">Why Choose NuloAfrica?</h2>
-            <p className="text-xl text-gray-600">Features designed for the Nigerian rental market</p>
-          </div>
-          
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <div className="flex items-start space-x-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                  <MapPin className="h-6 w-6 text-orange-600" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Pilot Cities Focus</h3>
-                <p className="text-gray-600">
-                  Currently serving Lagos, Abuja, and Port Harcourt with plans to expand nationwide
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-start space-x-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Star className="h-6 w-6 text-green-600" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Trust Scores</h3>
-                <p className="text-gray-600">
-                  Build your reputation through our engagement-based trust scoring system
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-start space-x-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <MessageSquare className="h-6 w-6 text-blue-600" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Direct Messaging</h3>
-                <p className="text-gray-600">
-                  Chat directly with landlords/tenants within our secure platform
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-start space-x-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <Building className="h-6 w-6 text-purple-600" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Property Management</h3>
-                <p className="text-gray-600">
-                  Landlords can easily manage listings, viewings, and applications
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-start space-x-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <Zap className="h-6 w-6 text-yellow-600" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Instant Notifications</h3>
-                <p className="text-gray-600">
-                  Get real-time updates for viewings, applications, and messages
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-start space-x-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                  <Heart className="h-6 w-6 text-red-600" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Save Favorites</h3>
-                <p className="text-gray-600">
-                  Keep track of properties you love with our favorites system
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Stats Section */}
-      <section className="py-20 bg-gradient-to-r from-orange-600 to-orange-500 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4">Making an Impact</h2>
-            <p className="text-xl text-orange-100">Join thousands of Nigerians already using NuloAfrica</p>
-          </div>
-          
-          <div className="grid md:grid-cols-4 gap-8 text-center">
-            <div>
-              <div className="text-4xl font-bold mb-2">3</div>
-              <div className="text-orange-100">Cities Covered</div>
-            </div>
-            <div>
-              <div className="text-4xl font-bold mb-2">0%</div>
-              <div className="text-orange-100">Agency Fees</div>
-            </div>
-            <div>
-              <div className="text-4xl font-bold mb-2">100%</div>
-              <div className="text-orange-100">Verified Users</div>
-            </div>
-            <div>
-              <div className="text-4xl font-bold mb-2">24/7</div>
-              <div className="text-orange-100">Support</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gray-50">
-        <div className="max-w-4xl mx-auto text-center">
-          <Award className="h-16 w-16 text-orange-600 mx-auto mb-6" />
-          <h2 className="text-4xl font-bold text-gray-900 mb-4">
-            Ready to Transform Your Rental Experience?
-          </h2>
-          <p className="text-xl text-gray-600 mb-8">
-            Join thousands of Nigerians who are already saving money and time with NuloAfrica
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link 
-              href="/auth/signup"
-              className="inline-flex items-center px-8 py-4 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors"
+      <main className="flex-1 pt-8">
+        {/* Hero */}
+        <section className={`relative py-20 sm:py-24 ${theme === "dark" ? "bg-gradient-to-b from-black to-[#0A0A0A]" : "bg-gradient-to-b from-white to-slate-50"}`}>
+          <div className={cx(CONTAINER)}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="text-center max-w-3xl mx-auto"
             >
-              Sign Up Free
-              <ChevronRight className="ml-2 h-5 w-5" />
-            </Link>
-            <Link 
-              href="/properties"
-              className="inline-flex items-center px-8 py-4 bg-white text-orange-600 border-2 border-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors"
-            >
-              Browse Properties
-              <Home className="ml-2 h-5 w-5" />
-            </Link>
+              <p className={cx(EYEBROW, "mb-4")}>About NuloAfrica</p>
+              <h1 className="text-[36px] sm:text-[44px] font-bold leading-tight mb-6 lg:text-[52px]">
+                The People Behind{" "}
+                <span className="nulo-gradient-text">Africa&apos;s Housing Revolution</span>
+              </h1>
+              <p className={`text-[15px] sm:text-[16px] leading-relaxed ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
+                Meet the team building the trust infrastructure for Africa&apos;s housing economy.
+              </p>
+            </motion.div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Footer Info */}
-      <section className="py-12 bg-gray-900 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-3 gap-8">
-            <div>
-              <h3 className="text-lg font-semibold mb-4">About NuloAfrica</h3>
-              <p className="text-gray-400">
-                Zero agency fee rental platform for the Nigerian market. 
-                Connecting verified tenants with verified landlords since 2025.
-              </p>
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold mb-4">Pilot Cities</h3>
-              <ul className="text-gray-400 space-y-2">
-                <li>Lagos</li>
-                <li>Abuja</li>
-                <li>Port Harcourt</li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold mb-4">Contact</h3>
-              <p className="text-gray-400">
-                Email: support@nuloafrica.com<br />
-                Phone: +234 XXX XXX XXXX<br />
-                Available 24/7 for support
-              </p>
-            </div>
+        {/* CEO Message */}
+        <section className={`py-16 sm:py-20 lg:py-24 ${theme === "dark" ? "bg-[#0A0A0A]" : "bg-white"}`}>
+          <div className={cx(CONTAINER)}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="grid items-start gap-10 sm:gap-12 lg:grid-cols-2 lg:gap-16"
+            >
+              {/* Left — Text */}
+              <div>
+                <p className={cx(EYEBROW, "mb-3")}>Message from the CEO</p>
+                <h2 className="mb-5 sm:mb-6 text-[24px] sm:text-[30px] font-bold leading-tight lg:text-[36px]">
+                  Building the Future of{" "}
+                  <span className="nulo-gradient-text">Housing in Africa</span>
+                </h2>
+                <div className={`space-y-4 text-[14px] sm:text-[15px] leading-relaxed ${theme === "dark" ? "text-white/65" : "text-slate-600"}`}>
+                  <p>
+                    Housing is one of humanity&apos;s most fundamental needs, yet for millions of
+                    Africans, it remains one of life&apos;s greatest challenges.
+                  </p>
+                  <p>
+                    For too long, access to housing has been defined by high barriers, fragmented
+                    markets, limited financing, and a lack of trust. Families struggle to find safe
+                    places to rent. Investors face unnecessary obstacles to participating in real
+                    estate. Property owners and managers navigate inefficient systems that slow
+                    growth and reduce confidence.
+                  </p>
+                  <p>
+                    At Nulo Africa, we believe there is a better way. We are building the trust
+                    infrastructure that powers Africa&apos;s housing economy. Our ambition goes
+                    beyond creating products—we are creating an ecosystem where technology, data, and
+                    innovative financing models work together to make housing more accessible,
+                    transparent, and inclusive.
+                  </p>
+                  <p>
+                    Through our Equity Share Trust Platform (NEST), we are democratizing property
+                    ownership by enabling more people to invest in rental real estate through
+                    fractional ownership. Through our AI-powered Rental Marketplace, we are creating
+                    trusted digital experiences that simplify renting and property management.
+                    Through our Advisory Services, we partner with governments, institutions, and
+                    private sector leaders to design the policies, systems, and strategies that will
+                    shape the future of housing across the continent.
+                  </p>
+                  <p>
+                    We believe that prosperous nations are not defined by the number of buildings
+                    they construct, but by the number of people who can confidently participate in
+                    the opportunities those buildings create. This is more than real estate. It is
+                    about financial inclusion, economic resilience, and generational wealth. It is
+                    about building systems that outlast us and creating opportunities that extend to
+                    every African.
+                  </p>
+                  <p className="font-medium text-orange-400">
+                    Thank you for joining us on this journey. Together, we are not simply building
+                    houses—we are building the future of housing in Africa.
+                  </p>
+                </div>
+
+                {/* Signature */}
+                <div className={`mt-8 flex items-center gap-4 border-t pt-6 ${theme === "dark" ? "border-white/10" : "border-slate-200"}`}>
+                  <div className="h-12 w-12 overflow-hidden rounded-full border-2 border-orange-500/40 flex-shrink-0">
+                    <img src="/images/pceo.jpg" alt="Terver Orbunde" className="h-full w-full object-cover object-[center_10%]" />
+                  </div>
+                  <div>
+                    <div className={`text-[15px] font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Terver Orbunde (MBA)</div>
+                    <div className="text-[13px] text-orange-400">Founder &amp; Chief Executive Officer, Nulo Africa</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right — Image card */}
+              <div className="lg:sticky lg:top-28">
+                <div className={`relative overflow-hidden rounded-2xl shadow-2xl shadow-black/30
+                  ${theme === "dark" ? "border border-white/[0.06]" : "border border-orange-500/20"}`}>
+                  <div className="relative h-[480px] sm:h-[560px] w-full">
+                    <img
+                      src="/images/ceo1.jpg"
+                      alt="Terver Orbunde — CEO, NuloAfrica"
+                      className="h-full w-full object-cover object-[center_8%] transition-transform duration-700 hover:scale-[1.02]"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+
+                    {/* Logo badge */}
+                    <div className="absolute top-4 right-4">
+                      <div className="flex items-center justify-center rounded-xl bg-black/50 px-2.5 py-2 shadow-lg backdrop-blur-sm">
+                        <img
+                          src="/nuloafrica-newlightlogo-complete.png"
+                          alt="NuloAfrica"
+                          className="h-6 w-auto object-contain"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bottom badge */}
+                    <div className="absolute bottom-0 left-0 right-0 p-5">
+                      <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 backdrop-blur-sm">
+                        <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-orange-400">Founder &amp; CEO</span>
+                      </div>
+                      <div className="text-[18px] font-bold text-white leading-tight">Terver Orbunde (MBA)</div>
+                      <div className="mt-1 text-[12px] text-white/60">NuloAfrica · Abuja, Nigeria</div>
+                    </div>
+                  </div>
+
+                  {/* Quote strip */}
+                  <div className={`px-5 py-4 border-t ${theme === "dark" ? "border-white/[0.06] bg-[#0d0d0d]" : "border-orange-500/10 bg-slate-50"}`}>
+                    <p className={`text-[12px] leading-relaxed italic ${theme === "dark" ? "text-white/45" : "text-slate-500"}`}>
+                      &ldquo;We are not simply building houses — we are building the future of housing in Africa.&rdquo;
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        {/* Founders */}
+        <section className={`py-16 sm:py-20 lg:py-24 ${theme === "dark" ? "bg-gradient-to-b from-[#050505] to-[#0A0A0A]" : "bg-gradient-to-b from-slate-50 to-orange-50"}`}>
+          <div className={cx(CONTAINER)}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+            >
+              <div className="text-center mb-12 sm:mb-16">
+                <p className={cx(EYEBROW, "mb-3")}>Meet the Founders</p>
+                <h2 className="text-[28px] sm:text-[34px] font-bold leading-tight lg:text-[40px]">
+                  The Team Behind <span className="nulo-gradient-text">NuloAfrica</span>
+                </h2>
+                <p className={`mt-4 text-[14px] sm:text-[15px] leading-relaxed ${theme === "dark" ? "text-white/55" : "text-slate-500"}`}>
+                  A passionate team building the future of African real estate.
+                </p>
+              </div>
+
+              <div className="mx-auto grid max-w-4xl items-stretch gap-8 sm:grid-cols-2">
+                {FOUNDERS.map((founder, index) => (
+                  <motion.div
+                    key={founder.name}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, margin: "-50px" }}
+                    transition={{ duration: 0.5, delay: index * 0.1, ease: "easeOut" }}
+                    className={cx(getCardClass(theme), getCardHoverClass(), "flex h-full flex-col overflow-hidden")}
+                  >
+                    {/* Image */}
+                    <div className="relative h-80 w-full overflow-hidden sm:h-[420px]">
+                      <img
+                        src={founder.image}
+                        alt={founder.name}
+                        className="h-full w-full object-cover object-[center_10%]"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
+                      {/* Name overlay */}
+                      <div className="absolute bottom-0 left-0 right-0 p-5">
+                        <h3 className="text-[17px] font-bold text-white leading-tight">{founder.name}</h3>
+                        <p className="mt-1 text-[13px] font-semibold text-orange-400">{founder.role}</p>
+                      </div>
+                    </div>
+                    {/* Bio */}
+                    <div className="flex flex-1 flex-col p-5 sm:p-6">
+                      <p className={`text-[14px] leading-relaxed ${theme === "dark" ? "text-white/55" : "text-slate-500"}`}>{founder.bio}</p>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Our Values */}
+        <section className={`py-16 sm:py-20 lg:py-24 ${theme === "dark" ? "bg-[#0A0A0A]" : "bg-white"}`}>
+          <div className={cx(CONTAINER)}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+            >
+              <div className="text-center mb-12 sm:mb-16">
+                <p className={cx(EYEBROW, "mb-3")}>Our Values</p>
+                <h2 className="text-[28px] sm:text-[34px] font-bold leading-tight lg:text-[40px]">
+                  What Drives <span className="nulo-gradient-text">Our Mission</span>
+                </h2>
+              </div>
+
+              <div className="grid gap-6 sm:gap-8 md:grid-cols-3">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                  className={cx(
+                    getCardClass(theme),
+                    "flex items-start gap-4 p-6 sm:p-7 transition-all duration-300 hover:border-orange-500/30 hover:shadow-lg hover:shadow-orange-500/5"
+                  )}
+                >
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-orange-500/10 ring-1 ring-orange-500/20">
+                    <Eye className="h-6 w-6 text-orange-400" />
+                  </div>
+                  <div>
+                    <h3 className={`mb-2 text-[17px] font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Our Vision</h3>
+                    <p className={`text-[14px] leading-relaxed ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
+                      A future where every African has a trusted pathway to secure housing, build wealth, and participate in the continent&apos;s real estate economy.
+                    </p>
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+                  className={cx(
+                    getCardClass(theme),
+                    "flex items-start gap-4 p-6 sm:p-7 transition-all duration-300 hover:border-orange-500/30 hover:shadow-lg hover:shadow-orange-500/5"
+                  )}
+                >
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-orange-500/10 ring-1 ring-orange-500/20">
+                    <Target className="h-6 w-6 text-orange-400" />
+                  </div>
+                  <div>
+                    <h3 className={`mb-2 text-[17px] font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Our Mission</h3>
+                    <p className={`text-[14px] leading-relaxed ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
+                      Leverage technology, data, and innovative financing to make housing accessible, transparent, and inclusive across Africa.
+                    </p>
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+                  className={cx(
+                    getCardClass(theme),
+                    "flex items-start gap-4 p-6 sm:p-7 transition-all duration-300 hover:border-orange-500/30 hover:shadow-lg hover:shadow-orange-500/5"
+                  )}
+                >
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-orange-500/10 ring-1 ring-orange-500/20">
+                    <ShieldCheck className="h-6 w-6 text-orange-400" />
+                  </div>
+                  <div>
+                    <h3 className={`mb-2 text-[17px] font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Our Values</h3>
+                    <p className={`text-[14px] leading-relaxed ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
+                      Trust first. Verified always. Built for the way Africans live, work, and invest — with people at the center.
+                    </p>
+                  </div>
+                </motion.div>
+              </div>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* CTA */}
+        <section className={`py-16 sm:py-20 ${theme === "dark" ? "bg-gradient-to-b from-[#050505] to-black" : "bg-gradient-to-b from-orange-50 to-white"}`}>
+          <div className={cx(CONTAINER)}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="text-center"
+            >
+              <h2 className="mb-4 text-[28px] sm:text-[34px] font-bold leading-tight lg:text-[40px]">
+                Ready to <span className="nulo-gradient-text">Join the Revolution?</span>
+              </h2>
+              <p className={`mx-auto mb-8 max-w-2xl text-[14px] sm:text-[15px] leading-relaxed ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
+                Be part of Africa&apos;s housing transformation. Whether you&apos;re looking to rent, manage, or invest — NuloAfrica has a place for you.
+              </p>
+
+              <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+                <Link href="https://nest-by-nulo.vercel.app/">
+                  <Button className="rounded-lg border border-orange-500 bg-orange-500 text-black font-semibold transition-all duration-200 hover:bg-orange-400 hover:border-orange-400 hover:shadow-lg hover:shadow-orange-500/25 px-8 py-4 text-[15px] group">
+                    Join the NEST Waitlist
+                    <ChevronRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </Button>
+                </Link>
+                <Link href="/properties">
+                  <Button className="rounded-lg border border-orange-500/70 bg-transparent text-orange-400 font-semibold transition-all duration-200 hover:bg-orange-500 hover:border-orange-500 hover:text-black px-8 py-4 text-[15px]">
+                    Explore Properties
+                  </Button>
+                </Link>
+              </div>
+            </motion.div>
+          </div>
+        </section>
+      </main>
+
+      <Footer />
     </div>
-  );
+  )
 }

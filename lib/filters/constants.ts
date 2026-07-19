@@ -17,12 +17,13 @@
  */
 
 export const FILTER_PRICE_MIN = 0
-export const FILTER_PRICE_MAX = 5_000_000
-export const FILTER_PRICE_STEP = 10_000
+export const FILTER_PRICE_MAX = 100_000_000
+export const FILTER_PRICE_STEP = 100_000
 export const FILTER_PRICE_PRESETS = [
-  { label: 'Budget',   min: 0,          max: 1_000_000 },
-  { label: 'Standard', min: 1_000_000,  max: 3_000_000 },
-  { label: 'Premium',  min: 3_000_000,  max: 5_000_000 },
+  { label: 'Budget',   min: 0,           max: 5_000_000 },
+  { label: 'Standard', min: 5_000_000,   max: 20_000_000 },
+  { label: 'Premium',  min: 20_000_000,  max: 50_000_000 },
+  { label: 'Luxury',   min: 50_000_000,  max: 100_000_000 },
 ] as const
 
 export const PROPERTY_TYPES = [

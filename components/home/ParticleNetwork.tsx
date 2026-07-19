@@ -70,9 +70,9 @@ export function ParticleNetwork({
 
     const REPEL_RADIUS = 90
     const REPEL_STRENGTH = 2.5
-    const BASE_SPEED = 0.9
-    const MAX_SPEED = 4.9
-    const DRIFT_RETURN = 0.06
+    const BASE_SPEED = 1.4
+    const MAX_SPEED = 6.5
+    const DRIFT_RETURN = 0.08
 
     const rand = (min: number, max: number) =>
       Math.random() * (max - min) + min

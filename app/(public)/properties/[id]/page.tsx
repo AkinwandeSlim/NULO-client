@@ -4,6 +4,8 @@ import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSignupCallbackUrl } from "@/hooks/useSignupCallbackUrl"
+import { PublicHeader } from "@/components/navigation/PublicHeader"
+import { useTheme } from "@/contexts/ThemeContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -12,7 +14,7 @@ import {
   Home, Wifi, Car, Dumbbell, Shield, Wind, Tv, Coffee, Check,
   Phone, Mail, Calendar, Star, MessageCircle, Eye, Grid,
   CheckCircle2, Video, Clock, ArrowRight, FileText, Lock,
-  TrendingDown, Users, ZapIcon, AlertTriangle, Sparkles
+  TrendingDown, Users, ZapIcon, AlertTriangle, Sparkles, Sun, Moon, LayoutGrid, User, LogOut
 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -25,15 +27,17 @@ import { propertiesAPI } from "@/lib/api/properties"
 import { applicationsAPI } from "@/lib/api/applications"
 import { Loader2 } from "lucide-react"
 import dynamic from "next/dynamic"
+import SearchBar from "@/components/properties/SearchBar"
+import { MarketplaceHeader } from "@/components/navigation/MarketplaceHeader"
 
 // ── Dynamic map import ─────────────────────────────────────────────────────────
 const PropertyMap = dynamic(() => import("@/components/PropertyMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-64 bg-slate-100 rounded-xl flex items-center justify-center">
+    <div className="w-full h-64 bg-slate-100 dark:bg-zinc-800 rounded-xl flex items-center justify-center">
       <div className="text-center">
         <Loader2 className="h-6 w-6 animate-spin text-orange-500 mx-auto mb-2" />
-        <p className="text-slate-500 text-sm">Loading map...</p>
+        <p className="text-slate-500 dark:text-white/50 text-sm">Loading map...</p>
       </div>
     </div>
   ),
@@ -98,6 +102,7 @@ export default function PropertyDetailPage() {
   const router     = useRouter()
   const params     = useParams()
   const { user, loading: authLoading } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const propertyId = (params?.id as string) || ""
 
   useSignupCallbackUrl()
@@ -324,10 +329,10 @@ export default function PropertyDetailPage() {
   // ── Loading state ────────────────────────────────────────────────────────
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className={`min-h-screen flex items-center justify-center ${theme === "dark" ? "bg-black" : "bg-slate-50"}`}>
         <div className="text-center">
           <Loader2 className="h-10 w-10 animate-spin text-orange-500 mx-auto mb-3" />
-          <p className="text-slate-600 font-medium text-sm">Verifying account...</p>
+          <p className={`font-medium text-sm ${theme === "dark" ? "text-white/70" : "text-slate-600"}`}>Verifying account...</p>
         </div>
       </div>
     )
@@ -335,25 +340,25 @@ export default function PropertyDetailPage() {
 
   if (isLoading && shouldShowSkeleton) {
     return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="bg-white border-b border-slate-200 sticky top-16 z-40">
+      <div className={`min-h-screen ${theme === "dark" ? "bg-black" : "bg-slate-50"}`}>
+        <div className={`border-b ${theme === "dark" ? "bg-zinc-900 border-white/10" : "bg-white border-slate-200"}`}>
           <div className="max-w-7xl mx-auto px-4 md:px-6 py-3">
             <div className="flex items-center gap-2">
-              {[20, 24, 40].map(w => <div key={w} className={`h-3.5 w-${w} bg-slate-200 rounded animate-pulse`} />)}
+              {[20, 24, 40].map(w => <div key={w} className={`h-3.5 w-${w} bg-slate-200 dark:bg-zinc-700 rounded animate-pulse`} />)}
             </div>
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-4">
-          <div className="h-[300px] md:h-[500px] rounded-2xl bg-slate-200 animate-pulse" />
+          <div className="h-[300px] md:h-[500px] rounded-2xl bg-slate-200 dark:bg-zinc-800 animate-pulse" />
         </div>
         <div className="max-w-7xl mx-auto px-4 md:px-6 pb-12">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-4">
-              {[96, 48, 72].map(h => <div key={h} className={`h-${h} bg-white rounded-xl animate-pulse`} />)}
+              {[96, 48, 72].map(h => <div key={h} className={`h-${h} bg-white dark:bg-zinc-900 rounded-xl animate-pulse`} />)}
             </div>
             <div className="space-y-4">
-              <div className="h-80 bg-white rounded-xl animate-pulse" />
-              <div className="h-40 bg-white rounded-xl animate-pulse" />
+              <div className="h-80 bg-white dark:bg-zinc-900 rounded-xl animate-pulse" />
+              <div className="h-40 bg-white dark:bg-zinc-900 rounded-xl animate-pulse" />
             </div>
           </div>
         </div>
@@ -363,13 +368,13 @@ export default function PropertyDetailPage() {
 
   if (error && !propertyData) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className={`min-h-screen flex items-center justify-center ${theme === "dark" ? "bg-black" : "bg-slate-50"}`}>
         <div className="text-center max-w-md mx-auto px-4">
-          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Home className="h-8 w-8 text-slate-400" />
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${theme === "dark" ? "bg-zinc-800" : "bg-slate-100"}`}>
+            <Home className={`h-8 w-8 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
           </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Property Not Available</h2>
-          <p className="text-slate-500 text-sm mb-6">{error}</p>
+          <h2 className={`text-xl font-bold mb-2 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Property Not Available</h2>
+          <p className={`text-sm mb-6 ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{error}</p>
           <div className="flex gap-3 justify-center">
             <Button onClick={() => window.location.reload()} className="bg-orange-500 hover:bg-orange-600" disabled={isLoading}>
               {isLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Retrying…</> : "Try Again"}
@@ -383,7 +388,7 @@ export default function PropertyDetailPage() {
 
   if (!propertyData) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className={`min-h-screen flex items-center justify-center ${theme === "dark" ? "bg-black" : "bg-slate-50"}`}>
         <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
       </div>
     )
@@ -393,17 +398,19 @@ export default function PropertyDetailPage() {
   // MAIN RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#F8F7F4]">
+    <div className={`min-h-screen ${theme === "dark" ? "bg-black" : "bg-[#F8F7F4]"}`}>
+
+      {/* ── Marketplace Header (same as properties page, but without second row) ──────────────── */}
+      <MarketplaceHeader hideSecondRow={true} />
 
       {/* ── Breadcrumb ──────────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-slate-200 sticky top-16 z-40">
+      <div className={`${theme === "dark" ? "bg-zinc-900/80 border-white/5" : "bg-white border-slate-200"} border-b`}>
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-2.5">
           <nav className="flex items-center gap-1.5 text-xs md:text-sm overflow-x-auto scrollbar-hide">
-            <Link href="/" className="text-slate-500 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">Home</Link>
-            <ChevronRight className="h-3.5 w-3.5 text-slate-300 flex-shrink-0" />
-            <Link href="/properties" className="text-slate-500 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">Properties</Link>
-            <ChevronRight className="h-3.5 w-3.5 text-slate-300 flex-shrink-0" />
-            {/* <span className="text-slate-900 font-semibold truncate max-w-[160px] md:max-w-[320px]"> */}
+            <Link href="/" className={`hover:text-orange-600 transition-colors font-medium whitespace-nowrap ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>Home</Link>
+            <ChevronRight className={`h-3.5 w-3.5 flex-shrink-0 ${theme === "dark" ? "text-white/20" : "text-slate-300"}`} />
+            <Link href="/properties" className={`hover:text-orange-600 transition-colors font-medium whitespace-nowrap ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>Properties</Link>
+            <ChevronRight className={`h-3.5 w-3.5 flex-shrink-0 ${theme === "dark" ? "text-white/20" : "text-slate-300"}`} />
             <span className="text-orange-600 font-semibold whitespace-nowrap">
               {propertyData.title}
             </span>
@@ -434,7 +441,7 @@ export default function PropertyDetailPage() {
         <div className="grid grid-cols-4 gap-1.5 h-[260px] md:h-[480px] rounded-2xl overflow-hidden">
           {/* Main image — left 50% */}
           <div
-            className="col-span-2 row-span-2 relative group cursor-pointer overflow-hidden bg-slate-200"
+            className="col-span-2 row-span-2 relative group cursor-pointer overflow-hidden bg-slate-200 dark:bg-zinc-800"
             onClick={() => { setSelectedImage(0); setShowGallery(true) }}
           >
             <img
@@ -478,7 +485,7 @@ export default function PropertyDetailPage() {
           {propertyData.images.slice(1, 5).map((img: string, i: number) => (
             <div
               key={i}
-              className="relative group cursor-pointer overflow-hidden bg-slate-200"
+              className="relative group cursor-pointer overflow-hidden bg-slate-200 dark:bg-zinc-800"
               onClick={() => { setSelectedImage(i + 1); setShowGallery(true) }}
             >
               <img
@@ -510,16 +517,16 @@ export default function PropertyDetailPage() {
           <div className="lg:col-span-2 space-y-4">
 
             {/* Title & price card */}
-            <Card className="border-0 shadow-sm rounded-2xl overflow-hidden">
+            <Card className="border-0 shadow-sm rounded-2xl overflow-hidden dark:bg-zinc-900 dark:border-white/5">
               <CardContent className="p-5 md:p-7">
 
                 {/* Title row */}
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
                   <div className="flex-1 min-w-0">
-                    <h1 className="text-2xl md:text-[1.75rem] font-bold text-slate-900 leading-tight mb-2">
+                    <h1 className={`text-2xl md:text-[1.75rem] font-bold leading-tight mb-2 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                       {propertyData.title}
                     </h1>
-                    <div className="flex items-center gap-1.5 text-slate-500 text-sm mb-3">
+                    <div className={`flex items-center gap-1.5 text-sm mb-3 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>
                       <MapPin className="h-4 w-4 text-orange-500 flex-shrink-0" />
                       <span>{propertyData.location}</span>
                     </div>
@@ -527,10 +534,10 @@ export default function PropertyDetailPage() {
                     {/* Verification badges */}
                     <div className="flex flex-wrap gap-1.5">
                       {[
-                        { label: "Verified Property",   color: "bg-emerald-50 border-emerald-200 text-emerald-700",  icon: CheckCircle2 },
-                        ...(propertyData.landlord?.verified ? [{ label: "Verified Landlord", color: "bg-blue-50 border-blue-200 text-blue-700", icon: Shield }] : []),
-                        { label: "Verified Documents",  color: "bg-purple-50 border-purple-200 text-purple-700", icon: Check },
-                        { label: propertyData.availability || "Available Now", color: "bg-orange-50 border-orange-200 text-orange-700", icon: Eye },
+                        { label: "Verified Property",   color: `bg-emerald-50 border-emerald-200 text-emerald-700 ${theme === "dark" ? "dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300" : ""}`,  icon: CheckCircle2 },
+                        ...(propertyData.landlord?.verified ? [{ label: "Verified Landlord", color: `bg-blue-50 border-blue-200 text-blue-700 ${theme === "dark" ? "dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300" : ""}`, icon: Shield }] : []),
+                        { label: "Verified Documents",  color: `bg-purple-50 border-purple-200 text-purple-700 ${theme === "dark" ? "dark:bg-purple-950/40 dark:border-purple-800 dark:text-purple-300" : ""}`, icon: Check },
+                        { label: propertyData.availability || "Available Now", color: `bg-orange-50 border-orange-200 text-orange-700 ${theme === "dark" ? "dark:bg-orange-950/40 dark:border-orange-800 dark:text-orange-300" : ""}`, icon: Eye },
                       ].map(({ label, color, icon: Icon }) => (
                         <span key={label} className={`inline-flex items-center gap-1 border text-[11px] font-semibold px-2 py-0.5 rounded-md ${color}`}>
                           <Icon className="h-3 w-3" />{label}
@@ -544,12 +551,12 @@ export default function PropertyDetailPage() {
                     <div className="text-3xl md:text-4xl font-bold text-orange-600 leading-none">
                       {formatPrice(propertyData.price)}
                     </div>
-                    <div className="text-slate-500 text-sm mt-1">/month</div>
+                    <div className={`text-sm mt-1 ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>/month</div>
                   </div>
                 </div>
 
                 {/* Key specs row */}
-                <div className="flex flex-wrap gap-x-6 gap-y-2 py-4 border-t border-b border-slate-100 mb-4">
+                <div className={`flex flex-wrap gap-x-6 gap-y-2 py-4 border-t border-b mb-4 ${theme === "dark" ? "border-white/10" : "border-slate-100"}`}>
                   {[
                     { icon: Bed,    val: propertyData.beds || propertyData.bedrooms || 0,            label: "Beds"  },
                     { icon: Bath,   val: propertyData.baths || propertyData.bathrooms || 0,          label: "Baths" },
@@ -557,9 +564,9 @@ export default function PropertyDetailPage() {
                     { icon: Home,   val: propertyData.type || "Apartment",                            label: "Type"  },
                   ].map(({ icon: Icon, val, label }) => (
                     <div key={label} className="flex items-center gap-2">
-                      <Icon className="h-4.5 w-4.5 text-slate-400" />
-                      <span className="font-semibold text-slate-900">{val}</span>
-                      <span className="text-slate-500 text-sm">{label}</span>
+                      <Icon className={`h-4.5 w-4.5 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
+                      <span className={`font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{val}</span>
+                      <span className={`text-sm ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{label}</span>
                     </div>
                   ))}
                 </div>
@@ -571,63 +578,63 @@ export default function PropertyDetailPage() {
                   const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
 
                   return (
-                    <div className="bg-gradient-to-r from-orange-50/70 to-blue-50/70 border border-orange-100 rounded-xl p-4 md:p-5">
-                      <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <div className={`bg-gradient-to-r rounded-xl p-4 md:p-5 ${theme === "dark" ? "from-orange-950/30 to-blue-950/30 border border-orange-900/30" : "from-orange-50/70 to-blue-50/70 border border-orange-100"}`}>
+                      <h3 className={`text-sm font-bold mb-3 flex items-center gap-2 ${theme === "dark" ? "text-white/90" : "text-slate-800"}`}>
                         <TrendingDown className="h-4 w-4 text-green-600" />
                         What You'll Pay on Move-In
-                        <span className="ml-auto text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Zero Agency Fee</span>
+                        <span className={`ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full ${theme === "dark" ? "bg-green-900/40 text-green-400" : "bg-green-100 text-green-700"}`}>Zero Agency Fee</span>
                       </h3>
 
                       <div className="space-y-2">
                         {/* Monthly rent — context line */}
                         <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500">Monthly Rent</span>
-                          <span className="font-medium text-slate-600">{formatPrice(monthlyRent)}</span>
+                          <span className={`${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>Monthly Rent</span>
+                          <span className={`font-medium ${theme === "dark" ? "text-white/70" : "text-slate-600"}`}>{formatPrice(monthlyRent)}</span>
                         </div>
 
                         {/* Period rent — the actual charge based on payment frequency */}
                         <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-700 font-medium">{periodLabel} <span className="text-slate-400 font-normal">(×{frequencyMultiplier})</span></span>
-                          <span className="font-semibold text-slate-900">{formatPrice(periodRent)}</span>
+                          <span className={`font-medium ${theme === "dark" ? "text-white/80" : "text-slate-700"}`}>{periodLabel} <span className={`font-normal ${theme === "dark" ? "text-white/40" : "text-slate-400"}`}>(×{frequencyMultiplier})</span></span>
+                          <span className={`font-semibold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{formatPrice(periodRent)}</span>
                         </div>
 
                         {/* Caution Fee - show as waived when 0 */}
                         <div className="flex justify-between items-center text-sm">
                           <div className="flex flex-col">
-                            <span className="text-slate-700">Caution Fee <span className="text-slate-400 text-xs">(Security Deposit)</span></span>
+                            <span className={`${theme === "dark" ? "text-white/80" : "text-slate-700"}`}>Caution Fee <span className={`text-xs ${theme === "dark" ? "text-white/40" : "text-slate-400"}`}>(Security Deposit)</span></span>
                             <span className="text-xs text-blue-600 font-medium">{cautionFee > 0 ? "2 months' rent" : "Waived for MVP"}</span>
                           </div>
                           <div className="text-right">
-                            <span className={`font-semibold ${cautionFee === 0 ? "text-green-600" : "text-slate-900"}`}>                              {cautionFee === 0 ? "₦0 — Waived" : formatPrice(cautionFee)}                            </span>
-                            {cautionFee > 0 && <div className="text-xs text-slate-500">{formatPrice(monthlyRent)} × 2</div>}
+                            <span className={`font-semibold ${cautionFee === 0 ? "text-green-600" : theme === "dark" ? "text-white" : "text-slate-900"}`}>                              {cautionFee === 0 ? "₦0 — Waived" : formatPrice(cautionFee)}                            </span>
+                            {cautionFee > 0 && <div className={`text-xs ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{formatPrice(monthlyRent)} × 2</div>}
                           </div>
                         </div>
 
                         <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-700">Platform Fee</span>
-                          <span className={`font-semibold ${platformFee === 0 ? "text-green-600" : "text-slate-900"}`}>
+                          <span className={`${theme === "dark" ? "text-white/80" : "text-slate-700"}`}>Platform Fee</span>
+                          <span className={`font-semibold ${platformFee === 0 ? "text-green-600" : theme === "dark" ? "text-white" : "text-slate-900"}`}>
                             {platformFee === 0 ? "₦0 — Waived" : formatPrice(platformFee)}
                           </span>
                         </div>
 
                         <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-700">Service Charge</span>
-                          <span className={`font-semibold ${serviceCharge === 0 ? "text-green-600" : "text-slate-900"}`}>
+                          <span className={`${theme === "dark" ? "text-white/80" : "text-slate-700"}`}>Service Charge</span>
+                          <span className={`font-semibold ${serviceCharge === 0 ? "text-green-600" : theme === "dark" ? "text-white" : "text-slate-900"}`}>
                             {serviceCharge === 0 ? "₦0 — Waived" : formatPrice(serviceCharge)}
                           </span>
                         </div>
 
                         {/* Total */}
-                        <div className="border-t border-slate-200 pt-2.5 mt-1 flex justify-between items-center">
+                        <div className={`border-t pt-2.5 mt-1 flex justify-between items-center ${theme === "dark" ? "border-white/10" : "border-slate-200"}`}>
                           <div className="flex flex-col">
-                            <span className="font-bold text-slate-900 text-sm">Total Due on Move-In</span>
-                            <span className="text-[11px] text-slate-500">
+                            <span className={`font-bold text-sm ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Total Due on Move-In</span>
+                            <span className={`text-[11px] ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
                               {cautionFee > 0 ? `${periodLabel.toLowerCase()} + 2 months deposit` : periodLabel.toLowerCase()}
                             </span>
                           </div>
                           <div className="text-right">
                             <span className="text-lg font-bold text-orange-600">{formatPrice(totalDue)}</span>
-                            <div className="text-[11px] text-slate-400">
+                            <div className={`text-[11px] ${theme === "dark" ? "text-white/30" : "text-slate-400"}`}>
                               {platformFee > 0 ? " + fees" : serviceCharge > 0 ? " + fees" : ""}
                             </div>
                           </div>
@@ -640,19 +647,21 @@ export default function PropertyDetailPage() {
             </Card>
 
             {/* Tabbed content card */}
-            <Card className="border-0 shadow-sm rounded-2xl overflow-hidden">
+            <Card className={`border-0 shadow-sm rounded-2xl overflow-hidden ${theme === "dark" ? "dark:bg-zinc-900 dark:border-white/5" : ""}`}>
               <CardContent className="p-0">
 
                 {/* Tab bar */}
-                <div className="flex border-b border-slate-100 overflow-x-auto scrollbar-hide">
+                <div className={`flex border-b overflow-x-auto scrollbar-hide ${theme === "dark" ? "border-white/10" : "border-slate-100"}`}>
                   {(["description", "amenities", "landlord", "location"] as Tab[]).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
                       className={`px-5 py-3.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-all capitalize ${
                         activeTab === tab
-                          ? "text-orange-600 border-orange-600 bg-orange-50/50"
-                          : "text-slate-500 border-transparent hover:text-slate-900 hover:bg-slate-50"
+                          ? "text-orange-600 border-orange-600 bg-orange-50/50 dark:bg-orange-950/20"
+                          : theme === "dark"
+                            ? "text-white/50 border-transparent hover:text-white hover:bg-white/5"
+                            : "text-slate-500 border-transparent hover:text-slate-900 hover:bg-slate-50"
                       }`}
                     >
                       {tab === "landlord" ? "Landlord" : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -665,13 +674,13 @@ export default function PropertyDetailPage() {
                   {/* ── Description ── */}
                   {activeTab === "description" && (
                     <div>
-                      <h2 className="text-lg font-bold text-slate-900 mb-3">About this property</h2>
-                      <p className="text-slate-600 leading-relaxed text-sm whitespace-pre-line">
+                      <h2 className={`text-lg font-bold mb-3 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>About this property</h2>
+                      <p className={`leading-relaxed text-sm whitespace-pre-line ${theme === "dark" ? "text-white/70" : "text-slate-600"}`}>
                         {propertyData.description}
                       </p>
-                      <div className="mt-5 flex items-start gap-2.5 p-3.5 bg-blue-50 border border-blue-100 rounded-xl">
+                      <div className={`mt-5 flex items-start gap-2.5 p-3.5 border rounded-xl ${theme === "dark" ? "bg-blue-950/40 border-blue-900/50" : "bg-blue-50 border-blue-100"}`}>
                         <CheckCircle2 className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <p className="text-xs text-blue-700">
+                        <p className={`text-xs ${theme === "dark" ? "text-blue-300" : "text-blue-700"}`}>
                           <strong>Verified listing:</strong> This property was verified{propertyData.lastVerified ? ` on ${propertyData.lastVerified}` : ""}. Landlord details are locked after verification.
                         </p>
                       </div>
@@ -681,23 +690,23 @@ export default function PropertyDetailPage() {
                   {/* ── Amenities ── */}
                   {activeTab === "amenities" && (
                     <div>
-                      <h2 className="text-lg font-bold text-slate-900 mb-4">Amenities & Features</h2>
+                      <h2 className={`text-lg font-bold mb-4 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Amenities & Features</h2>
                       {(propertyData.amenities || []).length > 0 ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                           {(propertyData.amenities || []).map((amenity: string, i: number) => {
                             const Icon = getAmenityIcon(amenity)
                             return (
-                              <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 hover:bg-orange-50 border border-slate-100 hover:border-orange-200 rounded-xl transition-colors">
-                                <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                              <div key={i} className={`flex items-center gap-3 p-3 border rounded-xl transition-colors ${theme === "dark" ? "bg-zinc-800 border-zinc-700 hover:bg-orange-950/30 hover:border-orange-800/50" : "bg-slate-50 border-slate-100 hover:bg-orange-50 hover:border-orange-200"}`}>
+                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${theme === "dark" ? "bg-orange-900/40" : "bg-orange-100"}`}>
                                   <Icon className="h-4.5 w-4.5 text-orange-600" />
                                 </div>
-                                <span className="text-slate-700 text-sm font-medium">{amenity}</span>
+                                <span className={`text-sm font-medium ${theme === "dark" ? "text-white/80" : "text-slate-700"}`}>{amenity}</span>
                               </div>
                             )
                           })}
                         </div>
                       ) : (
-                        <p className="text-slate-500 text-sm">No amenities listed for this property.</p>
+                        <p className={`text-sm ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>No amenities listed for this property.</p>
                       )}
                     </div>
                   )}
@@ -705,10 +714,10 @@ export default function PropertyDetailPage() {
                   {/* ── Landlord ── */}
                   {activeTab === "landlord" && (
                     <div className="space-y-4">
-                      <h2 className="text-lg font-bold text-slate-900">Landlord Information</h2>
+                      <h2 className={`text-lg font-bold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Landlord Information</h2>
 
                       {/* Profile */}
-                      <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className={`flex items-start gap-4 p-4 rounded-xl border ${theme === "dark" ? "bg-zinc-800 border-zinc-700" : "bg-slate-50 border-slate-100"}`}>
                         <Avatar className="h-16 w-16 ring-2 ring-orange-100">
                           <AvatarImage src={propertyData.landlord?.avatar_url} />
                           <AvatarFallback className="bg-orange-500 text-white text-xl font-bold">
@@ -717,37 +726,37 @@ export default function PropertyDetailPage() {
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <h3 className="font-bold text-slate-900">{propertyData.landlord?.name || "Property Owner"}</h3>
+                            <h3 className={`font-bold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{propertyData.landlord?.name || "Property Owner"}</h3>
                             {propertyData.landlord?.verifiedId && (
                               <span className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
                                 <CheckCircle2 className="h-2.5 w-2.5" /> ID Verified
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-slate-500 mb-2">Member since {propertyData.landlord?.joined_year || 2024}</p>
+                          <p className={`text-xs mb-2 ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>Member since {propertyData.landlord?.joined_year || 2024}</p>
                           <div className="flex items-center gap-4 text-sm">
-                            <span><strong className="text-slate-900">{Math.max(1, propertyData.landlord?.properties_count || 0)}</strong> <span className="text-slate-500">properties</span></span>
-                            <span><strong className="text-green-600">{propertyData.landlord?.trust_score || 50}%</strong> <span className="text-slate-500">trust</span></span>
+                            <span><strong className={`${theme === "dark" ? "text-white" : "text-slate-900"}`}>{Math.max(1, propertyData.landlord?.properties_count || 0)}</strong> <span className={`${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>properties</span></span>
+                            <span><strong className="text-green-600">{propertyData.landlord?.trust_score || 50}%</strong> <span className={`${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>trust</span></span>
                           </div>
                           <div className="flex mt-1.5">
                             {[...Array(5)].map((_, i) => (
                               <Star key={i} className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
                             ))}
-                            <span className="text-xs text-slate-500 ml-1">(4.9)</span>
+                            <span className={`text-xs ml-1 ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>(4.9)</span>
                           </div>
                         </div>
                       </div>
 
                       {/* Contact */}
                       {user ? (
-                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
-                          <h4 className="text-sm font-semibold text-slate-800 mb-2">Contact Information</h4>
-                          <div className="flex items-center gap-2.5 text-sm text-slate-700">
-                            <Phone className="h-4 w-4 text-slate-400" />
+                        <div className={`p-4 rounded-xl border space-y-2 ${theme === "dark" ? "bg-zinc-800 border-zinc-700" : "bg-slate-50 border-slate-100"}`}>
+                          <h4 className={`text-sm font-semibold mb-2 ${theme === "dark" ? "text-white/90" : "text-slate-800"}`}>Contact Information</h4>
+                          <div className={`flex items-center gap-2.5 text-sm ${theme === "dark" ? "text-white/70" : "text-slate-700"}`}>
+                            <Phone className={`h-4 w-4 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                             <span>{propertyData.landlord?.phone || "Contact via chat"}</span>
                           </div>
-                          <div className="flex items-center gap-2.5 text-sm text-slate-700">
-                            <Mail className="h-4 w-4 text-slate-400" />
+                          <div className={`flex items-center gap-2.5 text-sm ${theme === "dark" ? "text-white/70" : "text-slate-700"}`}>
+                            <Mail className={`h-4 w-4 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                             <span className="truncate">{propertyData.landlord?.email || "Contact via chat"}</span>
                           </div>
                         </div>
@@ -767,13 +776,13 @@ export default function PropertyDetailPage() {
                       )}
 
                       {/* Trust */}
-                      <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
-                        <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-1.5">
+                      <div className={`p-4 border rounded-xl ${theme === "dark" ? "bg-blue-950/40 border-blue-900/50" : "bg-blue-50 border-blue-100"}`}>
+                        <h4 className={`text-sm font-semibold mb-2 flex items-center gap-1.5 ${theme === "dark" ? "text-blue-300" : "text-blue-900"}`}>
                           <Shield className="h-4 w-4" /> Trust & Safety
                         </h4>
                         <ul className="space-y-1">
                           {["Identity verified by Nulo Africa", "Responds within 24 hours", "Messages protected by escrow system", "Fair use policy enforced"].map(item => (
-                            <li key={item} className="flex items-center gap-2 text-xs text-blue-700">
+                            <li key={item} className={`flex items-center gap-2 text-xs ${theme === "dark" ? "text-blue-300/80" : "text-blue-700"}`}>
                               <Check className="h-3 w-3 flex-shrink-0" />{item}
                             </li>
                           ))}
@@ -785,24 +794,24 @@ export default function PropertyDetailPage() {
                   {/* ── Location ── */}
                   {activeTab === "location" && (
                     <div className="space-y-4">
-                      <h2 className="text-lg font-bold text-slate-900">Location & Neighbourhood</h2>
+                      <h2 className={`text-lg font-bold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Location & Neighbourhood</h2>
 
                       {/* Address */}
-                      <div className="flex items-start gap-3 p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
-                        <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <div className={`flex items-start gap-3 p-3.5 border rounded-xl ${theme === "dark" ? "bg-zinc-800 border-zinc-700" : "bg-slate-50 border-slate-100"}`}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${theme === "dark" ? "bg-orange-900/40" : "bg-orange-100"}`}>
                           <MapPin className="h-4 w-4 text-orange-600" />
                         </div>
                         <div>
-                          <p className="font-semibold text-slate-900 text-sm">{propertyData.full_address || propertyData.location}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{propertyData.city}, {propertyData.state}, Nigeria</p>
+                          <p className={`font-semibold text-sm ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{propertyData.full_address || propertyData.location}</p>
+                          <p className={`text-xs mt-0.5 ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{propertyData.city}, {propertyData.state}, Nigeria</p>
                         </div>
                       </div>
 
                       {/* Map placeholder */}
-                      <div className="relative h-56 md:h-72 rounded-xl overflow-hidden border border-slate-200 bg-gradient-to-br from-blue-50 via-green-50 to-orange-50">
+                      <div className={`relative h-56 md:h-72 rounded-xl overflow-hidden border ${theme === "dark" ? "border-zinc-700 bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900" : "border-slate-200 bg-gradient-to-br from-blue-50 via-green-50 to-orange-50"}`}>
                         {/* Grid pattern */}
-                        <div className="absolute inset-0 opacity-20 grid grid-cols-10 grid-rows-8">
-                          {[...Array(80)].map((_, i) => <div key={i} className="border border-slate-300/40" />)}
+                        <div className={`absolute inset-0 opacity-20 grid grid-cols-10 grid-rows-8 ${theme === "dark" ? "opacity-10" : ""}`}>
+                          {[...Array(80)].map((_, i) => <div key={i} className={`${theme === "dark" ? "border-white/5" : "border-slate-300/40"} border`} />)}
                         </div>
                         {/* Pin */}
                         <div className="absolute inset-0 flex items-center justify-center">
@@ -810,34 +819,34 @@ export default function PropertyDetailPage() {
                             <div className="w-14 h-14 bg-orange-500 rounded-full border-4 border-white shadow-2xl flex items-center justify-center mx-auto mb-3">
                               <MapPin className="h-7 w-7 text-white" />
                             </div>
-                            <div className="bg-white/95 backdrop-blur px-4 py-2 rounded-xl shadow-lg">
-                              <p className="text-sm font-bold text-slate-900">{propertyData.location || "Property Location"}</p>
-                              <p className="text-xs text-slate-500">{propertyData.city || "Lagos"}, Nigeria</p>
+                            <div className={`backdrop-blur px-4 py-2 rounded-xl shadow-lg ${theme === "dark" ? "bg-black/80" : "bg-white/95"}`}>
+                              <p className={`text-sm font-bold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{propertyData.location || "Property Location"}</p>
+                              <p className={`text-xs ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{propertyData.city || "Lagos"}, Nigeria</p>
                             </div>
                           </div>
                         </div>
                         {/* Coords */}
-                        <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur px-2 py-1 rounded-lg text-xs text-slate-500">
+                        <div className={`absolute bottom-3 left-3 backdrop-blur px-2 py-1 rounded-lg text-xs ${theme === "dark" ? "bg-black/80 text-white/50" : "bg-white/90 text-slate-500"}`}>
                           {propertyData.latitude?.toFixed(4) || "6.5244"}°N, {propertyData.longitude?.toFixed(4) || "3.3792"}°E
                         </div>
                       </div>
 
                       {/* Nearby */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
-                          <h4 className="text-sm font-semibold text-slate-800 mb-2.5">🚌 Transport</h4>
+                        <div className={`p-3.5 border rounded-xl ${theme === "dark" ? "bg-zinc-800 border-zinc-700" : "bg-slate-50 border-slate-100"}`}>
+                          <h4 className={`text-sm font-semibold mb-2.5 ${theme === "dark" ? "text-white/90" : "text-slate-800"}`}>🚌 Transport</h4>
                           {[["Lekki Bus Stop","5 min walk"],["Eko Hotel","10 min drive"],["Victoria Island","15 min drive"]].map(([name,time]) => (
                             <div key={name} className="flex justify-between items-center py-1">
-                              <span className="text-xs text-slate-600">{name}</span>
+                              <span className={`text-xs ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>{name}</span>
                               <span className="text-xs text-green-600 font-medium">{time}</span>
                             </div>
                           ))}
                         </div>
-                        <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
-                          <h4 className="text-sm font-semibold text-slate-800 mb-2.5">🏫 Nearby</h4>
+                        <div className={`p-3.5 border rounded-xl ${theme === "dark" ? "bg-zinc-800 border-zinc-700" : "bg-slate-50 border-slate-100"}`}>
+                          <h4 className={`text-sm font-semibold mb-2.5 ${theme === "dark" ? "text-white/90" : "text-slate-800"}`}>🏫 Nearby</h4>
                           {[["Corona School","2 km"],["Shoprite Mall","1.5 km"],["Lekki Clinic","3 km"]].map(([name,dist]) => (
                             <div key={name} className="flex justify-between items-center py-1">
-                              <span className="text-xs text-slate-600">{name}</span>
+                              <span className={`text-xs ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>{name}</span>
                               <span className="text-xs text-green-600 font-medium">{dist}</span>
                             </div>
                           ))}
@@ -845,10 +854,10 @@ export default function PropertyDetailPage() {
                       </div>
 
                       {/* Similar properties CTA */}
-                      <div className="flex items-center justify-between p-4 bg-orange-50 border border-orange-100 rounded-xl">
+                      <div className={`flex items-center justify-between p-4 border rounded-xl ${theme === "dark" ? "bg-orange-950/30 border-orange-900/50" : "bg-orange-50 border-orange-100"}`}>
                         <div>
-                          <p className="text-sm font-semibold text-orange-900">Explore similar properties</p>
-                          <p className="text-xs text-orange-600">In {propertyData.city || "this area"}</p>
+                          <p className={`text-sm font-semibold ${theme === "dark" ? "text-orange-300" : "text-orange-900"}`}>Explore similar properties</p>
+                          <p className={`text-xs ${theme === "dark" ? "text-orange-400" : "text-orange-600"}`}>In {propertyData.city || "this area"}</p>
                         </div>
                         <Link href="/properties">
                           <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white rounded-lg">
@@ -870,11 +879,11 @@ export default function PropertyDetailPage() {
             <div className="sticky top-32 space-y-4">
 
               {/* ── Main action card ─────────────────────────────────── */}
-              <Card className="border-0 shadow-lg rounded-2xl overflow-hidden">
+              <Card className={`border-0 shadow-lg rounded-2xl overflow-hidden ${theme === "dark" ? "dark:bg-zinc-900 dark:border-white/5" : ""}`}>
                 <CardContent className="p-5">
 
                   {/* Landlord mini-profile */}
-                  <div className="flex items-center gap-3 pb-4 mb-4 border-b border-slate-100">
+                  <div className={`flex items-center gap-3 pb-4 mb-4 border-b ${theme === "dark" ? "border-white/10" : "border-slate-100"}`}>
                     <Avatar className="h-11 w-11 ring-2 ring-orange-100">
                       <AvatarImage src={propertyData.landlord?.avatar_url} />
                       <AvatarFallback className="bg-orange-500 text-white font-bold text-sm">
@@ -883,33 +892,33 @@ export default function PropertyDetailPage() {
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <p className="font-semibold text-slate-900 text-sm truncate">{propertyData.landlord?.name || "Property Owner"}</p>
+                        <p className={`font-semibold text-sm truncate ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{propertyData.landlord?.name || "Property Owner"}</p>
                         {propertyData.landlord?.verified && (
                           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
                         )}
                       </div>
-                      <p className="text-xs text-slate-500">{propertyData.landlord?.properties_count || 0} properties listed</p>
+                      <p className={`text-xs ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>{propertyData.landlord?.properties_count || 0} properties listed</p>
                     </div>
                     <div className="text-right">
                       <div className="text-xs font-bold text-orange-600">{formatPrice(propertyData.price)}</div>
-                      <div className="text-[10px] text-slate-400">/month</div>
+                      <div className={`text-[10px] ${theme === "dark" ? "text-white/30" : "text-slate-400"}`}>/month</div>
                     </div>
                   </div>
 
                   {/* Protected contact */}
                   {user ? (
-                    <div className="space-y-1.5 pb-4 mb-4 border-b border-slate-100">
-                      <div className="flex items-center gap-2 text-xs text-slate-600">
-                        <Phone className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                    <div className={`space-y-1.5 pb-4 mb-4 border-b ${theme === "dark" ? "border-white/10" : "border-slate-100"}`}>
+                      <div className={`flex items-center gap-2 text-xs ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
+                        <Phone className={`h-3.5 w-3.5 flex-shrink-0 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                         {propertyData.landlord?.phone || "Contact via chat"}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-600">
-                        <Mail className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                      <div className={`flex items-center gap-2 text-xs ${theme === "dark" ? "text-white/60" : "text-slate-600"}`}>
+                        <Mail className={`h-3.5 w-3.5 flex-shrink-0 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                         <span className="truncate">{propertyData.landlord?.email || "Contact via chat"}</span>
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 mb-4">
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4">
                       <div className="flex items-center gap-1.5 mb-1">
                         <Lock className="h-3.5 w-3.5 text-orange-600" />
                         <p className="text-xs font-semibold text-orange-900">Contact Protected</p>
@@ -928,11 +937,11 @@ export default function PropertyDetailPage() {
 
                     {/* Already-requested banner */}
                     {hasExistingViewing && (
-                      <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                      <div className={`flex items-start gap-2 p-3 border rounded-xl ${theme === "dark" ? "bg-blue-950/40 border-blue-900/50" : "bg-blue-50 border-blue-200"}`}>
                         <CheckCircle2 className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-xs font-semibold text-blue-800">Viewing Request Sent</p>
-                          <p className="text-[11px] text-blue-600 mt-0.5">
+                          <p className={`text-xs font-semibold ${theme === "dark" ? "text-blue-300" : "text-blue-800"}`}>Viewing Request Sent</p>
+                          <p className={`text-[11px] mt-0.5 ${theme === "dark" ? "text-blue-300/80" : "text-blue-600"}`}>
                             Awaiting landlord confirmation. You can apply while you wait.
                           </p>
                         </div>
@@ -940,11 +949,11 @@ export default function PropertyDetailPage() {
                     )}
                     {/* Already-applied banner */}
                     {hasExistingApplication && (
-                      <div className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                      <div className={`flex items-start gap-2 p-3 border rounded-xl ${theme === "dark" ? "bg-emerald-950/30 border-emerald-900/50" : "bg-emerald-50 border-emerald-200"}`}>
                         <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-xs font-semibold text-emerald-800">Application Submitted</p>
-                          <p className="text-[11px] text-emerald-700 mt-0.5">
+                          <p className={`text-xs font-semibold ${theme === "dark" ? "text-emerald-300" : "text-emerald-800"}`}>Application Submitted</p>
+                          <p className={`text-[11px] mt-0.5 ${theme === "dark" ? "text-emerald-300/80" : "text-emerald-700"}`}>
                             You've already applied for this property! Check your applications dashboard to see its status.
                           </p>
                         </div>
@@ -953,10 +962,10 @@ export default function PropertyDetailPage() {
 
                     {/* Viewing type — 3-option segmented control */}
                     <div>
-                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                      <p className={`text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`}>
                         Viewing Type
                       </p>
-                      <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+                      <div className={`flex rounded-xl p-1 gap-1 ${theme === "dark" ? "bg-zinc-800" : "bg-slate-100"}`}>
 
                         {/* Physical — always available */}
                         <button
@@ -965,8 +974,8 @@ export default function PropertyDetailPage() {
                             hasExistingViewing
                               ? "text-slate-300 cursor-not-allowed"
                               : viewingType === "PHYSICAL"
-                                ? "bg-white text-orange-600 shadow-sm"
-                                : "text-slate-500 hover:text-slate-700"
+                                ? `bg-white ${theme === "dark" ? "text-orange-500 shadow-md" : "text-orange-600 shadow-sm"}`
+                                : theme === "dark" ? "text-white/50 hover:text-white/80" : "text-slate-500 hover:text-slate-700"
                           }`}
                         >
                           <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
@@ -987,12 +996,12 @@ export default function PropertyDetailPage() {
                           title={hasExistingViewing ? undefined : "360° virtual inspection - coming soon"}
                           className={`flex-1 flex flex-col items-center justify-center gap-0 h-9 text-[11px] font-bold rounded-lg transition-all ${
                             hasExistingViewing
-                              ? "text-slate-300 cursor-not-allowed"
+                              ? theme === "dark" ? "text-white/20 cursor-not-allowed" : "text-slate-300 cursor-not-allowed"
                               : propertyData.video_tour_url
                                 ? viewingType === "VIRTUAL"
-                                  ? "bg-white text-blue-600 shadow-sm"
-                                  : "text-slate-500 hover:text-slate-700"
-                                : "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                  ? `bg-white ${theme === "dark" ? "text-blue-500 shadow-md" : "text-blue-600 shadow-sm"}`
+                                  : theme === "dark" ? "text-white/50 hover:text-white/80" : "text-slate-500 hover:text-slate-700"
+                                : theme === "dark" ? "text-amber-400 hover:text-amber-300 hover:bg-amber-950/30" : "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
                           }`}
                         >
                           <div className="flex items-center gap-1">
@@ -1013,10 +1022,10 @@ export default function PropertyDetailPage() {
                           onClick={() => !hasExistingViewing && setViewingType("LIVE_VIDEO")}
                           className={`flex-1 flex items-center justify-center gap-1 h-9 text-[11px] font-bold rounded-lg transition-all ${
                             hasExistingViewing
-                              ? "text-slate-300 cursor-not-allowed"
+                              ? theme === "dark" ? "text-white/20 cursor-not-allowed" : "text-slate-300 cursor-not-allowed"
                               : viewingType === "LIVE_VIDEO"
-                                ? "bg-white text-purple-600 shadow-sm"
-                                : "text-slate-500 hover:text-slate-700"
+                                ? `bg-white ${theme === "dark" ? "text-purple-500 shadow-md" : "text-purple-600 shadow-sm"}`
+                                : theme === "dark" ? "text-white/50 hover:text-white/80" : "text-slate-500 hover:text-slate-700"
                           }`}
                         >
                           <Video className="h-3.5 w-3.5 flex-shrink-0" />
@@ -1031,12 +1040,12 @@ export default function PropertyDetailPage() {
                       disabled={hasExistingViewing || isCheckingViewings}
                       className={`w-full h-12 text-sm font-bold text-white rounded-xl shadow-md transition-all group
                         ${hasExistingViewing || isCheckingViewings
-                          ? "bg-slate-300 cursor-not-allowed shadow-none"
+                          ? theme === "dark" ? "bg-zinc-700 cursor-not-allowed shadow-none" : "bg-slate-300 cursor-not-allowed shadow-none"
                           : viewingType === "PHYSICAL"
-                            ? "bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-orange-100 hover:shadow-lg"
+                            ? "bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-orange-100 dark:shadow-orange-900/30 hover:shadow-lg"
                             : viewingType === "VIRTUAL"
-                              ? "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-blue-100 hover:shadow-lg"
-                              : "bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 shadow-purple-100 hover:shadow-lg"
+                              ? "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-blue-100 dark:shadow-blue-900/30 hover:shadow-lg"
+                              : "bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 shadow-purple-100 dark:shadow-purple-900/30 hover:shadow-lg"
                         }`}
                       onClick={() => handleRequestViewing(viewingType)}
                     >
@@ -1072,7 +1081,7 @@ export default function PropertyDetailPage() {
                     <div className="grid grid-cols-2 gap-2">
                       <Button
                         variant="outline"
-                        className="h-10 text-xs font-semibold border-2 border-blue-200 text-blue-700 hover:border-blue-400 hover:bg-blue-50 rounded-xl group transition-all"
+                        className={`h-10 text-xs font-semibold border-2 rounded-xl group transition-all ${theme === "dark" ? "border-blue-800 text-blue-400 hover:border-blue-600 hover:bg-blue-950/30" : "border-blue-200 text-blue-700 hover:border-blue-400 hover:bg-blue-50"}`}
                         onClick={handleChatLandlord}
                       >
                         <MessageCircle className="h-3.5 w-3.5 mr-1.5 group-hover:scale-110 transition-transform" />
@@ -1082,8 +1091,8 @@ export default function PropertyDetailPage() {
                         variant="outline"
                         className={`h-10 text-xs font-semibold border-2 rounded-xl group transition-all disabled:opacity-50 ${
                           isFavorite
-                            ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                            : "border-slate-200 text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                            ? theme === "dark" ? "border-red-800 bg-red-950/30 text-red-400 hover:bg-red-950/50" : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                            : theme === "dark" ? "border-zinc-600 text-white/60 hover:border-red-700 hover:bg-red-950/30 hover:text-red-400" : "border-slate-200 text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
                         }`}
                         onClick={toggleFavorite}
                         disabled={isTogglingFavorite}
@@ -1097,15 +1106,15 @@ export default function PropertyDetailPage() {
                         APPLY NOW — from apply-button-sidebar.tsx
                         Separated by divider to signal a different intent
                     ══════════════════════════════════════════════════ */}
-                    <div className="pt-2 border-t border-slate-100">
+                    <div className={`pt-2 border-t ${theme === "dark" ? "border-white/10" : "border-slate-100"}`}>
 
                       {/* Smart banner when viewing already scheduled */}
                       {completedViewingId && user && (
-                        <div className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-2.5">
+                        <div className={`flex items-start gap-2 p-3 border rounded-xl mb-2.5 ${theme === "dark" ? "bg-emerald-950/30 border-emerald-900/50" : "bg-emerald-50 border-emerald-200"}`}>
                           <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                           <div>
-                            <p className="text-xs font-semibold text-emerald-800">Viewing Scheduled!</p>
-                            <p className="text-[11px] text-emerald-700">Ready to take the next step?</p>
+                            <p className={`text-xs font-semibold ${theme === "dark" ? "text-emerald-300" : "text-emerald-800"}`}>Viewing Scheduled!</p>
+                            <p className={`text-[11px] ${theme === "dark" ? "text-emerald-300/80" : "text-emerald-700"}`}>Ready to take the next step?</p>
                           </div>
                         </div>
                       )}
@@ -1114,8 +1123,8 @@ export default function PropertyDetailPage() {
                         disabled={hasExistingApplication || isCheckingApplications}
                         className={`w-full h-12 font-bold text-sm rounded-xl shadow-md group transition-all hover:shadow-lg
                           ${hasExistingApplication || isCheckingApplications
-                            ? "bg-slate-300 cursor-not-allowed shadow-none"
-                            : "bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white shadow-emerald-100"
+                            ? theme === "dark" ? "bg-zinc-700 cursor-not-allowed shadow-none" : "bg-slate-300 cursor-not-allowed shadow-none"
+                            : "bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white shadow-emerald-100 dark:shadow-emerald-900/30"
                           }`}
                         onClick={handleApply}
                       >
@@ -1136,7 +1145,7 @@ export default function PropertyDetailPage() {
                           </>
                         )}
                       </Button>
-                      <p className="text-center text-[11px] text-slate-400 mt-1.5">
+                      <p className={`text-center text-[11px] mt-1.5 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`}>
                         {completedViewingId ? "Viewing linked to your application" : "Viewing recommended before applying"}
                       </p>
                     </div>
@@ -1144,7 +1153,7 @@ export default function PropertyDetailPage() {
                     {/* Report — ghost, low prominence */}
                     <Button
                       variant="ghost"
-                      className="w-full h-8 text-xs text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg group transition-all"
+                      className={`w-full h-8 text-xs rounded-lg group transition-all ${theme === "dark" ? "text-white/30 hover:text-red-400 hover:bg-red-950/30" : "text-slate-400 hover:text-red-600 hover:bg-red-50"}`}
                       onClick={handleReportConcern}
                     >
                       <AlertTriangle className="h-3 w-3 mr-1.5 group-hover:scale-110 transition-transform" />
@@ -1153,20 +1162,20 @@ export default function PropertyDetailPage() {
                   </div>
 
                   {/* Trust note */}
-                  <div className="mt-4 p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      <strong className="text-slate-700">🛡️ Protected by Nulo:</strong> All interactions use our secure escrow system. Both parties can rate each other after.
+                  <div className={`mt-4 p-3 border rounded-xl ${theme === "dark" ? "bg-zinc-800 border-zinc-700" : "bg-slate-50 border-slate-100"}`}>
+                    <p className={`text-[11px] leading-relaxed ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
+                      <strong className={theme === "dark" ? "text-white/80" : "text-slate-700"}>🛡️ Protected by Nulo:</strong> All interactions use our secure escrow system. Both parties can rate each other after.
                     </p>
                   </div>
                 </CardContent>
               </Card>
 
               {/* Similar properties nudge */}
-              <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
-                <p className="text-xs font-semibold text-slate-700 mb-0.5">Not the right fit?</p>
-                <p className="text-xs text-slate-500 mb-3">Browse similar properties in {propertyData.city || "Lagos"}</p>
+              <div className={`p-4 border rounded-2xl shadow-sm ${theme === "dark" ? "bg-zinc-900 border-zinc-700" : "bg-white border-slate-200"}`}>
+                <p className={`text-xs font-semibold mb-0.5 ${theme === "dark" ? "text-white/80" : "text-slate-700"}`}>Not the right fit?</p>
+                <p className={`text-xs mb-3 ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>Browse similar properties in {propertyData.city || "Lagos"}</p>
                 <Link href="/properties">
-                  <Button variant="outline" size="sm" className="w-full h-9 text-xs border-slate-200 hover:border-orange-300 hover:text-orange-600 rounded-xl transition-all">
+                  <Button variant="outline" size="sm" className={`w-full h-9 text-xs rounded-xl transition-all ${theme === "dark" ? "border-zinc-600 text-white/70 hover:border-orange-500 hover:text-orange-400" : "border-slate-200 hover:border-orange-300 hover:text-orange-600"}`}>
                     Browse All Properties
                     <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
                   </Button>
@@ -1181,17 +1190,19 @@ export default function PropertyDetailPage() {
       </div>
 
       {/* ── MOBILE BOTTOM BAR ─────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-white border-t border-slate-200 px-4 pt-2 pb-4 safe-area-pb">
+      <div className={`fixed bottom-0 left-0 right-0 z-50 lg:hidden border-t px-4 pt-2 pb-4 safe-area-pb ${theme === "dark" ? "bg-zinc-900 border-white/10" : "bg-white border-slate-200"}`}>
 
         {/* 3-tab mini segmented control */}
-        <div className="flex bg-slate-100 rounded-lg p-0.5 gap-0.5 mb-2">
+        <div className={`flex rounded-lg p-0.5 gap-0.5 mb-2 ${theme === "dark" ? "bg-zinc-800" : "bg-slate-100"}`}>
           {/* Physical */}
           <button
             onClick={() => !hasExistingViewing && setViewingType("PHYSICAL")}
             className={`flex-1 flex items-center justify-center gap-1 h-7 text-[11px] font-bold rounded-md transition-all ${
-              hasExistingViewing ? "text-slate-300 cursor-not-allowed"
-              : viewingType === "PHYSICAL" ? "bg-white text-orange-600 shadow-sm"
-              : "text-slate-500"
+              hasExistingViewing
+                ? theme === "dark" ? "text-white/20 cursor-not-allowed" : "text-slate-300 cursor-not-allowed"
+              : viewingType === "PHYSICAL"
+                ? theme === "dark" ? "bg-zinc-700 text-orange-500 shadow-sm" : "bg-white text-orange-600 shadow-sm"
+              : theme === "dark" ? "text-white/50" : "text-slate-500"
             }`}
           >
             <Calendar className="h-3 w-3" /> Physical
@@ -1210,12 +1221,12 @@ export default function PropertyDetailPage() {
             disabled={hasExistingViewing}
             className={`flex-1 flex items-center justify-center gap-1 h-7 text-[11px] font-bold rounded-md transition-all ${
               hasExistingViewing
-                ? "text-slate-300 cursor-not-allowed"
+                ? theme === "dark" ? "text-white/20 cursor-not-allowed" : "text-slate-300 cursor-not-allowed"
                 : propertyData.video_tour_url
                   ? viewingType === "VIRTUAL"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                  : "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                    ? theme === "dark" ? "bg-zinc-700 text-blue-500 shadow-sm" : "bg-white text-blue-600 shadow-sm"
+                    : theme === "dark" ? "text-white/50 hover:text-white/80" : "text-slate-500 hover:text-slate-700"
+                  : theme === "dark" ? "text-amber-400 hover:text-amber-300" : "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
             }`}
           >
             {propertyData.video_tour_url ? <Video className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
@@ -1229,9 +1240,11 @@ export default function PropertyDetailPage() {
           <button
             onClick={() => !hasExistingViewing && setViewingType("LIVE_VIDEO")}
             className={`flex-1 flex items-center justify-center gap-1 h-7 text-[11px] font-bold rounded-md transition-all ${
-              hasExistingViewing ? "text-slate-300 cursor-not-allowed"
-              : viewingType === "LIVE_VIDEO" ? "bg-white text-purple-600 shadow-sm"
-              : "text-slate-500"
+              hasExistingViewing
+                ? theme === "dark" ? "text-white/20 cursor-not-allowed" : "text-slate-300 cursor-not-allowed"
+              : viewingType === "LIVE_VIDEO"
+                ? theme === "dark" ? "bg-zinc-700 text-purple-500 shadow-sm" : "bg-white text-purple-600 shadow-sm"
+              : theme === "dark" ? "text-white/50" : "text-slate-500"
             }`}
           >
             <Video className="h-3 w-3" /> Live
@@ -1244,7 +1257,7 @@ export default function PropertyDetailPage() {
             disabled={hasExistingViewing || isCheckingViewings}
             className={`flex-1 h-12 text-sm font-bold text-white rounded-xl shadow-md transition-all ${
               hasExistingViewing || isCheckingViewings
-                ? "bg-slate-300 cursor-not-allowed shadow-none"
+                ? theme === "dark" ? "bg-zinc-700 cursor-not-allowed shadow-none" : "bg-slate-300 cursor-not-allowed shadow-none"
                 : viewingType === "PHYSICAL"
                   ? "bg-gradient-to-r from-orange-500 to-orange-600"
                   : viewingType === "VIRTUAL"
@@ -1266,7 +1279,7 @@ export default function PropertyDetailPage() {
             disabled={hasExistingApplication || isCheckingApplications}
             className={`flex-1 h-12 text-sm font-bold rounded-xl shadow-md transition-all
               ${hasExistingApplication || isCheckingApplications
-                ? "bg-slate-300 cursor-not-allowed shadow-none"
+                ? theme === "dark" ? "bg-zinc-700 cursor-not-allowed shadow-none text-white/50" : "bg-slate-300 cursor-not-allowed shadow-none"
                 : "bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white"
               }`}
             onClick={handleApply}

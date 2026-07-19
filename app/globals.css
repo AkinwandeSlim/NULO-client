@@ -1428,7 +1428,7 @@ html {
 
 /* Adjust this value to control navbar spacing */
 :root {
-  --navbar-height: 3.5rem; /* Try: -0.5rem (tight), 0rem (no space), 1rem (small gap) */
+  --navbar-height: 0rem; /* Set to 0 - sticky header doesn't need body padding */
 }
 
 /* Apply spacing to main content areas */

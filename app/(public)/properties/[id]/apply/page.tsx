@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
+import { useTheme } from "@/contexts/ThemeContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -17,6 +18,7 @@ import Link from "next/link"
 import { applicationsAPI, CreateApplicationData } from "@/lib/api/applications"
 import { getErrorMessage } from "@/lib/api/client"
 import { formatNGN, calculateRentalBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
+import { MarketplaceHeader } from "@/components/navigation/MarketplaceHeader"
 
 // Import step components
 import PersonalInfoStep from "@/components/application/PersonalInfoStep"
@@ -91,6 +93,7 @@ export default function ApplicationPage() {
   const params       = useParams()
   const searchParams = useSearchParams()
   const { user, userProfile, loading } = useAuth()
+  const { theme } = useTheme()
 
   const propertyId = params?.id as string
   // Optional: tenant can arrive here with ?viewing_id=xxx if they applied after a scheduled viewing
@@ -378,18 +381,21 @@ export default function ApplicationPage() {
   // ── Loading state ──────────────────────────────────────────────────────────
   if (loading || loadingProperty) {
     return (
-      <div className="min-h-screen bg-[#FAFAF8]">
+      <div className={`min-h-screen ${theme === "dark" ? "bg-black" : "bg-[#FAFAF8]"}`}>
+        {/* Marketplace Header */}
+        <MarketplaceHeader hideSecondRow={true} />
+
         {/* Breadcrumb skeleton */}
-        <div className="bg-white border-b border-slate-200">
+        <div className={`border-b ${theme === "dark" ? "bg-zinc-900/80 border-white/5" : "bg-white border-slate-200"}`}>
           <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-3">
             <div className="flex items-center gap-2">
-              <Skeleton className="h-4 w-12" />
-              <ChevronRight className="h-3 w-3 text-slate-400" />
-              <Skeleton className="h-4 w-16" />
-              <ChevronRight className="h-3 w-3 text-slate-400" />
-              <Skeleton className="h-4 w-20" />
-              <ChevronRight className="h-3 w-3 text-slate-400" />
-              <Skeleton className="h-4 w-8" />
+              <Skeleton className={`h-4 w-12 ${theme === "dark" ? "bg-white/10" : ""}`} />
+              <ChevronRight className={`h-3 w-3 ${theme === "dark" ? "text-white/20" : "text-slate-400"}`} />
+              <Skeleton className={`h-4 w-16 ${theme === "dark" ? "bg-white/10" : ""}`} />
+              <ChevronRight className={`h-3 w-3 ${theme === "dark" ? "text-white/20" : "text-slate-400"}`} />
+              <Skeleton className={`h-4 w-20 ${theme === "dark" ? "bg-white/10" : ""}`} />
+              <ChevronRight className={`h-3 w-3 ${theme === "dark" ? "text-white/20" : "text-slate-400"}`} />
+              <Skeleton className={`h-4 w-8 ${theme === "dark" ? "bg-white/10" : ""}`} />
             </div>
           </div>
         </div>
@@ -398,22 +404,22 @@ export default function ApplicationPage() {
         <div className="max-w-7xl mx-auto px-4 md:px-6 pt-6 pb-2">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-2">
             <div className="space-y-2">
-              <Skeleton className="h-10 w-64" />
-              <Skeleton className="h-4 w-48" />
+              <Skeleton className={`h-10 w-64 ${theme === "dark" ? "bg-white/10" : ""}`} />
+              <Skeleton className={`h-4 w-48 ${theme === "dark" ? "bg-white/10" : ""}`} />
             </div>
-            <Skeleton className="h-8 w-32 rounded-full" />
+            <Skeleton className={`h-8 w-32 rounded-full ${theme === "dark" ? "bg-white/10" : ""}`} />
           </div>
         </div>
 
         {/* Stepper skeleton */}
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-4">
           <div className="relative mb-2">
-            <Skeleton className="h-[2px] w-full" />
+            <Skeleton className={`h-[2px] w-full ${theme === "dark" ? "bg-white/10" : ""}`} />
             <div className="relative z-10 flex justify-between">
               {[1, 2, 3, 4, 5].map((step) => (
                 <div key={step} className="flex flex-col items-center gap-1.5">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className={`h-10 w-10 rounded-full ${theme === "dark" ? "bg-white/10" : ""}`} />
+                  <Skeleton className={`h-3 w-16 ${theme === "dark" ? "bg-white/10" : ""}`} />
                 </div>
               ))}
             </div>
@@ -425,19 +431,19 @@ export default function ApplicationPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main form area */}
             <div className="lg:col-span-2 space-y-6">
-              <Card className="border-0 shadow-sm">
+              <Card className={`border-0 shadow-sm ${theme === "dark" ? "bg-black border-white/10" : ""}`}>
                 <CardContent className="p-6">
                   <div className="space-y-4">
-                    <Skeleton className="h-6 w-32" />
+                    <Skeleton className={`h-6 w-32 ${theme === "dark" ? "bg-white/10" : ""}`} />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Skeleton className="h-10 w-full" />
-                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className={`h-10 w-full ${theme === "dark" ? "bg-white/10" : ""}`} />
+                      <Skeleton className={`h-10 w-full ${theme === "dark" ? "bg-white/10" : ""}`} />
                     </div>
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className={`h-10 w-full ${theme === "dark" ? "bg-white/10" : ""}`} />
+                    <Skeleton className={`h-10 w-full ${theme === "dark" ? "bg-white/10" : ""}`} />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Skeleton className="h-10 w-full" />
-                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className={`h-10 w-full ${theme === "dark" ? "bg-white/10" : ""}`} />
+                      <Skeleton className={`h-10 w-full ${theme === "dark" ? "bg-white/10" : ""}`} />
                     </div>
                   </div>
                 </CardContent>
@@ -445,8 +451,8 @@ export default function ApplicationPage() {
 
               {/* Navigation skeleton */}
               <div className="flex justify-between">
-                <Skeleton className="h-12 w-24" />
-                <Skeleton className="h-12 w-24" />
+                <Skeleton className={`h-12 w-24 ${theme === "dark" ? "bg-white/10" : ""}`} />
+                <Skeleton className={`h-12 w-24 ${theme === "dark" ? "bg-white/10" : ""}`} />
               </div>
             </div>
 
@@ -454,39 +460,39 @@ export default function ApplicationPage() {
             <div className="lg:col-span-1">
               <div className="sticky top-32 space-y-4">
                 {/* Property card skeleton */}
-                <Card className="border-0 shadow-sm">
+                <Card className={`border-0 shadow-sm ${theme === "dark" ? "bg-black border-white/10" : ""}`}>
                   <CardContent className="p-5">
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
-                        <Skeleton className="h-11 w-11 rounded-full" />
+                        <Skeleton className={`h-11 w-11 rounded-full ${theme === "dark" ? "bg-white/10" : ""}`} />
                         <div className="flex-1">
-                          <Skeleton className="h-4 w-24 mb-1" />
-                          <Skeleton className="h-3 w-16" />
+                          <Skeleton className={`h-4 w-24 mb-1 ${theme === "dark" ? "bg-white/10" : ""}`} />
+                          <Skeleton className={`h-3 w-16 ${theme === "dark" ? "bg-white/10" : ""}`} />
                         </div>
                         <div className="text-right">
-                          <Skeleton className="h-5 w-20" />
-                          <Skeleton className="h-3 w-12" />
+                          <Skeleton className={`h-5 w-20 ${theme === "dark" ? "bg-white/10" : ""}`} />
+                          <Skeleton className={`h-3 w-12 ${theme === "dark" ? "bg-white/10" : ""}`} />
                         </div>
                       </div>
                       
                       <div className="space-y-2">
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="h-3 w-32" />
+                        <Skeleton className={`h-4 w-full ${theme === "dark" ? "bg-white/10" : ""}`} />
+                        <Skeleton className={`h-3 w-32 ${theme === "dark" ? "bg-white/10" : ""}`} />
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <Skeleton className="h-3 w-12" />
-                        <Skeleton className="h-3 w-12" />
-                        <Skeleton className="h-3 w-12" />
+                        <Skeleton className={`h-3 w-12 ${theme === "dark" ? "bg-white/10" : ""}`} />
+                        <Skeleton className={`h-3 w-12 ${theme === "dark" ? "bg-white/10" : ""}`} />
+                        <Skeleton className={`h-3 w-12 ${theme === "dark" ? "bg-white/10" : ""}`} />
                       </div>
 
-                      <Skeleton className="h-16 w-full rounded-xl" />
+                      <Skeleton className={`h-16 w-full rounded-xl ${theme === "dark" ? "bg-white/10" : ""}`} />
 
                       <div className="space-y-2">
                         {[1, 2, 3].map((i) => (
                           <div key={i} className="flex items-center gap-2">
-                            <Skeleton className="h-3 w-3" />
-                            <Skeleton className="h-3 w-24" />
+                            <Skeleton className={`h-3 w-3 ${theme === "dark" ? "bg-white/10" : ""}`} />
+                            <Skeleton className={`h-3 w-24 ${theme === "dark" ? "bg-white/10" : ""}`} />
                           </div>
                         ))}
                       </div>
@@ -505,27 +511,30 @@ export default function ApplicationPage() {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#FAFAF8]">
+    <div className={`min-h-screen ${theme === "dark" ? "bg-black" : "bg-[#FAFAF8]"}`}>
+
+      {/* ── Marketplace Header (same as property detail page) ──────────────── */}
+      <MarketplaceHeader hideSecondRow={true} />
 
       {/* ── Breadcrumb — matches property detail page exactly ─────────────── */}
-      <div className="bg-white border-b border-slate-200 sticky top-16 z-40">
+      <div className={`border-b sticky top-16 z-40 ${theme === "dark" ? "bg-zinc-900/80 border-white/5" : "bg-white border-slate-200"}`}>
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-3">
           <nav className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm overflow-x-auto scrollbar-hide">
-            <Link href="/" className="text-slate-600 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">
+            <Link href="/" className={`transition-colors font-medium whitespace-nowrap ${theme === "dark" ? "text-white/60 hover:text-orange-400" : "text-slate-600 hover:text-orange-600"}`}>
               Home
             </Link>
-            <ChevronRight className="h-3 w-3 text-slate-400 flex-shrink-0" />
-            <Link href="/properties" className="text-slate-600 hover:text-orange-600 transition-colors font-medium whitespace-nowrap">
+            <ChevronRight className={`h-3 w-3 flex-shrink-0 ${theme === "dark" ? "text-white/20" : "text-slate-400"}`} />
+            <Link href="/properties" className={`transition-colors font-medium whitespace-nowrap ${theme === "dark" ? "text-white/60 hover:text-orange-400" : "text-slate-600 hover:text-orange-600"}`}>
               Properties
             </Link>
-            <ChevronRight className="h-3 w-3 text-slate-400 flex-shrink-0" />
+            <ChevronRight className={`h-3 w-3 flex-shrink-0 ${theme === "dark" ? "text-white/20" : "text-slate-400"}`} />
             <Link
               href={`/properties/${propertyId}`}
-              className="text-slate-600 hover:text-orange-600 transition-colors font-medium whitespace-nowrap truncate max-w-[120px] md:max-w-[240px]"
+              className={`transition-colors font-medium whitespace-nowrap truncate max-w-[120px] md:max-w-[240px] ${theme === "dark" ? "text-white/60 hover:text-orange-400" : "text-slate-600 hover:text-orange-600"}`}
             >
               {property?.title || "Property"}
             </Link>
-            <ChevronRight className="h-3 w-3 text-slate-400 flex-shrink-0" />
+            <ChevronRight className={`h-3 w-3 flex-shrink-0 ${theme === "dark" ? "text-white/20" : "text-slate-400"}`} />
             <span className="text-orange-600 font-semibold whitespace-nowrap">Apply</span>
           </nav>
         </div>
@@ -535,7 +544,7 @@ export default function ApplicationPage() {
       <div className="max-w-7xl mx-auto px-4 md:px-6 pt-6 pb-2">
         <Link
           href={`/properties/${propertyId}`}
-          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors mb-4 group"
+          className={`inline-flex items-center gap-1.5 text-sm transition-colors mb-4 group ${theme === "dark" ? "text-white/60 hover:text-orange-400" : "text-slate-500 hover:text-orange-600"}`}
         >
           <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
           Back to property
@@ -543,16 +552,16 @@ export default function ApplicationPage() {
 
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-2">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 leading-tight">Rental Application</h1>
+            <h1 className={`text-2xl md:text-3xl font-bold leading-tight ${theme === "dark" ? "text-white" : "text-slate-900"}`}>Rental Application</h1>
             {property && (
-              <p className="text-slate-500 text-sm mt-1">
-                Applying for <span className="font-semibold text-slate-700">{property.title}</span>
+              <p className={`text-sm mt-1 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>
+                Applying for <span className={`font-semibold ${theme === "dark" ? "text-white" : "text-slate-700"}`}>{property.title}</span>
               </p>
             )}
           </div>
 
           {/* Secure badge */}
-          <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full self-start sm:self-auto">
+          <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full self-start sm:self-auto ${theme === "dark" ? "text-green-400 bg-green-900/30 border-green-500/30" : "text-green-700 bg-green-50 border-green-200"}`}>
             <Lock className="h-3.5 w-3.5" />
             Secure & Encrypted
           </div>
@@ -563,9 +572,9 @@ export default function ApplicationPage() {
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-4">
         {/* Progress track */}
         <div className="relative mb-2">
-          <div className="absolute top-5 left-0 right-0 h-[2px] bg-slate-200 z-0" />
+          <div className={`absolute top-5 left-0 right-0 h-[2px] z-0 ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
           <div
-            className="absolute top-5 left-0 h-[2px] bg-orange-500 z-0 transition-all duration-500"
+            className={`absolute top-5 left-0 h-[2px] bg-orange-500 z-0 transition-all duration-500`}
             style={{ width: `${((currentStep - 1) / 4) * 100}%` }}
           />
 
@@ -583,8 +592,8 @@ export default function ApplicationPage() {
                       ${isCompleted
                         ? "bg-orange-500 border-orange-500 text-white shadow-md shadow-orange-100"
                         : isActive
-                          ? "bg-white border-orange-500 text-orange-600 shadow-md shadow-orange-100"
-                          : "bg-white border-slate-200 text-slate-400"
+                          ? `${theme === "dark" ? "bg-black border-orange-500 text-orange-400" : "bg-white border-orange-500 text-orange-600"} shadow-md shadow-orange-100`
+                          : `${theme === "dark" ? "bg-black border-white/10 text-white/40" : "bg-white border-slate-200 text-slate-400"}`
                       }
                     `}
                   >
@@ -594,7 +603,7 @@ export default function ApplicationPage() {
                     }
                   </div>
                   <div className="text-center hidden sm:block">
-                    <p className={`text-xs font-semibold leading-tight ${isActive ? "text-orange-600" : isCompleted ? "text-slate-700" : "text-slate-400"}`}>
+                    <p className={`text-xs font-semibold leading-tight ${isActive ? "text-orange-600" : isCompleted ? (theme === "dark" ? "text-white" : "text-slate-700") : (theme === "dark" ? "text-white/40" : "text-slate-400")}`}>
                       {step.title}
                     </p>
                   </div>
@@ -605,8 +614,8 @@ export default function ApplicationPage() {
         </div>
 
         {/* Step label — mobile only */}
-        <p className="sm:hidden text-center text-xs text-slate-500 mt-3">
-          Step {currentStep} of 5 — <span className="font-semibold text-slate-700">{steps[currentStep - 1].title}</span>
+        <p className={`sm:hidden text-center text-xs mt-3 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>
+          Step {currentStep} of 5 — <span className={`font-semibold ${theme === "dark" ? "text-white" : "text-slate-700"}`}>{steps[currentStep - 1].title}</span>
         </p>
       </div>
 
@@ -616,7 +625,7 @@ export default function ApplicationPage() {
 
           {/* ── MAIN FORM — 2/3 width ──────────────────────────────────── */}
           <div className="lg:col-span-2">
-            <Card className="border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+            <Card className={`border shadow-sm rounded-2xl overflow-hidden ${theme === "dark" ? "border-white/10 bg-black" : "border-slate-200"}`}>
               {/* Step header bar */}
               <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-4">
                 <div className="flex items-center gap-3">
@@ -653,7 +662,7 @@ export default function ApplicationPage() {
                 )}
 
                 {/* ── Navigation ─────────────────────────────────────── */}
-                <div className={`flex mt-8 pt-6 border-t border-slate-100 ${currentStep > 1 ? "justify-between" : "justify-end"}`}>
+                <div className={`flex mt-8 pt-6 border-t ${theme === "dark" ? "border-white/10" : "border-slate-100"} ${currentStep > 1 ? "justify-between" : "justify-end"}`}>
                   {currentStep > 1 && (
                     <Button
                       type="button"
@@ -700,7 +709,7 @@ export default function ApplicationPage() {
             </Card>
 
             {/* Support footnote */}
-            <p className="text-center text-xs text-slate-400 mt-4">
+            <p className={`text-center text-xs mt-4 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`}>
               Need help?{" "}
               <a href="mailto:support@nuloafrica.com" className="text-orange-500 hover:underline">
                 support@nuloafrica.com
@@ -713,7 +722,7 @@ export default function ApplicationPage() {
             <div className="lg:sticky lg:top-32 space-y-4">
 
               {/* Property summary card */}
-              <Card className="border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+              <Card className={`border shadow-sm rounded-2xl overflow-hidden ${theme === "dark" ? "border-white/10 bg-black" : "border-slate-200"}`}>
                 {/* Property image */}
                 {property?.images?.[0] ? (
                   <div className="relative h-44 overflow-hidden">
@@ -731,17 +740,17 @@ export default function ApplicationPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="h-32 bg-gradient-to-br from-orange-50 to-orange-100 flex items-center justify-center">
-                    <Home className="h-10 w-10 text-orange-300" />
+                  <div className={`h-32 flex items-center justify-center ${theme === "dark" ? "bg-gradient-to-br from-orange-900/20 to-orange-800/20" : "bg-gradient-to-br from-orange-50 to-orange-100"}`}>
+                    <Home className={`h-10 w-10 ${theme === "dark" ? "text-orange-400/50" : "text-orange-300"}`} />
                   </div>
                 )}
 
                 <CardContent className="p-4">
-                  <h3 className="font-bold text-slate-900 text-sm leading-snug mb-1">
+                  <h3 className={`font-bold text-sm leading-snug mb-1 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
                     {property?.title || "Property"}
                   </h3>
                   {property?.location && (
-                    <p className="text-xs text-slate-500 flex items-center gap-1 mb-3">
+                    <p className={`text-xs flex items-center gap-1 mb-3 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>
                       <MapPin className="h-3 w-3 flex-shrink-0" />
                       {property.location}
                     </p>
@@ -749,22 +758,22 @@ export default function ApplicationPage() {
 
                   {/* Specs row */}
                   {(property?.bedrooms || property?.bathrooms || property?.square_feet) && (
-                    <div className="flex items-center gap-3 text-xs text-slate-600 mb-3 pb-3 border-b border-slate-100">
+                    <div className={`flex items-center gap-3 text-xs mb-3 pb-3 border-b ${theme === "dark" ? "text-white/60 border-white/10" : "text-slate-600 border-slate-100"}`}>
                       {property.bedrooms && (
                         <span className="flex items-center gap-1">
-                          <Bed className="h-3.5 w-3.5 text-slate-400" />
+                          <Bed className={`h-3.5 w-3.5 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                           {property.bedrooms} beds
                         </span>
                       )}
                       {property.bathrooms && (
                         <span className="flex items-center gap-1">
-                          <Bath className="h-3.5 w-3.5 text-slate-400" />
+                          <Bath className={`h-3.5 w-3.5 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                           {property.bathrooms} baths
                         </span>
                       )}
                       {property.square_feet && (
                         <span className="flex items-center gap-1">
-                          <Square className="h-3.5 w-3.5 text-slate-400" />
+                          <Square className={`h-3.5 w-3.5 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                           {property.square_feet} sqft
                         </span>
                       )}
@@ -773,7 +782,7 @@ export default function ApplicationPage() {
 
                   {/* Price */}
                   {property?.price > 0 && (
-                    <div className="bg-orange-50 rounded-xl p-3 mb-3 text-center">
+                    <div className={`rounded-xl p-3 mb-3 text-center ${theme === "dark" ? "bg-orange-900/20" : "bg-orange-50"}`}>
                       <p className="text-orange-600 font-bold text-xl leading-none">
                         {formatNGN(property.price)}
                       </p>
@@ -783,14 +792,14 @@ export default function ApplicationPage() {
 
                   {/* Rental breakdown */}
                   {property?.price > 0 && (
-                    <div className="bg-blue-50 rounded-xl p-3 mb-3">
-                      <p className="text-blue-600 font-semibold text-sm mb-2">Move-in Cost Breakdown</p>
+                    <div className={`rounded-xl p-3 mb-3 ${theme === "dark" ? "bg-blue-900/20" : "bg-blue-50"}`}>
+                      <p className={`font-semibold text-sm mb-2 ${theme === "dark" ? "text-blue-400" : "text-blue-600"}`}>Move-in Cost Breakdown</p>
                       {(() => {
                         const breakdown = calculateRentalBreakdown(property)
                         const { monthlyRent, annualRent, periodRent, cautionFee, platformFee, serviceCharge, totalDue, periodLabel, paymentFrequency } = breakdown
                         const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
                         return (
-                          <div className="space-y-1 text-xs">
+                          <div className={`space-y-1 text-xs ${theme === "dark" ? "text-white/80" : ""}`}>
                             <div className="flex justify-between">
                               <span>Monthly Rent:</span>
                               <span className="font-semibold">{formatNGN(monthlyRent)}</span>
@@ -801,7 +810,8 @@ export default function ApplicationPage() {
                             </div>
                             <div className="flex justify-between">
                               <span>Security Deposit (2 months):</span>
-                              <span className={`font-semibold ${cautionFee === 0 ? "text-green-600" : "text-blue-700"}`}>                                {cautionFee === 0 ? "₦0 — Waived" : formatNGN(cautionFee)}
+                              <span className={`font-semibold ${cautionFee === 0 ? "text-green-600" : (theme === "dark" ? "text-blue-400" : "text-blue-700")}`}>
+                                {cautionFee === 0 ? "₦0 — Waived" : formatNGN(cautionFee)}
                               </span>
                             </div>
                             {platformFee > 0 ? (
@@ -821,9 +831,9 @@ export default function ApplicationPage() {
                                 <span className="font-semibold">{formatNGN(serviceCharge)}</span>
                               </div>
                             )}
-                            <div className="flex justify-between pt-1 border-t border-slate-300 font-bold">
+                            <div className={`flex justify-between pt-1 border-t font-bold ${theme === "dark" ? "border-white/10 text-orange-400" : "border-slate-300 text-orange-700"}`}>
                               <span>Total Due:</span>
-                              <span className="text-orange-700">{formatNGN(totalDue)}</span>
+                              <span>{formatNGN(totalDue)}</span>
                             </div>
                           </div>
                         )
@@ -839,7 +849,7 @@ export default function ApplicationPage() {
                       "Secure application",
                       "Escrow-protected payment",
                     ].map(item => (
-                      <div key={item} className="flex items-center gap-2 text-xs text-slate-600">
+                      <div key={item} className={`flex items-center gap-2 text-xs ${theme === "dark" ? "text-white/70" : "text-slate-600"}`}>
                         <Check className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
                         {item}
                       </div>
@@ -849,9 +859,9 @@ export default function ApplicationPage() {
               </Card>
 
               {/* Application tips card */}
-              <Card className="border border-slate-200 shadow-sm rounded-2xl">
+              <Card className={`border shadow-sm rounded-2xl ${theme === "dark" ? "border-white/10 bg-black" : "border-slate-200"}`}>
                 <CardContent className="p-4">
-                  <h4 className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
+                  <h4 className={`font-semibold text-sm mb-3 flex items-center gap-2 ${theme === "dark" ? "text-white" : "text-slate-800"}`}>
                     <Shield className="h-4 w-4 text-blue-500" />
                     Tips for a Strong Application
                   </h4>
@@ -863,8 +873,8 @@ export default function ApplicationPage() {
                       { icon: CheckCircle2, text: "Income should be 3× the monthly rent for best approval odds" },
                     ].map(({ icon: Icon, text }) => (
                       <div key={text} className="flex items-start gap-2">
-                        <Icon className="h-3.5 w-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
-                        <p className="text-xs text-slate-500 leading-snug">{text}</p>
+                        <Icon className={`h-3.5 w-3.5 mt-0.5 flex-shrink-0 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
+                        <p className={`text-xs leading-snug ${theme === "dark" ? "text-white/70" : "text-slate-500"}`}>{text}</p>
                       </div>
                     ))}
                   </div>
@@ -872,9 +882,9 @@ export default function ApplicationPage() {
               </Card>
 
               {/* Step progress summary — only on desktop */}
-              <Card className="border border-slate-200 shadow-sm rounded-2xl hidden lg:block">
+              <Card className={`border shadow-sm rounded-2xl hidden lg:block ${theme === "dark" ? "border-white/10 bg-black" : "border-slate-200"}`}>
                 <CardContent className="p-4">
-                  <h4 className="font-semibold text-slate-800 text-sm mb-3">Progress</h4>
+                  <h4 className={`font-semibold text-sm mb-3 ${theme === "dark" ? "text-white" : "text-slate-800"}`}>Progress</h4>
                   <div className="space-y-2">
                     {steps.map((step) => {
                       const isCompleted = currentStep > step.number
@@ -884,22 +894,22 @@ export default function ApplicationPage() {
                         <div
                           key={step.number}
                           className={`flex items-center gap-2.5 p-2 rounded-lg transition-colors ${
-                            isActive    ? "bg-orange-50" :
-                            isCompleted ? "bg-green-50"  : ""
+                            isActive    ? (theme === "dark" ? "bg-orange-900/20" : "bg-orange-50") :
+                            isCompleted ? (theme === "dark" ? "bg-green-900/20" : "bg-green-50")  : ""
                           }`}
                         >
                           <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
                             isCompleted ? "bg-green-500"  :
-                            isActive    ? "bg-orange-500" : "bg-slate-200"
+                            isActive    ? "bg-orange-500" : (theme === "dark" ? "bg-white/10" : "bg-slate-200")
                           }`}>
                             {isCompleted
                               ? <Check className="h-3 w-3 text-white" />
-                              : <Icon className="h-3 w-3 text-white" />
+                              : <Icon className={`h-3 w-3 ${isCompleted || isActive ? "text-white" : (theme === "dark" ? "text-white/40" : "text-slate-400")}`} />
                             }
                           </div>
                           <span className={`text-xs font-medium ${
                             isActive    ? "text-orange-700" :
-                            isCompleted ? "text-green-700"  : "text-slate-400"
+                            isCompleted ? "text-green-700"  : (theme === "dark" ? "text-white/40" : "text-slate-400")
                           }`}>
                             {step.title}
                           </span>
