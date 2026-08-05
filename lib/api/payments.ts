@@ -55,6 +55,7 @@ export interface AgreementPaymentRow {
   virtual_account_number: string | null
   virtual_account_name: string | null
   nomba_account_ref: string | null
+  propflow_thread_id: string | null
   // Disbursement
   disbursement_status: "pending" | "released" | "failed" | "not_started" | null
   disbursement_merchant_tx_ref: string | null
@@ -187,6 +188,7 @@ function normalizeAgreementRow(a: any): AgreementPaymentRow {
     virtual_account_number: a?.virtual_account_number ?? null,
     virtual_account_name: a?.virtual_account_name ?? null,
     nomba_account_ref: a?.nomba_account_ref ?? null,
+    propflow_thread_id: a?.propflow_thread_id ?? null,
     disbursement_status: (a?.disbursement_status ?? null) as AgreementPaymentRow['disbursement_status'],
     disbursement_merchant_tx_ref: a?.disbursement_merchant_tx_ref ?? null,
     disbursement_amount: a?.disbursement_amount ? Number(a.disbursement_amount) : null,
@@ -315,23 +317,6 @@ export const paymentsAPI = {
    */
   async getDisbursementStatus(merchantTxRef: string): Promise<DisbursementStatus> {
     const { data } = await apiClient.get(`/api/v1/disbursements/${merchantTxRef}`)
-    return data
-  },
-
-  /**
-   * DEMO ONLY: Simulate a payout_success webhook for testing.
-   * This allows testing the complete disbursement flow without waiting
-   * for the actual Nomba webhook.
-   * Backend: POST /api/v1/agreements/{agreement_id}/simulate-payout-webhook
-   */
-  async simulatePayoutWebhook(
-    agreementId: string,
-    merchantTxRef: string,
-  ): Promise<{ success: boolean; message: string; transaction_id: string; status: string }> {
-    const { data } = await apiClient.post(
-      `/api/v1/agreements/${agreementId}/simulate-payout-webhook`,
-      { merchant_tx_ref: merchantTxRef },
-    )
     return data
   },
 

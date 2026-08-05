@@ -53,6 +53,7 @@ export interface Application {
   viewed_by_landlord?: boolean;
   viewed_at?: string;
   rejection_reason?: string;
+  propflow_thread_id?: string;  // LangGraph thread ID for PropFlow workflow context
   created_at: string;
   updated_at: string;
   // Joined relationships
@@ -243,9 +244,12 @@ export const applicationsAPI = {
   /**
    * Approve application (landlord only)
    */
-  approve: async (id: string): Promise<Application> => {
-    const response = await apiClient.patch<{success: boolean; application: Application; message: string}>(`/api/v1/applications/${id}/approve`);
-    return response.data.application;
+  approve: async (id: string): Promise<{application: Application; agreement?: any}> => {
+    const response = await apiClient.patch<{success: boolean; application: Application; agreement?: any; message: string}>(`/api/v1/applications/${id}/approve`);
+    return {
+      application: response.data.application,
+      agreement: response.data.agreement
+    };
   },
 
   /**

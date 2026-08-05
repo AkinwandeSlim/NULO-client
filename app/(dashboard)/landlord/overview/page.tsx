@@ -28,7 +28,7 @@ import {
   ArrowRight, AlertCircle, CheckCircle, CheckCircle2,
   Bell, Settings, Activity, FileText,
   Upload, User, Zap, Award, Target, TrendingUp, Mail, X,
-  FileCheck, AlertTriangle, Loader2, RefreshCw, Wallet, Banknote
+  FileCheck, AlertTriangle, Loader2, RefreshCw, Wallet, Banknote, Bot
 } from "lucide-react"
 
 import Link from "next/link"
@@ -65,6 +65,7 @@ import { paymentsAPI } from "@/lib/api/payments";
 
 import { engagementAPI, getEngagementLevelColor, getEngagementLevelTextColor, getEngagementLevelBgColor, getTrustScoreColor, getTrustScoreTextColor, getTrustScoreBgColor, trackEngagement } from "@/lib/api/engagement"
 import { isBannerDismissed, dismissBanner, buildBannerKey } from "@/lib/bannerStorage"
+import { normalizeAppStatus } from "@/lib/utils/applicationStatus"
 
 
 
@@ -665,6 +666,15 @@ export default function LandlordDashboard() {
         if (hasNewPayment || freshPayments.length !== receivedPayments.length) {
           console.log('💰 [OVERVIEW] New payments detected, updating...')
           setReceivedPayments(freshPayments)
+          // A new payment may belong to an application created AFTER the last
+          // dashboard fetch. The "Continue in PropFlow" button on the banner
+          // resolves the thread by looking up that application (property + tenant
+          // → propflow_thread_id) in landlordData.receivedApplications, which is
+          // only refreshed on dashboard fetch. If the payment arrived live while
+          // the page was open, receivedApplications is stale → the banner shows
+          // Release-only. Refresh the dashboard so the thread resolves and the
+          // button appears without needing a manual page reload.
+          fetchLandlordDashboard(true)
         }
       } catch (error: any) {
         // Network glitch or server hiccup -- keep the previous payments data intact
@@ -949,7 +959,7 @@ export default function LandlordDashboard() {
 
     // Priority 5: New applications (pending review)
             const pendingApplications = applications.filter((app: Application) => 
-                (app.status === 'pending' || app.status === 'submitted') && !isBannerDismissed(buildBannerKey('new_application', app.id))
+                normalizeAppStatus(app.status) === 'pending' && !isBannerDismissed(buildBannerKey('new_application', app.id))
             )
     if (pendingApplications.length > 0) {
       return { type: 'new-application', data: { count: pendingApplications.length, latest: pendingApplications[0] } }
@@ -963,7 +973,28 @@ export default function LandlordDashboard() {
       !isBannerDismissed(buildBannerKey('pending_release', p.agreement_id))
     )
     if (pendingReleasePayments.length > 0) {
-      return { type: 'pending-release', data: { count: pendingReleasePayments.length, total: pendingReleasePayments.reduce((sum, p) => sum + (p.total_received_amount || 0), 0) } }
+      // Find PropFlow workflow context. Prefer the thread id carried directly
+      // on the payment row (agreement.propflow_thread_id, written by
+      // provision_nomba_dva) so the "Review & Release" button is self-aware
+      // from the FIRST render — no dependence on the separately-polled
+      // receivedApplications cross-ref. Fall back to the application match for
+      // rows that predate the field.
+      const firstPayment = pendingReleasePayments[0]
+      const directThreadId = firstPayment?.propflow_thread_id
+      const matchingApp = !directThreadId ? (landlordData?.receivedApplications?.find(
+        (app: any) => app.property_id === firstPayment.property_id &&
+                     app.tenant_id === firstPayment.tenant_id &&
+                     app.propflow_thread_id
+      ) ?? null) : null
+      return {
+        type: 'pending-release',
+        data: {
+          count: pendingReleasePayments.length,
+          total: pendingReleasePayments.reduce((sum, p) => sum + (p.total_received_amount || 0), 0),
+          propflowThreadId: directThreadId ?? matchingApp?.propflow_thread_id ?? null,
+          agreementId: firstPayment?.agreement_id,
+        }
+      }
     }
 
     // Priority 7: Payment confirmed (48h window)
@@ -2034,6 +2065,11 @@ export default function LandlordDashboard() {
               const agreement = activeBanner.data
               const effectiveStatus = getEffectiveStatus(agreement)
               const isTenantTurn = effectiveStatus === 'PENDING_TENANT'
+              // Find the matching application to check for PropFlow workflow context
+              const matchingApp = landlordData?.receivedApplications?.find(
+                (app: any) => app.property_id === (agreement as any).property_id && app.propflow_thread_id
+              )
+              const hasPropFlow = !!matchingApp?.propflow_thread_id
               return (
                 <Card className={`mb-8 border-2 ${isTenantTurn ? 'border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50' : 'border-purple-200 bg-gradient-to-r from-purple-50 to-violet-50'} shadow-sm`}>
                   <CardContent className="p-6">
@@ -2046,7 +2082,7 @@ export default function LandlordDashboard() {
                           {isTenantTurn ? '📋 Agreement Awaiting Tenant Signature' : '📝 Agreement Awaiting Your Signature'}
                         </h3>
                         <p className={`${isTenantTurn ? 'text-blue-700' : 'text-purple-700'} text-sm mb-3`}>
-                          {isTenantTurn 
+                          {isTenantTurn
                             ? `The agreement for '${agreement.property_title || agreement.property?.title || 'Property'}' is ready for the tenant to review and sign.`
                             : `A tenant has signed the agreement for '${agreement.property_title || agreement.property?.title || 'Property'}'. Review and sign to finalize the rental agreement.`
                           }
@@ -2058,11 +2094,27 @@ export default function LandlordDashboard() {
                               View Agreement
                             </Button>
                           </Link>
-                          <Link href="/landlord/agreements">
-                            <Button variant="outline" className={isTenantTurn ? 'border-blue-300 text-blue-700 hover:bg-blue-50' : 'border-purple-300 text-purple-700 hover:bg-purple-50'}>
-                              View All Agreements
+                          {!isTenantTurn && hasPropFlow ? (
+                            <Button
+                              variant="outline"
+                              className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('propflow:open', {
+                                  detail: { workflow_id: matchingApp!.propflow_thread_id }
+                                }))
+                                window.location.href = `/landlord/agreements/${agreement.id}`
+                              }}
+                            >
+                              <Bot className="mr-2 h-4 w-4" />
+                              Continue in PropFlow
                             </Button>
-                          </Link>
+                          ) : (
+                            <Link href="/landlord/agreements">
+                              <Button variant="outline" className={isTenantTurn ? 'border-blue-300 text-blue-700 hover:bg-blue-50' : 'border-purple-300 text-purple-700 hover:bg-purple-50'}>
+                                View All Agreements
+                              </Button>
+                            </Link>
+                          )}
                         </div>
                       </div>
                       <button
@@ -2082,6 +2134,7 @@ export default function LandlordDashboard() {
 
             case 'new-application': {
               const { count, latest } = activeBanner.data
+              const hasWorkflowContext = !!(latest as any)?.propflow_thread_id
               return (
                 <Card className="mb-8 border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 shadow-sm">
                   <CardContent className="p-6">
@@ -2094,18 +2147,56 @@ export default function LandlordDashboard() {
                           🎉 New Rental Application{count > 1 ? `s (${count})` : ''}
                         </h3>
                         <p className="text-green-700 text-sm mb-3">
-                          {count === 1 
+                          {count === 1
                             ? `You have a new application from '${latest.tenant?.full_name || 'Tenant'}' for '${latest.property_title || 'Property'}'.`
                             : `You have ${count} pending applications from interested tenants. Review and respond promptly.`
                           }
                         </p>
                         <div className="flex items-center gap-3">
-                          <Link href="/landlord/applications">
-                            <Button className="bg-green-600 hover:bg-green-700 text-white shadow-md">
-                              <Eye className="mr-2 h-4 w-4" />
-                              Review Applications
-                            </Button>
-                          </Link>
+                          {count === 1 ? (
+                            <>
+                              {/* Direct link to the specific application detail page */}
+                              <Link href={`/landlord/applications/${latest.id}`}>
+                                <Button className="bg-green-600 hover:bg-green-700 text-white shadow-md">
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Review Application
+                                </Button>
+                              </Link>
+                              {/* Context-aware PropFlow: links to the application detail page
+                                   with ?from=propflow so the page can auto-scroll to AI Briefing */}
+                              {hasWorkflowContext && (
+                                <Link href={`/landlord/applications/${latest.id}?from=propflow`}>
+                                  <Button
+                                    variant="outline"
+                                    className="border-green-300 text-green-700 hover:bg-green-50 shadow-sm"
+                                  >
+                                    <Bot className="mr-2 h-4 w-4" />
+                                    Continue in PropFlow
+                                  </Button>
+                                </Link>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {/* Multiple applications — go to the list */}
+                              <Link href="/landlord/applications">
+                                <Button className="bg-green-600 hover:bg-green-700 text-white shadow-md">
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Review Applications
+                                </Button>
+                              </Link>
+                              {/* Context-aware PropFlow — links to the applications list page */}
+                              <Link href="/landlord/applications">
+                                <Button
+                                  variant="outline"
+                                  className="border-green-300 text-green-700 hover:bg-green-50 shadow-sm"
+                                >
+                                  <Bot className="mr-2 h-4 w-4" />
+                                  Review with PropFlow
+                                </Button>
+                              </Link>
+                            </>
+                          )}
                         </div>
                       </div>
                       <button
@@ -2124,7 +2215,8 @@ export default function LandlordDashboard() {
             }
 
             case 'pending-release': {
-              const { count, total } = activeBanner.data
+              const { count, total, propflowThreadId, agreementId } = activeBanner.data
+              const hasPropFlow = !!propflowThreadId && !!agreementId
               return (
                 <Card className="mb-8 border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 shadow-sm">
                   <CardContent className="p-6">
@@ -2146,6 +2238,17 @@ export default function LandlordDashboard() {
                               Review Payments
                             </Button>
                           </Link>
+                          {hasPropFlow && (
+                            <Link href={`/landlord/payments/${agreementId}`}>
+                              <Button
+                                variant="outline"
+                                className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                              >
+                                <Bot className="mr-2 h-4 w-4" />
+                                Review &amp; Release
+                              </Button>
+                            </Link>
+                          )}
                         </div>
                       </div>
                       <button
@@ -2809,7 +2912,7 @@ export default function LandlordDashboard() {
                       {(() => {
                         console.log('📄 [STAT CARD DEBUG] All applications:', applications.map((a: any) => ({ id: a.id, status: a.status })))
                         const allAppsCount = applicationsLoading ? 0 : applications.length
-                        const pendingAppCount = applicationsLoading ? 0 : applications.filter((a: any) => a.status === 'pending' || a.status === 'submitted').length
+                        const pendingAppCount = applicationsLoading ? 0 : applications.filter((a: any) => normalizeAppStatus(a.status) === 'pending').length
                         const approvedAppCount = applicationsLoading ? 0 : applications.filter((a: any) => a.status === 'approved').length
                         // ✅ "Fully signed" = approved application whose agreement has been
                         // counter-signed by both tenant and landlord. This is the count

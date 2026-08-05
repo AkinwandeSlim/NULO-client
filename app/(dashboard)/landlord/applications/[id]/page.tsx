@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { 
@@ -39,6 +39,7 @@ import { propertiesAPI } from "@/lib/api/properties"
 import { formatNGN, calculateRentalBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { toast } from "sonner"
 import { normalizeAppStatus } from "@/lib/utils/applicationStatus"
+import { propflowStatus, propflowResume } from "@/lib/api/propflow"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed='
@@ -142,6 +143,18 @@ export default function LandlordApplicationDetailPage() {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
   const [signedUrlErrors, setSignedUrlErrors] = useState<Record<string, string>>({})
 
+  // Refs for cleanup
+  const approveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // PropFlow context — AI briefing + Confirm Payment
+  const [propflowData, setPropflowData] = useState<{
+    loading: boolean;
+    stage: string;
+    briefing?: string;
+    error?: string;
+  } | null>(null)
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false)
+
   // Redirect if not authenticated
   useEffect(() => {
     if (!user && !isLoading) {
@@ -175,7 +188,68 @@ export default function LandlordApplicationDetailPage() {
     if (user && applicationId) {
       fetchApplication()
     }
+
+    return () => {
+      if (approveTimeoutRef.current) {
+        clearTimeout(approveTimeoutRef.current)
+      }
+    }
   }, [user, applicationId, router])
+
+  // Fetch PropFlow status if the application has a propflow_thread_id
+  useEffect(() => {
+    if (!application?.propflow_thread_id) return
+
+    const fetchPropflow = async () => {
+      setPropflowData({ loading: true, stage: "" })
+      try {
+        const status = await propflowStatus(application.propflow_thread_id!)
+        if (status?.success && status.current_stage) {
+          setPropflowData({
+            loading: false,
+            stage: status.current_stage,
+            briefing: status.landlord_briefing || undefined,
+          })
+          // Auto-scroll to AI Briefing if user came from "Continue in PropFlow"
+          if (status.landlord_briefing && typeof window !== 'undefined' && window.location.search.includes('from=propflow')) {
+            setTimeout(() => {
+              document.getElementById('propflow-briefing-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }, 300)
+          }
+        } else {
+          setPropflowData({
+            loading: false,
+            stage: "expired",
+            error: status?.error_log?.[0] || "Workflow not found",
+          })
+        }
+      } catch {
+        setPropflowData({ loading: false, stage: "", error: "Failed to load PropFlow status" })
+      }
+    }
+
+    fetchPropflow()
+  }, [application?.propflow_thread_id])
+
+  // Handle Confirm Payment via PropFlow
+  const handleConfirmPayment = async () => {
+    if (!application?.propflow_thread_id || isConfirmingPayment) return
+    setIsConfirmingPayment(true)
+    try {
+      const result = await propflowResume(application.propflow_thread_id, "confirm_payment")
+      if (result.success) {
+        setPropflowData((prev) => prev ? { ...prev, stage: result.current_stage } : null)
+        toast.success("Payment confirmed! The tenancy is now active.")
+      } else {
+        toast.error(result.response_message || "Failed to confirm payment")
+      }
+    } catch (error: any) {
+      const msg = error?.message || "Failed to confirm payment"
+      toast.error(msg)
+    } finally {
+      setIsConfirmingPayment(false)
+    }
+  }
 
   // Handle approve
   const handleApprove = async () => {
@@ -183,35 +257,44 @@ export default function LandlordApplicationDetailPage() {
 
     setIsApproving(true)
     try {
-      // 1. Approve the application
-      const updated = await applicationsAPI.approve(application.id)
+      // 1. Approve the application - backend returns both updated app + generated agreement
+      const result = await applicationsAPI.approve(application.id)
       const normalizedUpdated = {
-        ...updated,
-        status: normalizeAppStatus(updated.status),
+        ...result.application,
+        status: normalizeAppStatus(result.application.status),
       }
       setApplication(normalizedUpdated)
       setShowApproveConfirm(false)
-      
-      // 2. Fetch the linked agreement
-      try {
-        const agreementResponse = await agreementsAPI.getByApplication(application.id)
-        
-        if (agreementResponse.success && agreementResponse.agreement?.id) {
-          // Redirect to agreement page with success message
-          toast.success(`Application approved for ${application.user?.full_name || 'tenant'}. Redirecting to agreement...`)
-          
-          // Small delay to let user see the toast
-          setTimeout(() => {
-            router.push(`/landlord/agreements/${agreementResponse.agreement!.id}`)
-          }, 1200)
-        } else {
-          // Agreement not ready yet, show standard success message
+
+      // 2. Check if agreement was generated
+      if (result.agreement?.id) {
+        // Agreement generated successfully, redirect to it
+        toast.success(`Application approved for ${application.user?.full_name || 'tenant'}. Redirecting to agreement...`)
+
+        // Small delay to let user see the toast
+        approveTimeoutRef.current = setTimeout(() => {
+          router.push(`/landlord/agreements/${result.agreement.id}`)
+        }, 1200)
+      } else {
+        // No agreement in response, try fetching it
+        try {
+          const agreementResponse = await agreementsAPI.getByApplication(application.id)
+
+          if (agreementResponse.success && agreementResponse.agreement?.id) {
+            toast.success(`Application approved for ${application.user?.full_name || 'tenant'}. Redirecting to agreement...`)
+
+            approveTimeoutRef.current = setTimeout(() => {
+              router.push(`/landlord/agreements/${agreementResponse.agreement!.id}`)
+            }, 1200)
+          } else {
+            // Agreement not ready yet, show standard success message
+            toast.success(`Application approved for ${application.user?.full_name || 'tenant'}`)
+          }
+        } catch (agreementError) {
+          // Agreement fetch failed, but approval succeeded - show success message
+          console.warn("Could not fetch linked agreement:", agreementError)
           toast.success(`Application approved for ${application.user?.full_name || 'tenant'}`)
         }
-      } catch (agreementError) {
-        // Agreement fetch failed, but approval succeeded - show success message
-        console.warn("Could not fetch linked agreement:", agreementError)
-        toast.success(`Application approved for ${application.user?.full_name || 'tenant'}`)
       }
     } catch (error: any) {
       console.error("Failed to approve application:", error)
@@ -383,9 +466,17 @@ export default function LandlordApplicationDetailPage() {
           </Link>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-3">
-                Application Review
-              </h1>
+              <div className="flex items-center gap-3 mb-3">
+                <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent">
+                  Application Review
+                </h1>
+                {application.propflow_thread_id && (
+                  <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-xs font-semibold px-3 py-1">
+                    <Zap className="h-3.5 w-3.5 mr-1 text-indigo-500" />
+                    AI-Assisted
+                  </Badge>
+                )}
+              </div>
               <p className="text-slate-600">
                 Review tenant application for {property?.title || 'Property'}
               </p>
@@ -785,6 +876,77 @@ export default function LandlordApplicationDetailPage() {
 
           {/* RIGHT COLUMN - Application Review Panel */}
           <div className="lg:col-span-1 space-y-6">
+            {/* PropFlow AI Briefing Card — shown when a propflow_thread_id exists */}
+            {application.propflow_thread_id && propflowData && !propflowData.loading && propflowData.briefing && (
+              <Card id="propflow-briefing-card" className="border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50 shadow-sm">
+                <CardHeader className="border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-purple-50/30">
+                  <CardTitle className="flex items-center gap-2 text-sm text-slate-900">
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                      <Zap className="h-4 w-4 text-indigo-600" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      AI Briefing
+                      <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px] ml-1">
+                        AI-Assisted
+                      </Badge>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                    {propflowData.briefing}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Confirm Payment Card — when workflow is at nomba_provisioned stage */}
+            {application.propflow_thread_id && propflowData && !propflowData.loading && propflowData.stage === "nomba_provisioned" && (
+              <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-violet-50 shadow-sm">
+                <CardHeader className="border-b border-purple-100">
+                  <CardTitle className="flex items-center gap-2 text-sm text-slate-900">
+                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
+                      <DollarSign className="h-4 w-4 text-purple-600" />
+                    </div>
+                    Payment Confirmation
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-3">
+                  <p className="text-sm text-slate-600">
+                    The tenant has been requested to make payment. If you have confirmed the payment has been received,
+                    click below to activate the tenancy.
+                  </p>
+                  <Button
+                    onClick={handleConfirmPayment}
+                    disabled={isConfirmingPayment}
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white h-11 font-semibold rounded-xl shadow-md"
+                  >
+                    {isConfirmingPayment ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Confirming...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-5 w-5 mr-2" />
+                        Confirm Payment
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* PropFlow Loading */}
+            {application.propflow_thread_id && propflowData?.loading && (
+              <Card className="border-indigo-200 bg-indigo-50/30">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <Loader2 className="h-4 w-4 text-indigo-500 animate-spin" />
+                  <span className="text-xs text-indigo-600">Loading PropFlow context...</span>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Combined Application Review Card */}
             <Card className={`border-orange-200 bg-white/80 backdrop-blur-sm sticky top-24 ${getPriorityBorder(application.status)}`}>
               <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-white to-orange-50/20">
