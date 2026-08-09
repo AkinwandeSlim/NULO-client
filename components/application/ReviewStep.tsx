@@ -1,8 +1,7 @@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import { CheckCircle, FileText, User, Briefcase, Users, Upload, Home, Calendar } from "lucide-react"
+import { CheckCircle, FileText, User, Briefcase, Users, Upload, Home, Calendar, ClipboardCheck } from "lucide-react"
 
 interface ReviewStepProps {
   formData: any
@@ -19,16 +18,22 @@ export default function ReviewStep({ formData, errors, onChange, property }: Rev
     </div>
   )
 
+  const SubSectionLabel = ({ children }: { children: React.ReactNode }) => (
+    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 mt-4 first:mt-0">
+      {children}
+    </div>
+  )
+
   const InfoRow = ({ label, value }: { label: string, value: string }) => (
-    <div className="flex justify-between py-2">
+    <div className="flex justify-between py-1.5">
       <span className="text-sm text-slate-600">{label}:</span>
-      <span className="text-sm font-medium text-slate-900">{value || 'Not provided'}</span>
+      <span className="text-sm font-medium text-slate-900 text-right ml-4">{value || 'Not provided'}</span>
     </div>
   )
 
   return (
     <div className="space-y-6">
-      {/* Property Information */}
+      {/* 1. Property summary — always at the top so the user knows what they're applying for */}
       {property && (
         <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-200 rounded-lg p-6">
           <SectionHeader icon={Home} title="Property Details" />
@@ -40,9 +45,132 @@ export default function ReviewStep({ formData, errors, onChange, property }: Rev
         </div>
       )}
 
-      {/* Personal Information */}
+      {/* 2. Complete Your Application — the editable lease details, surfaced FIRST
+          so users aren't hunting through long read-only sections to find the
+          remaining fields. Highlighted in orange so it reads as "action needed". */}
+      <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-6">
+        <SectionHeader icon={ClipboardCheck} title="Complete Your Application" />
+        <p className="text-sm text-slate-600 -mt-2 mb-4">
+          Almost done — fill in the final lease details below, then review everything you've entered.
+        </p>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="moveInDate">Preferred Move-in Date *</Label>
+              <Input
+                id="moveInDate"
+                name="moveInDate"
+                type="date"
+                value={formData.moveInDate}
+                onChange={onChange}
+                className={`mt-2 ${errors.moveInDate ? 'border-red-500' : ''}`}
+              />
+              {errors.moveInDate && (
+                <p className="text-sm text-red-600 mt-1">{errors.moveInDate}</p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="leaseDuration">Lease Duration</Label>
+              <select
+                id="leaseDuration"
+                name="leaseDuration"
+                value={formData.leaseDuration}
+                onChange={onChange}
+                className="mt-2 w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+              >
+                <option value="6">6 months</option>
+                <option value="12">12 months</option>
+                <option value="24">24 months</option>
+                <option value="36">36 months</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="number_of_occupants">Total People Living in the Property (including yourself) *</Label>
+              <select
+                id="number_of_occupants"
+                name="number_of_occupants"
+                value={formData.number_of_occupants}
+                onChange={onChange}
+                className={`mt-2 w-full h-10 px-3 rounded-md border border-input bg-background text-sm ${
+                  errors.number_of_occupants ? 'border-red-500' : ''
+                }`}
+              >
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>{n} {n === 1 ? 'person' : 'people'}</option>
+                ))}
+              </select>
+              {errors.number_of_occupants && (
+                <p className="text-sm text-red-600 mt-1">{errors.number_of_occupants}</p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="has_pets">Do you have pets?</Label>
+              <select
+                id="has_pets"
+                name="has_pets"
+                value={formData.has_pets ? 'yes' : 'no'}
+                onChange={(e) => {
+                  const bool = e.target.value === 'yes'
+                  const syntheticEvent = {
+                    target: {
+                      name: 'has_pets',
+                      value: bool,
+                      type: 'select',
+                      checked: bool,
+                    },
+                  } as unknown as React.ChangeEvent<HTMLSelectElement>
+                  onChange(syntheticEvent)
+                }}
+                className="mt-2 w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+              >
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </div>
+          </div>
+
+          {formData.has_pets && (
+            <div>
+              <Label htmlFor="pet_details">Pet Details</Label>
+              <Input
+                id="pet_details"
+                name="pet_details"
+                value={formData.pet_details}
+                onChange={onChange}
+                placeholder="Type and breed, e.g. 2 cats"
+                className="mt-2"
+              />
+            </div>
+          )}
+
+          <div>
+            <Label htmlFor="message">Message to the Landlord (Optional)</Label>
+            <Textarea
+              id="message"
+              name="message"
+              value={formData.message}
+              onChange={onChange}
+              className="mt-2"
+              rows={4}
+              placeholder="Tell the landlord why you'd love to rent this property..."
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Review Your Information — read-only summary, compacted into a single
+          card so the page doesn't read like a wall of forms. */}
       <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-        <SectionHeader icon={User} title="Personal Information" />
+        <SectionHeader icon={FileText} title="Review Your Information" />
+
+        {/* Personal */}
+        <SubSectionLabel>Personal</SubSectionLabel>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InfoRow label="Full Name" value={`${formData.firstName} ${formData.lastName}`} />
           <InfoRow label="Email" value={formData.email} />
@@ -52,58 +180,44 @@ export default function ReviewStep({ formData, errors, onChange, property }: Rev
           <InfoRow label="Marital Status" value={formData.maritalStatus} />
           <InfoRow label="Dependents" value={formData.dependents} />
         </div>
-      </div>
 
-      {/* Employment Information */}
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-        <SectionHeader icon={Briefcase} title="Employment Information" />
+        {/* Employment */}
+        <SubSectionLabel>Employment</SubSectionLabel>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InfoRow label="Employment Status" value={formData.employmentStatus} />
           <InfoRow label="Employer" value={formData.employer_name} />
           <InfoRow label="Job Title" value={formData.jobTitle} />
-          <InfoRow label="Monthly Income" value={formData.monthly_income ? `₦${parseInt(formData.monthly_income).toLocaleString()}` : ''} />
+          <InfoRow
+            label="Monthly Income"
+            value={formData.monthly_income ? `₦${parseInt(formData.monthly_income).toLocaleString()}` : ''}
+          />
           <InfoRow label="Employment Duration" value={formData.employmentDuration} />
         </div>
-      </div>
 
-      {/* References */}
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-        <SectionHeader icon={Users} title="References" />
-        <div className="space-y-4">
-          <div>
-            <p className="text-sm font-semibold text-slate-900 mb-2">Reference 1</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-              <InfoRow label="Name" value={formData.reference1Name} />
-              <InfoRow label="Phone" value={formData.reference1Phone} />
-              <InfoRow label="Relationship" value={formData.reference1Relationship} />
-            </div>
+        {/* References */}
+        <SubSectionLabel>References</SubSectionLabel>
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+            <InfoRow label="Reference 1" value={formData.reference1Name} />
+            <InfoRow label="Reference 1 Phone" value={formData.reference1Phone} />
+            <InfoRow label="Relationship" value={formData.reference1Relationship} />
           </div>
-          
           {formData.reference2Name && (
-            <div className="pt-4 border-t border-slate-200">
-              <p className="text-sm font-semibold text-slate-900 mb-2">Reference 2</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-                <InfoRow label="Name" value={formData.reference2Name} />
-                <InfoRow label="Phone" value={formData.reference2Phone} />
-                <InfoRow label="Relationship" value={formData.reference2Relationship} />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+              <InfoRow label="Reference 2" value={formData.reference2Name} />
+              <InfoRow label="Reference 2 Phone" value={formData.reference2Phone} />
+              <InfoRow label="Relationship" value={formData.reference2Relationship} />
             </div>
           )}
-
-          <div className="pt-4 border-t border-slate-200">
-            <p className="text-sm font-semibold text-slate-900 mb-2">Emergency Contact</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-              <InfoRow label="Name" value={formData.emergencyContactName} />
-              <InfoRow label="Phone" value={formData.emergencyContactPhone} />
-              <InfoRow label="Relationship" value={formData.emergencyContactRelationship} />
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+            <InfoRow label="Emergency Contact" value={formData.emergencyContactName} />
+            <InfoRow label="Emergency Phone" value={formData.emergencyContactPhone} />
+            <InfoRow label="Relationship" value={formData.emergencyContactRelationship} />
           </div>
         </div>
-      </div>
 
-      {/* Documents */}
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-        <SectionHeader icon={Upload} title="Uploaded Documents" />
+        {/* Documents */}
+        <SubSectionLabel>Documents</SubSectionLabel>
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             {formData.idDocument ? (
@@ -113,10 +227,12 @@ export default function ReviewStep({ formData, errors, onChange, property }: Rev
             )}
             <span className="text-sm text-slate-700">Government-Issued ID</span>
             {formData.idDocument && (
-              <span className="text-xs text-slate-500 ml-auto">{formData.idDocument.name}</span>
+              <span className="text-xs text-slate-500 ml-auto">
+                {(formData.idDocument as any).filename ?? formData.idDocument?.name}
+              </span>
             )}
           </div>
-          
+
           <div className="flex items-center gap-2">
             {formData.proofOfIncome ? (
               <CheckCircle className="h-5 w-5 text-green-600" />
@@ -125,110 +241,35 @@ export default function ReviewStep({ formData, errors, onChange, property }: Rev
             )}
             <span className="text-sm text-slate-700">Proof of Income</span>
             {formData.proofOfIncome && (
-              <span className="text-xs text-slate-500 ml-auto">{formData.proofOfIncome.name}</span>
+              <span className="text-xs text-slate-500 ml-auto">
+                {(formData.proofOfIncome as any).filename ?? formData.proofOfIncome?.name}
+              </span>
             )}
           </div>
-          
+
           {formData.bankStatement && (
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-600" />
               <span className="text-sm text-slate-700">Bank Statement</span>
-              <span className="text-xs text-slate-500 ml-auto">{formData.bankStatement.name}</span>
+              <span className="text-xs text-slate-500 ml-auto">
+                {(formData.bankStatement as any).filename ?? formData.bankStatement?.name}
+              </span>
             </div>
           )}
-          
+
           {formData.employmentLetter && (
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-600" />
               <span className="text-sm text-slate-700">Employment Letter</span>
-              <span className="text-xs text-slate-500 ml-auto">{formData.employmentLetter.name}</span>
+              <span className="text-xs text-slate-500 ml-auto">
+                {(formData.employmentLetter as any).filename ?? formData.employmentLetter?.name}
+              </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Additional Information */}
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-        <SectionHeader icon={Calendar} title="Lease Details" />
-        
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="moveInDate">Preferred Move-in Date *</Label>
-            <Input
-              id="moveInDate"
-              name="moveInDate"
-              type="date"
-              value={formData.moveInDate}
-              onChange={onChange}
-              className={`mt-2 ${errors.moveInDate ? 'border-red-500' : ''}`}
-            />
-            {errors.moveInDate && (
-              <p className="text-sm text-red-600 mt-1">{errors.moveInDate}</p>
-            )}
-          </div>
-
-          <div>
-            <Label htmlFor="leaseDuration">Preferred Lease Duration</Label>
-            <select
-              id="leaseDuration"
-              name="leaseDuration"
-              value={formData.leaseDuration}
-              onChange={onChange}
-              className="mt-2 w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-            >
-              <option value="6">6 months</option>
-              <option value="12">12 months</option>
-              <option value="24">24 months</option>
-              <option value="36">36 months</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="pets">Do you have pets?</Label>
-              <select
-                id="pets"
-                name="pets"
-                value={formData.pets}
-                onChange={onChange}
-                className="mt-2 w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-              >
-                <option value="no">No</option>
-                <option value="yes">Yes</option>
-              </select>
-            </div>
-
-            <div>
-              <Label htmlFor="smoking">Do you smoke?</Label>
-              <select
-                id="smoking"
-                name="smoking"
-                value={formData.smoking}
-                onChange={onChange}
-                className="mt-2 w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-              >
-                <option value="no">No</option>
-                <option value="yes">Yes</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="additionalInfo">Additional Information (Optional)</Label>
-            <Textarea
-              id="additionalInfo"
-              name="additionalInfo"
-              value={formData.additionalInfo}
-              onChange={onChange}
-              className="mt-2"
-              rows={4}
-              placeholder="Any additional information you'd like the landlord to know..."
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Terms and Conditions */}
+      {/* 4. Terms and Conditions */}
       <div className="bg-orange-50 border-2 border-orange-200 rounded-lg p-6">
         <div className="flex items-start gap-3">
           <input
@@ -243,8 +284,8 @@ export default function ReviewStep({ formData, errors, onChange, property }: Rev
                   name: 'agreeToTerms',
                   value: e.target.checked,
                   type: 'checkbox',
-                  checked: e.target.checked
-                }
+                  checked: e.target.checked,
+                },
               } as unknown as React.ChangeEvent<HTMLInputElement>
               onChange(syntheticEvent)
             }}
@@ -259,7 +300,7 @@ export default function ReviewStep({ formData, errors, onChange, property }: Rev
             <p className="text-xs text-slate-600 mt-2">
               By submitting this application, you agree to our{' '}
               <a href="/terms" className="text-orange-600 hover:underline">Terms of Service</a> and{' '}
-              <a href="/privacy" className="text-orange-600 hover:underline">Privacy Policy</a>. 
+              <a href="/privacy" className="text-orange-600 hover:underline">Privacy Policy</a>.{' '}
               You authorize the landlord to verify the information provided and contact your references.
             </p>
             {errors.agreeToTerms && (

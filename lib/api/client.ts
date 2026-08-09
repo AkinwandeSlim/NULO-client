@@ -26,6 +26,7 @@ const apiClient: AxiosInstance = axios.create({
 // Request interceptor - Add Supabase auth token with aggressive caching
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
+    const requestStartTime = Date.now();
     try {
       // Log the full URL being called
       console.log(`📍 [API CLIENT] Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
@@ -66,18 +67,22 @@ apiClient.interceptors.request.use(
       
       // If no valid cached token, try Supabase client
       if (!validToken) {
+        const sessionStartTime = Date.now();
         console.log('🔍 [API CLIENT] No valid cached token, trying Supabase client...');
         const supabase = createClient();
         let session = null;
         
         try {
-          // Try once with a short timeout
+          // Try once with a very short timeout (2 seconds)
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Session retrieval timeout')), 5000)
+            setTimeout(() => reject(new Error('Session retrieval timeout')), 2000)
           );
           const sessionPromise = supabase.auth.getSession();
-          const result = await Promise.race([sessionPromise, timeoutPromise]);
+          const result = await Promise.race([sessionPromise, timeoutPromise]) as any;
           session = result.data?.session;
+          
+          const sessionElapsed = Date.now() - sessionStartTime;
+          console.log(`⏱️ [API CLIENT] Session retrieval took ${sessionElapsed}ms`);
           
           if (session?.access_token) {
             validToken = session.access_token;
@@ -86,10 +91,14 @@ apiClient.interceptors.request.use(
             if (session.refresh_token) {
               localStorage.setItem('sb-refresh-token', session.refresh_token);
             }
+            console.log('✅ [API CLIENT] Got fresh token from Supabase');
+          } else {
+            console.warn('⚠️ [API CLIENT] Supabase returned no session');
           }
         } catch (error: any) {
+          const sessionElapsed = Date.now() - sessionStartTime;
           // If Supabase fails, continue without token - public endpoints don't need it
-          console.warn('⚠️ [API CLIENT] Could not get session, proceeding without token:', error.message);
+          console.warn(`⚠️ [API CLIENT] Could not get session after ${sessionElapsed}ms, proceeding without token:`, error.message);
         }
       }
       
@@ -105,6 +114,9 @@ apiClient.interceptors.request.use(
       } else {
         console.warn('⚠️ [API CLIENT] No valid token available, proceeding without auth header');
       }
+      
+      const interceptorElapsed = Date.now() - requestStartTime;
+      console.log(`⏱️ [API CLIENT] Request interceptor completed in ${interceptorElapsed}ms`);
     } catch (error) {
       console.error('❌ [API CLIENT] Error in request interceptor:', error);
     }
@@ -133,6 +145,11 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
       
       try {
+        // Clear any potentially invalid cached tokens first
+        console.log('🧹 [API CLIENT] Clearing potentially invalid cached tokens before refresh...');
+        localStorage.removeItem('sb-access-token');
+        localStorage.removeItem('sb-refresh-token');
+        
         // Try to refresh session using improved client with retry logic
         const supabase = createClient();
         let session = null;
@@ -141,12 +158,20 @@ apiClient.interceptors.response.use(
         
         while (retryCount < maxRetries) {
           try {
-            const result = await supabase.auth.refreshSession();
+            // Force a fresh session retrieval instead of using cached
+            const result = await supabase.auth.getSession();
             session = result.data.session;
+            
+            // If no session, try refresh
+            if (!session?.access_token) {
+              const refreshResult = await supabase.auth.refreshSession();
+              session = refreshResult.data.session;
+            }
+            
             break;
           } catch (refreshError: any) {
             retryCount++;
-            console.warn(`⚠️ [API CLIENT] Refresh attempt ${retryCount} failed:`, refreshError.message);
+            console.warn(`⚠️ [API CLIENT] Session retrieval attempt ${retryCount} failed:`, refreshError.message);
             
             if (refreshError.message?.includes('AbortError') || refreshError.message?.includes('signal is aborted')) {
               if (retryCount < maxRetries) {
@@ -161,11 +186,13 @@ apiClient.interceptors.response.use(
         }
         
         if (!session?.access_token) {
-          // If refresh fails, clear tokens and redirect to login
+          // If refresh fails, clear all auth data and redirect to login
+          console.error('❌ [API CLIENT] Session refresh failed - no valid session');
           localStorage.removeItem('sb-access-token');
           localStorage.removeItem('sb-refresh-token');
           localStorage.removeItem('access_token');
           localStorage.removeItem('user');
+          localStorage.removeItem('auth_cache_v1');
           window.location.href = '/signin';
           return Promise.reject(error);
         }
@@ -180,17 +207,19 @@ apiClient.interceptors.response.use(
             localStorage.setItem('sb-refresh-token', session.refresh_token);
           }
           document.cookie = `access_token=${session.access_token}; path=/; max-age=3600; SameSite=Lax`;
-          console.log('💾 [API CLIENT] Refreshed tokens saved to localStorage');
+          console.log('💾 [API CLIENT] Fresh session tokens saved to localStorage');
         }
         
         return apiClient(originalRequest);
         
       } catch (refreshError) {
         // Refresh failed completely
+        console.error('❌ [API CLIENT] Session refresh completely failed:', refreshError);
         localStorage.removeItem('sb-access-token');
         localStorage.removeItem('sb-refresh-token');
         localStorage.removeItem('access_token');
         localStorage.removeItem('user');
+        localStorage.removeItem('auth_cache_v1');
         window.location.href = '/signin';
         return Promise.reject(error);
       }

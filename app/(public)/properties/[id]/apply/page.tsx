@@ -29,6 +29,8 @@ import ReviewStep from "@/components/application/ReviewStep"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type SavedDoc = { path: string; filename: string }
+
 interface ApplicationData {
   firstName: string
   lastName: string
@@ -53,10 +55,10 @@ interface ApplicationData {
   emergencyContactName: string
   emergencyContactPhone: string
   emergencyContactRelationship: string
-  idDocument: File | null
-  proofOfIncome: File | null
-  bankStatement: File | null
-  employmentLetter: File | null
+  idDocument: File | SavedDoc | null
+  proofOfIncome: File | SavedDoc | null
+  bankStatement: File | SavedDoc | null
+  employmentLetter: File | SavedDoc | null
   moveInDate: string
   leaseDuration: string
   number_of_occupants: string
@@ -173,6 +175,112 @@ export default function ApplicationPage() {
     }
     fetchProperty()
   }, [propertyId])
+
+  // ── Hydrate from previous application ──────────────────────────────────────
+  useEffect(() => {
+    if (!user || !propertyId) return
+
+    const hydrate = async () => {
+      try {
+        const res = await applicationsAPI.getMyApplications()
+        if (res.success && res.applications && res.applications.length > 0) {
+          // Find newest app for a DIFFERENT property
+          const previousApp: any = res.applications.find((app: any) => app.property_id !== propertyId)
+
+          if (previousApp) {
+            setFormData(prev => {
+              const updated = { ...prev }
+
+              // Map employment + references + emergency contact
+              if (previousApp.employment_status) updated.employmentStatus = previousApp.employment_status
+              if (previousApp.employer_name) updated.employer_name = previousApp.employer_name
+              if ((previousApp as any).job_title) updated.jobTitle = (previousApp as any).job_title
+              if ((previousApp as any).employment_duration) updated.employmentDuration = (previousApp as any).employment_duration
+              if (previousApp.monthly_income) updated.monthly_income = String(previousApp.monthly_income)
+              if ((previousApp as any).dependents) updated.dependents = String((previousApp as any).dependents)
+
+              if (previousApp.references?.reference1) {
+                updated.reference1Name = previousApp.references.reference1.name || ''
+                updated.reference1Phone = previousApp.references.reference1.phone || ''
+                updated.reference1Relationship = previousApp.references.reference1.relationship || ''
+              }
+              if (previousApp.references?.reference2) {
+                updated.reference2Name = previousApp.references.reference2.name || ''
+                updated.reference2Phone = previousApp.references.reference2.phone || ''
+                updated.reference2Relationship = previousApp.references.reference2.relationship || ''
+              }
+
+              if (previousApp.emergency_contact_name) updated.emergencyContactName = previousApp.emergency_contact_name
+              if (previousApp.emergency_contact_phone) updated.emergencyContactPhone = previousApp.emergency_contact_phone
+
+              // Map documents by position
+              if (previousApp.documents && Array.isArray(previousApp.documents)) {
+                const docFields: (keyof ApplicationData)[] = ['idDocument', 'proofOfIncome', 'bankStatement', 'employmentLetter']
+                docFields.forEach((field, idx) => {
+                  if (previousApp.documents[idx]) {
+                    const docPath = typeof previousApp.documents[idx] === 'string' ? previousApp.documents[idx] : previousApp.documents[idx]?.path
+                    if (docPath) {
+                      (updated as any)[field] = {
+                        path: docPath,
+                        filename: docPath.split('/').pop() || 'document'
+                      } as SavedDoc
+                    }
+                  }
+                })
+              }
+
+              return updated
+            })
+            console.log('[APPLY] Pre-filled from previous application')
+          }
+        }
+      } catch (err) {
+        console.warn('[APPLY] Could not hydrate from previous application:', err)
+      }
+    }
+
+    hydrate()
+  }, [user, propertyId])
+
+  // ── Prefill personal info from tenant_profiles ────────────────────────────
+  useEffect(() => {
+    if (!user) return
+
+    const loadProfileInfo = async () => {
+      try {
+        const supabase = createClient()
+        const { data: profile, error } = await supabase
+          .from('tenant_profiles')
+          .select('date_of_birth, nationality, marital_status, employment_status, company_name, job_title, employment_duration, monthly_income_range')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (error) {
+          console.debug('[APPLY] Profile query error:', error.message)
+          return
+        }
+
+        if (profile) {
+          setFormData(prev => ({
+            ...prev,
+            dateOfBirth: profile.date_of_birth || '',
+            nationality: profile.nationality || '',
+            maritalStatus: profile.marital_status || '',
+            employmentStatus: profile.employment_status || '',
+            employer_name: profile.company_name || '',
+            jobTitle: profile.job_title || '',
+            employmentDuration: profile.employment_duration || '',
+          }))
+          console.log('[APPLY] Personal & employment info pre-filled from tenant_profiles')
+        }
+      } catch (e) {
+        console.debug('[APPLY] No profile info to prefill:', e)
+      }
+    }
+
+    loadProfileInfo()
+  }, [user?.id])
+
   // ── Check for existing application ────────────────────────────────────────────
   useEffect(() => {
     const checkExistingApplication = async () => {
@@ -287,8 +395,17 @@ export default function ApplicationPage() {
 
       const uploadResults = await Promise.all(
         documentFields.map(async (field) => {
-          const file = formData[field] as File | null
+          const fieldValue = formData[field]
+
+          // If it's a SavedDoc (reused), return path directly
+          if (fieldValue && typeof fieldValue === 'object' && 'path' in fieldValue) {
+            return (fieldValue as SavedDoc).path
+          }
+
+          // Otherwise try to upload as File
+          const file = fieldValue as File | null
           if (!file) return null
+
           try {
             const uploaded = await applicationsAPI.uploadDocument(file)
             return uploaded.path
@@ -348,6 +465,40 @@ export default function ApplicationPage() {
       console.log('Application Data:', applicationData)
 
       await applicationsAPI.create(applicationData)
+
+      // Enrich tenant profile with personal info for future prefill (fire-and-forget, non-blocking)
+      const enrichProfile = async () => {
+        try {
+          const supabase = createClient()
+          const { data: session } = await supabase.auth.getSession()
+          const token = session?.session?.access_token
+
+          if (token) {
+            fetch('/api/v1/tenants/enrich-profile', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                employment_status: formData.employmentStatus,
+                company_name: formData.employer_name,
+                job_title: formData.jobTitle,
+                employment_duration: formData.employmentDuration,
+                monthly_income: formData.monthly_income ? parseInt(formData.monthly_income) : undefined,
+                date_of_birth: formData.dateOfBirth || undefined,
+                nationality: formData.nationality || undefined,
+                marital_status: formData.maritalStatus || undefined,
+              }),
+            }).catch(err => console.warn('[APPLY] Enrichment failed:', err))
+          }
+        } catch (enrichErr) {
+          console.warn('[APPLY] Enrichment setup failed:', enrichErr)
+        }
+      }
+
+      // Don't await — let it happen in the background
+      enrichProfile()
 
       toast.success("Application Submitted!", {
         description: "Your application has been sent to the landlord. You will be notified of their response.",

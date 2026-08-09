@@ -71,6 +71,7 @@ export interface TenantApplication {
   move_in_date: string
   created_at: string
   viewed_by_landlord: boolean
+  propflow_thread_id?: string
 }
 
 export interface TenantConversation {
@@ -246,9 +247,43 @@ function invalidateCache(userId?: string): void {
  * This function handles both formats with defensive fallback chains
  */
 const normaliseDashboardKeys = (raw: any): TenantDashboardData => {
+  // 🐛 DEBUG: Log what backend actually sent
+  console.log('🔍 [TENANT DASHBOARD] Raw backend response:', {
+    hasStats: !!raw.stats,
+    statsKeys: raw.stats ? Object.keys(raw.stats) : [],
+    hasFavorites: !!raw.favorites,
+    hasViewingRequests: !!(raw.viewingRequests || raw.viewing_requests),
+    hasConversations: !!raw.conversations,
+    hasApplications: !!raw.applications,
+    hasAgreements: !!raw.agreements,
+  })
+  
+  // ✅ FIX: Provide sensible defaults for ALL stats fields
+  const defaultStats: TenantStats = {
+    totalFavorites: 0,
+    pendingViewings: 0,
+    confirmedViewings: 0,
+    completedViewings: 0,
+    propertiesContacted: 0,
+    totalConversations: 0,
+    unreadMessages: 0,
+    applicationsSubmitted: 0,
+    pendingApplications: 0,
+    approvedApplications: 0,
+    rejectedApplications: 0,
+    activeAgreements: 0,
+    pendingSignatures: 0,
+    paymentsDue: 0,
+    totalPayments: 0,
+    completedPayments: 0,
+    engagementScore: 0,
+    trustScore: 50,
+    engagementLevel: 'none',
+  }
+  
   return {
     ...raw,
-    stats: raw.stats || {},
+    stats: raw.stats ? { ...defaultStats, ...raw.stats } : defaultStats,
     favorites: raw.favorites || [],
     viewingRequests: raw.viewingRequests ?? raw.viewing_requests ?? [],
     conversations: raw.conversations ?? [],
@@ -270,6 +305,7 @@ class TenantDashboardClient {
    * Backend parallelizes all queries via ThreadPoolExecutor
    */
   async getTenantDashboard(userId: string, forceRefresh = false): Promise<TenantDashboardData> {
+    const apiCallStartTime = Date.now();
     console.log(`\n📊 [TENANT DASHBOARD] Fetching dashboard for user: ${userId}`)
     
     if (!forceRefresh) {
@@ -285,11 +321,13 @@ class TenantDashboardClient {
     try {
       console.log(`📤 [TENANT DASHBOARD] Calling /api/v1/tenant/dashboard`)
       
+      const requestStartTime = Date.now();
       const response = await apiClient.get('/api/v1/tenant/dashboard', {
         timeout: 30000
       })
+      const requestElapsed = Date.now() - requestStartTime;
       
-      console.log(`✅ [TENANT DASHBOARD] Data retrieved from backend`)
+      console.log(`✅ [TENANT DASHBOARD] Data retrieved from backend in ${requestElapsed}ms`)
       
       const dashboardData = normaliseDashboardKeys(response.data)
       
@@ -301,9 +339,13 @@ class TenantDashboardClient {
         console.log(`⚠️ [TENANT DASHBOARD] Partial data loaded - failed sections: ${(dashboardData.failedSections || []).join(', ')}`)
       }
       
+      const totalElapsed = Date.now() - apiCallStartTime;
+      console.log(`⏱️ [TENANT DASHBOARD] Total operation time: ${totalElapsed}ms`);
+      
       return dashboardData
     } catch (error: any) {
-      console.error(`❌ [TENANT DASHBOARD] Error fetching dashboard:`, error)
+      const totalElapsed = Date.now() - apiCallStartTime;
+      console.error(`❌ [TENANT DASHBOARD] Error fetching dashboard after ${totalElapsed}ms:`, error)
       
       if (error.response?.status === 401) {
         throw new Error('You must be logged in as a tenant to access dashboard')

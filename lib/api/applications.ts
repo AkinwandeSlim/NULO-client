@@ -105,6 +105,7 @@ export interface CreateApplicationData {
   move_in_date?: string;
   lease_duration?: string;
   number_of_occupants?: number;
+  dependents?: number;
   has_pets?: boolean;
   pet_details?: string;
   references?: any;

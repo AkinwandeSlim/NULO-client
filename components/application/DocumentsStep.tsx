@@ -18,13 +18,13 @@ export default function DocumentsStep({ formData, errors, onFileChange }: Docume
     onFileChange(name, null)
   }
 
-  const FileUploadBox = ({ 
-    name, 
-    label, 
-    required, 
-    description, 
+  const FileUploadBox = ({
+    name,
+    label,
+    required,
+    description,
     acceptedFormats = ".pdf,.jpg,.jpeg,.png"
-  }: { 
+  }: {
     name: string
     label: string
     required: boolean
@@ -34,17 +34,21 @@ export default function DocumentsStep({ formData, errors, onFileChange }: Docume
     const file = formData[name]
     const error = errors[name]
 
+    // Check if it's a SavedDoc (reused from previous application)
+    const isSavedDoc = file && typeof file === 'object' && 'path' in file
+    const isFile = file instanceof File
+
     return (
       <div className={`border-2 border-dashed rounded-lg p-6 transition-all ${
-        error ? 'border-red-300 bg-red-50' : 
-        file ? 'border-green-300 bg-green-50' : 
+        error ? 'border-red-300 bg-red-50' :
+        (file && (isFile || isSavedDoc)) ? 'border-green-300 bg-green-50' :
         'border-slate-300 bg-slate-50 hover:border-orange-400 hover:bg-orange-50'
       }`}>
         <div className="flex items-start gap-4">
           <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
-            file ? 'bg-green-600' : 'bg-slate-200'
+            file && (isFile || isSavedDoc) ? 'bg-green-600' : 'bg-slate-200'
           }`}>
-            {file ? (
+            {file && (isFile || isSavedDoc) ? (
               <CheckCircle className="h-6 w-6 text-white" />
             ) : (
               <Upload className="h-6 w-6 text-slate-600" />
@@ -69,12 +73,27 @@ export default function DocumentsStep({ formData, errors, onFileChange }: Docume
 
             <p className="text-sm text-slate-600 mb-3">{description}</p>
 
-            {file ? (
+            {isSavedDoc ? (
+              <div className="flex items-center gap-2 p-3 bg-white rounded-lg border border-blue-200">
+                <FileText className="h-5 w-5 text-blue-600" />
+                <div className="flex-1">
+                  <span className="text-sm font-medium text-slate-900">{(file as any).filename}</span>
+                  <span className="text-xs text-blue-600 ml-2">Reused from previous application</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveFile(name)}
+                  className="text-blue-600 hover:text-blue-700 ml-2"
+                >
+                  Replace
+                </button>
+              </div>
+            ) : isFile ? (
               <div className="flex items-center gap-2 p-3 bg-white rounded-lg border border-green-200">
                 <FileText className="h-5 w-5 text-green-600" />
-                <span className="text-sm font-medium text-slate-900">{file.name}</span>
+                <span className="text-sm font-medium text-slate-900">{(file as File).name}</span>
                 <span className="text-xs text-slate-500 ml-auto">
-                  {(file.size / 1024).toFixed(1)} KB
+                  {((file as File).size / 1024).toFixed(1)} KB
                 </span>
               </div>
             ) : (

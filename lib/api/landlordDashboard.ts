@@ -155,6 +155,7 @@ export interface LandlordReceivedApplication {
   user?: { full_name?: string }
   created_at: string
   viewed_by_landlord?: boolean
+  propflow_thread_id?: string
 }
 
 export interface LandlordAgreement {
