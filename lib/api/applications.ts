@@ -101,6 +101,8 @@ export interface CreateApplicationData {
   message?: string;
   employment_status?: string;
   employer_name?: string;
+  job_title?: string;
+  employment_duration?: string;
   monthly_income?: number;
   move_in_date?: string;
   lease_duration?: string;
@@ -109,7 +111,7 @@ export interface CreateApplicationData {
   has_pets?: boolean;
   pet_details?: string;
   references?: any;
-  documents?: ApplicationDocumentEntry[];  // BUG-025: can be raw URL string (legacy) or enriched {path,url,filename} object
+  documents?: ApplicationDocumentEntry[];
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
 }
@@ -135,9 +137,12 @@ export const applicationsAPI = {
   /**
    * Submit new application
    * Updated to use JSON with document URLs instead of FormData
+   * Increased timeout to 60s for longer backend processing
    */
   create: async (data: CreateApplicationData): Promise<Application> => {
-    const response = await apiClient.post<Application>('/api/v1/applications/', data);
+    const response = await apiClient.post<Application>('/api/v1/applications/', data, {
+      timeout: 60000, // 60 seconds for application creation
+    });
     return response.data;
   },
 

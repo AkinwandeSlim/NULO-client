@@ -116,7 +116,7 @@ export default function ApplicationPage() {
     email:                       user?.email || "",
     phone:                       user?.phone_number || "",
     dateOfBirth:                 "",
-    nationality:                 "",
+    nationality:                 "Nigerian", // Pre-fill with common value for Nigeria context
     maritalStatus:               "",
     dependents:                  "0",
     employmentStatus:            "",
@@ -183,9 +183,13 @@ export default function ApplicationPage() {
     const hydrate = async () => {
       try {
         const res = await applicationsAPI.getMyApplications()
+        console.log('[APPLY] getMyApplications response:', res)
+
         if (res.success && res.applications && res.applications.length > 0) {
+          console.log('[APPLY] Found', res.applications.length, 'applications')
           // Find newest app for a DIFFERENT property
           const previousApp: any = res.applications.find((app: any) => app.property_id !== propertyId)
+          console.log('[APPLY] Previous app (for different property):', previousApp)
 
           if (previousApp) {
             setFormData(prev => {
@@ -229,13 +233,18 @@ export default function ApplicationPage() {
                 })
               }
 
+              console.log('[APPLY] FormData after previous app hydration:', updated)
               return updated
             })
             console.log('[APPLY] Pre-filled from previous application')
+          } else {
+            console.warn('[APPLY] No previous application found for different property')
           }
+        } else {
+          console.warn('[APPLY] No applications in response or empty list')
         }
       } catch (err) {
-        console.warn('[APPLY] Could not hydrate from previous application:', err)
+        console.error('[APPLY] Could not hydrate from previous application:', err)
       }
     }
 
@@ -249,32 +258,40 @@ export default function ApplicationPage() {
     const loadProfileInfo = async () => {
       try {
         const supabase = createClient()
+        // Try to fetch all fields; if employment_duration doesn't exist yet, the query will fail gracefully
         const { data: profile, error } = await supabase
           .from('tenant_profiles')
-          .select('date_of_birth, nationality, marital_status, employment_status, company_name, job_title, employment_duration, monthly_income_range')
+          .select('date_of_birth, nationality, marital_status, employment_status, company_name, job_title, monthly_income_range')
           .eq('id', user.id)
           .maybeSingle()
 
         if (error) {
-          console.debug('[APPLY] Profile query error:', error.message)
+          console.warn('[APPLY] Profile query error:', error.message)
           return
         }
 
         if (profile) {
-          setFormData(prev => ({
-            ...prev,
-            dateOfBirth: profile.date_of_birth || '',
-            nationality: profile.nationality || '',
-            maritalStatus: profile.marital_status || '',
-            employmentStatus: profile.employment_status || '',
-            employer_name: profile.company_name || '',
-            jobTitle: profile.job_title || '',
-            employmentDuration: profile.employment_duration || '',
-          }))
+          console.log('[APPLY] Profile loaded:', profile)
+          console.log('[APPLY] Profile fields - dob:', profile.date_of_birth, 'nationality:', profile.nationality, 'marital:', profile.marital_status)
+          setFormData(prev => {
+            const updated = {
+              ...prev,
+              dateOfBirth: profile.date_of_birth || '',
+              nationality: profile.nationality || '',
+              maritalStatus: profile.marital_status || '',
+              employmentStatus: profile.employment_status || '',
+              employer_name: profile.company_name || '',
+              jobTitle: profile.job_title || '',
+            }
+            console.log('[APPLY] FormData after profile prefill:', updated)
+            return updated
+          })
           console.log('[APPLY] Personal & employment info pre-filled from tenant_profiles')
+        } else {
+          console.warn('[APPLY] No profile found for user:', user.id)
         }
       } catch (e) {
-        console.debug('[APPLY] No profile info to prefill:', e)
+        console.error('[APPLY] Profile loading error:', e)
       }
     }
 
@@ -450,6 +467,8 @@ export default function ApplicationPage() {
         message:              formData.message || "",
         employment_status:    formData.employmentStatus || "",
         employer_name:        formData.employer_name || "",
+        job_title:            formData.jobTitle || "",
+        employment_duration:  formData.employmentDuration || "",
         monthly_income:       parseInt(formData.monthly_income) || 0,
         move_in_date:         formData.moveInDate || "",
         lease_duration:       formData.leaseDuration || "12",
