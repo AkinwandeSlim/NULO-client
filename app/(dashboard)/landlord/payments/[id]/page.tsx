@@ -65,7 +65,6 @@ export default function LandlordPaymentDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isReleasing, setIsReleasing] = useState(false)
-  const [isSimulating, setIsSimulating] = useState(false)
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false)
   const [isDownloadingReceipt, setIsDownloadingReceipt] = useState(false)
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
@@ -122,25 +121,6 @@ export default function LandlordPaymentDetailPage() {
       toast.error(error?.response?.data?.detail || "Failed to generate receipt")
     } finally {
       setIsDownloadingReceipt(false)
-    }
-  }
-
-  const handleSimulateWebhook = async () => {
-    if (!agreement) return
-    const merchantTxRef = agreement.disbursement_merchant_tx_ref
-    if (!merchantTxRef) {
-      toast.error("No disbursement reference found. Please release funds first.")
-      return
-    }
-    try {
-      setIsSimulating(true)
-      const result = await paymentsAPI.simulatePayoutWebhook(agreement.agreement_id, merchantTxRef)
-      toast.success(result.success ? "Webhook simulated! Funds marked as released." : "Simulation failed")
-      await fetchDetail()
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail ?? "Simulation failed")
-    } finally {
-      setIsSimulating(false)
     }
   }
 
@@ -605,13 +585,6 @@ export default function LandlordPaymentDetailPage() {
                         <p className="text-xs text-amber-700">Funds are being transferred to your bank account.</p>
                       </div>
                     </div>
-                    <Separator />
-                    <Button onClick={handleSimulateWebhook} disabled={isSimulating}
-                      variant="outline" size="sm" className="w-full border-amber-300 text-amber-700 hover:bg-amber-50">
-                      {isSimulating
-                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Simulating…</>
-                        : <><RefreshCw className="w-4 h-4 mr-2" />Simulate Webhook (Demo)</>}
-                    </Button>
                   </div>
                 )}
                 {agreement.disbursement_status !== "released" && agreement.disbursement_status !== "pending" && canRelease && (

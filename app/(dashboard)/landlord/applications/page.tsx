@@ -11,7 +11,7 @@ import {
   Search, Filter, ClipboardList, Loader2,
   AlertCircle, Eye, Phone, Mail, ArrowLeft,
   CheckCircle, XCircle, Clock, Users, Building2,
-  FileText, MapPin, Calendar, MessageSquare, Grid, List
+  FileText, MapPin, Calendar, MessageSquare, Grid, List, Zap
 } from "lucide-react"
 import Link from "next/link"
 import { applicationsAPI, type Application, type ApplicationsResponse } from "@/lib/api/applications"
@@ -32,8 +32,6 @@ const formatNGN = (amount: number) =>
 
 const getStatusBadgeStyle = (status: string) => ({
   pending:   "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
-  submitted: "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
-  under_review: "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
   approved:  "bg-green-100 text-green-800 border-green-200 font-semibold",
   rejected:  "bg-red-100 text-red-800 border-red-200 font-semibold",
   withdrawn: "bg-slate-100 text-slate-800 border-slate-200 font-semibold"
@@ -42,8 +40,6 @@ const getStatusBadgeStyle = (status: string) => ({
 const getPriorityBorder = (status: string) => {
   switch (status) {
     case 'pending':   return 'border-l-4 border-l-orange-500'
-    case 'submitted': return 'border-l-4 border-l-orange-500'
-    case 'under_review': return 'border-l-4 border-l-orange-500'
     case 'approved':  return 'border-l-4 border-l-green-500'
     case 'rejected':  return 'border-l-4 border-l-red-500'
     case 'withdrawn': return 'border-l-4 border-l-slate-300'
@@ -57,16 +53,12 @@ const getStatusIcon = (status: string) => {
     case 'rejected': return <XCircle className="h-5 w-5 text-red-600" />
     case 'withdrawn': return <AlertCircle className="h-5 w-5 text-slate-500" />
     case 'pending': return <AlertCircle className="h-5 w-5 text-orange-600" />
-    case 'submitted': return <AlertCircle className="h-5 w-5 text-orange-600" />
-    case 'under_review': return <AlertCircle className="h-5 w-5 text-orange-600" />
     default:          return <AlertCircle className="h-5 w-5 text-orange-600" />
   }
 }
 
 const getStatusLabel = (status: string) => ({
   pending:   'Under Review',
-  submitted: 'New Application',
-  under_review: 'Under Review',
   approved:  'Approved',
   rejected:  'Rejected',
   withdrawn: 'Withdrawn'
@@ -134,6 +126,12 @@ function ApplicationCard({ application, onClick }: ApplicationCardProps) {
                   <Badge className={getStatusBadgeStyle(application.status)}>
                     {getStatusLabel(application.status)}
                   </Badge>
+                  {application.propflow_thread_id && (
+                    <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px] px-2 py-0.5 font-semibold">
+                      <Zap className="h-3 w-3 mr-0.5 text-indigo-500" />
+                      AI
+                    </Badge>
+                  )}
                 </div>
                 <span className="text-xs text-slate-500 font-medium">
                   Applied {formatDistanceToNow(new Date(application.created_at), { addSuffix: true })}
@@ -254,7 +252,15 @@ function ApplicationTableRow({ application, onClick }: ApplicationTableRowProps)
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
-            <p className="font-semibold text-slate-900">{tenant?.full_name || 'Tenant'}</p>
+            <p className="font-semibold text-slate-900">
+              {tenant?.full_name || 'Tenant'}
+              {application.propflow_thread_id && (
+                <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px] px-2 py-0.5 font-semibold ml-2 align-middle">
+                  <Zap className="h-3 w-3 mr-0.5 text-indigo-500 inline-block" />
+                  AI
+                </Badge>
+              )}
+            </p>
             <p className="text-sm text-slate-500 truncate flex items-center gap-1">
               <Users className="h-3 w-3" />
               {application.employment_status || 'Employment status not available'}

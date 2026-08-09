@@ -69,7 +69,7 @@ export default function RootLayout({
               background-color: #000000 !important;
             }
             html:not(.dark) body {
-              background-color: #ffffff !important;
+              background-color: #1e293b !important;
             }
           `
         }} />

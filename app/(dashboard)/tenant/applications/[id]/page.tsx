@@ -18,6 +18,7 @@ import { applicationsAPI, type Application } from "@/lib/api/applications"
 import { agreementsAPI } from "@/lib/api/agreements"
 import { toast } from "sonner"
 import { formatNGN, calculateRentalBreakdown } from "@/lib/utils/rentalCalculations"
+import { normalizeAppStatus } from "@/lib/utils/applicationStatus"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 
@@ -32,8 +33,6 @@ const formatEmploymentStatus = (status: string) => ({
 
 const getStatusBadgeStyle = (status: string) => ({
   pending:   "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
-  submitted: "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
-  under_review: "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
   approved:  "bg-green-100 text-green-800 border-green-200 font-semibold",
   rejected:  "bg-red-100 text-red-800 border-red-200 font-semibold",
   withdrawn: "bg-slate-100 text-slate-800 border-slate-200 font-semibold"
@@ -41,10 +40,7 @@ const getStatusBadgeStyle = (status: string) => ({
 
 const getPriorityBorder = (status: string) => {
   switch (status) {
-    case 'pending':
-    case 'submitted':
-    case 'under_review':
-      return 'border-l-4 border-l-orange-500'
+    case 'pending':   return 'border-l-4 border-l-orange-500'
     case 'approved':  return 'border-l-4 border-l-green-500'
     case 'rejected':  return 'border-l-4 border-l-red-500'
     case 'withdrawn': return 'border-l-4 border-l-slate-300'
@@ -65,7 +61,7 @@ const getStatusBadge = (status: string) => {
   return (
     <Badge className={`${getStatusBadgeStyle(status)}`}>
       {getStatusIcon(status)}
-      <span className="ml-1">{status === 'pending' || status === 'submitted' || status === 'under_review' ? 'Under Review' : status === 'approved' ? 'Approved' : status === 'rejected' ? 'Rejected' : 'Withdrawn'}</span>
+      <span className="ml-1">{normalizeAppStatus(status) === 'pending' ? 'Under Review' : normalizeAppStatus(status) === 'approved' ? 'Approved' : normalizeAppStatus(status) === 'rejected' ? 'Rejected' : 'Withdrawn'}</span>
     </Badge>
   )
 }
@@ -180,6 +176,8 @@ export default function TenantApplicationDetailPage() {
     }
 
     const pollForAgreement = async () => {
+      // Don't start a new poll while a manual check is in progress
+      if (isCheckingAgreement) return
       setIsCheckingAgreement(true)
       try {
         console.log(`🔄 [TENANT APP] Polling for agreement (attempt ${agreementRetries + 1})...`)
@@ -320,7 +318,7 @@ export default function TenantApplicationDetailPage() {
         </div>
 
       {/* Status Banner */}
-      {(application.status === 'pending' || application.status === 'submitted' || application.status === 'under_review') && (
+      {(normalizeAppStatus(application.status) === 'pending') && (
         <div className="flex items-start gap-3 p-4 mb-6 bg-orange-50 border border-orange-200 rounded-xl">
           <Clock className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" />
           <div>

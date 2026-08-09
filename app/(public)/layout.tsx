@@ -6,6 +6,7 @@ import { useTheme } from "@/contexts/ThemeContext"
 import { PublicHeader } from "@/components/navigation/PublicHeader"
 import { MarketplaceHeader } from "@/components/navigation/MarketplaceHeader"
 import { ReactNode } from "react"
+import PropFlowChat from "@/components/propflow/PropFlowChat"
 
 function PublicLayoutContent({ children }: { children: ReactNode }) {
   const pathname = usePathname()
@@ -26,6 +27,9 @@ function PublicLayoutContent({ children }: { children: ReactNode }) {
     return (
       <div className={`min-h-screen ${theme === "dark" ? "bg-black text-white" : "bg-white text-slate-900"}`}>
         <main className="pt-0">{children}</main>
+        {/* PropFlow AI assistant — available while browsing/searching/applying.
+            Guests can search anonymously; login is required to select & apply. */}
+        <PropFlowChat />
       </div>
     )
   }

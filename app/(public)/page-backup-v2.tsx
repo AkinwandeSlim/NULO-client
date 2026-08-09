@@ -255,7 +255,7 @@ const FOUNDERS = [
   },
   {
     name: "Fakorede Akinwande Alexander",
-    role: "Product/Tech Lead",
+    role: "Founding Engineer / Technical Lead",
     bio: "Technology architect building scalable platforms and AI-powered solutions for African real estate markets.",
     image: "/images/ctoa.png",
   },

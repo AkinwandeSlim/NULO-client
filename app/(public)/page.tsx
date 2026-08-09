@@ -292,6 +292,14 @@ export default function LandingPage() {
   // Prevent hydration flashes
   useEffect(() => {
     setMounted(true)
+    // Restore the body background from the dark pre-load color to the
+    // correct theme color now that React has hydrated and the hero image
+    // has started loading. This removes the dark flash on non-landing pages.
+    document.body.style.backgroundColor = theme === "dark" ? "#000000" : "#FCFBF9"
+    return () => {
+      // Always reset to transparent when leaving so other pages get their own bg
+      document.body.style.backgroundColor = ""
+    }
   }, [])
 
   // Sticky header + scroll-to-top visibility + section detection
@@ -427,13 +435,15 @@ export default function LandingPage() {
         <section
           id="hero"
           className="relative z-[1] flex w-full flex-col items-center justify-center overflow-hidden text-center"
-          style={{ minHeight: "90vh" }}
+          style={{ minHeight: "90vh", backgroundColor: theme === "dark" ? "#000000" : "#1e293b" }}
         >
           {/* Background building image with transparency */}
           <div className="absolute inset-0 z-0">
             <img
               src="/bg/sean-pollock-PhYq704ffdA-unsplash.jpg"
               alt="Premium real estate"
+              fetchPriority="high"
+              decoding="sync"
               className={cx("h-full w-full object-cover object-center", theme === "dark" ? "opacity-15" : "opacity-100")}
             />
             {/* Light theme: Cinematic dark gradient overlay so image pops & white text is highly legible */}

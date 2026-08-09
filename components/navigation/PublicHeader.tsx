@@ -118,7 +118,7 @@ export function PublicHeader({ theme, toggleTheme, showTicker = true, hideNav = 
       ? "/admin"
       : user?.user_type === "landlord"
       ? "/landlord/overview"
-      : "/tenant/overview"
+      : "/tenant"
 
   const handleLogout = async () => {
     try {

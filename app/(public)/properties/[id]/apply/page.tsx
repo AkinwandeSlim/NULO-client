@@ -16,7 +16,7 @@ import { toast } from "sonner"
 import { createClient } from "@/utils/supabase/client"
 import Link from "next/link"
 import { applicationsAPI, CreateApplicationData } from "@/lib/api/applications"
-import { getErrorMessage } from "@/lib/api/client"
+import apiClient, { getErrorMessage } from "@/lib/api/client"
 import { formatNGN, calculateRentalBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { MarketplaceHeader } from "@/components/navigation/MarketplaceHeader"
 
@@ -258,30 +258,55 @@ export default function ApplicationPage() {
     const loadProfileInfo = async () => {
       try {
         const supabase = createClient()
-        // Try to fetch all fields; if employment_duration doesn't exist yet, the query will fail gracefully
-        const { data: profile, error } = await supabase
+        // Single source of truth: all pre-fill personal info (including phone)
+        // comes from tenant_profiles — persisted by the enrich-profile endpoint.
+        // The `phone` column is added by migration 019; if it hasn't been run
+        // yet, the query fails and we fall back to querying without it so the
+        // rest of the prefill still works.
+        const SELECT = 'date_of_birth, nationality, marital_status, employment_status, company_name, job_title, employment_duration, monthly_income_range, phone'
+
+        let profile = null
+        let queryErr: any = null
+        const first = await supabase
           .from('tenant_profiles')
-          .select('date_of_birth, nationality, marital_status, employment_status, company_name, job_title, monthly_income_range')
+          .select(SELECT)
           .eq('id', user.id)
           .maybeSingle()
+        if (first.error && (first.error.message || '').toLowerCase().includes('column')) {
+          // A new column (phone/employment_duration) doesn't exist yet — migration
+          // pending. Retry without them so the rest of the prefill still works.
+          const fallback = await supabase
+            .from('tenant_profiles')
+            .select('date_of_birth, nationality, marital_status, employment_status, company_name, job_title, monthly_income_range')
+            .eq('id', user.id)
+            .maybeSingle()
+          profile = fallback.data
+          queryErr = fallback.error
+          console.warn('[APPLY] Some tenant_profiles columns missing (migration 019 pending?) — using fallback select')
+        } else {
+          profile = first.data
+          queryErr = first.error
+        }
 
-        if (error) {
-          console.warn('[APPLY] Profile query error:', error.message)
+        if (queryErr) {
+          console.warn('[APPLY] Profile query error:', queryErr.message)
           return
         }
 
         if (profile) {
           console.log('[APPLY] Profile loaded:', profile)
-          console.log('[APPLY] Profile fields - dob:', profile.date_of_birth, 'nationality:', profile.nationality, 'marital:', profile.marital_status)
+          console.log('[APPLY] Profile fields - dob:', profile.date_of_birth, 'nationality:', profile.nationality, 'marital:', profile.marital_status, 'phone:', profile.phone)
           setFormData(prev => {
             const updated = {
               ...prev,
+              phone: profile.phone || prev.phone || '',
               dateOfBirth: profile.date_of_birth || '',
               nationality: profile.nationality || '',
               maritalStatus: profile.marital_status || '',
               employmentStatus: profile.employment_status || '',
               employer_name: profile.company_name || '',
               jobTitle: profile.job_title || '',
+              employmentDuration: profile.employment_duration || prev.employmentDuration || '',
             }
             console.log('[APPLY] FormData after profile prefill:', updated)
             return updated
@@ -485,34 +510,26 @@ export default function ApplicationPage() {
 
       await applicationsAPI.create(applicationData)
 
-      // Enrich tenant profile with personal info for future prefill (fire-and-forget, non-blocking)
+      // Enrich tenant profile with personal info for future prefill (fire-and-forget, non-blocking).
+      // Uses apiClient so it reaches the backend directly (localhost:8000) and the
+      // token is attached automatically — a raw relative fetch() hits Next.js (3000)
+      // and silently 404s because there is no rewrite.
       const enrichProfile = async () => {
         try {
-          const supabase = createClient()
-          const { data: session } = await supabase.auth.getSession()
-          const token = session?.session?.access_token
-
-          if (token) {
-            fetch('/api/v1/tenants/enrich-profile', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                employment_status: formData.employmentStatus,
-                company_name: formData.employer_name,
-                job_title: formData.jobTitle,
-                employment_duration: formData.employmentDuration,
-                monthly_income: formData.monthly_income ? parseInt(formData.monthly_income) : undefined,
-                date_of_birth: formData.dateOfBirth || undefined,
-                nationality: formData.nationality || undefined,
-                marital_status: formData.maritalStatus || undefined,
-              }),
-            }).catch(err => console.warn('[APPLY] Enrichment failed:', err))
-          }
+          const res = await apiClient.post('/api/v1/tenants/enrich-profile', {
+            employment_status: formData.employmentStatus,
+            company_name: formData.employer_name,
+            job_title: formData.jobTitle,
+            employment_duration: formData.employmentDuration,
+            monthly_income: formData.monthly_income ? parseInt(formData.monthly_income) : undefined,
+            date_of_birth: formData.dateOfBirth || undefined,
+            nationality: formData.nationality || undefined,
+            marital_status: formData.maritalStatus || undefined,
+            phone: formData.phone || undefined,
+          })
+          console.log('[APPLY] Enrichment succeeded:', res.data)
         } catch (enrichErr) {
-          console.warn('[APPLY] Enrichment setup failed:', enrichErr)
+          console.warn('[APPLY] Enrichment failed:', enrichErr)
         }
       }
 

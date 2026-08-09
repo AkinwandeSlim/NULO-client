@@ -11,6 +11,7 @@ import { Navbar } from "@/components/navigation/Navbar"
 import { NotificationBadge } from "@/components/notifications/NotificationBadge"
 import { MessageBadge } from "@/components/messages/MessageBadge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import PropFlowChat from "@/components/propflow/PropFlowChat"
 import {
   LayoutDashboard,
   Heart,
@@ -582,6 +583,7 @@ export default function DashboardLayout({
           </div>
         </main>
       </div>
+      <PropFlowChat />
     </div>
   )
 }

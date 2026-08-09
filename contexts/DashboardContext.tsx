@@ -11,7 +11,7 @@
 
 'use client'
 
-import React, { createContext, useContext, useCallback, useEffect, useState, ReactNode } from 'react'
+import React, { createContext, useContext, useCallback, useEffect, useState, useRef, ReactNode } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import adminDashboardAPI from '@/lib/api/adminDashboard'
@@ -249,76 +249,109 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
   )
 
   // ============================================================================
-  // FETCH LANDLORD DASHBOARD WITH CACHING
+  // FETCH LANDLORD DASHBOARD WITH CACHING & REQUEST DEDUPLICATION
   // ============================================================================
+
+  // Track in-flight request to prevent duplicates
+  const landlordRequestRef = useRef<Promise<any> | null>(null)
+  // Stable ref for loading-state checks — avoids putting landlordData in useCallback deps
+  const landlordDataRef = useRef(landlordData)
+  landlordDataRef.current = landlordData
 
   const fetchLandlordDashboard = useCallback(
     async (forceRefresh = false) => {
-      // Prevent concurrent requests
-      if (landlordLoading && !forceRefresh) {
-        console.log('🚫 [LANDLORD DASHBOARD] Request already in progress, skipping...')
-        return
+      // 🔥 CRITICAL: Prevent duplicate concurrent requests
+      if (landlordRequestRef.current && !forceRefresh) {
+        console.log('🚫 [LANDLORD DASHBOARD] Request already in progress, waiting for existing request...')
+        try {
+          await landlordRequestRef.current
+          console.log('✅ [LANDLORD DASHBOARD] Existing request completed, using that data')
+          return
+        } catch (error) {
+          console.log('⚠️ [LANDLORD DASHBOARD] Existing request failed, will retry')
+          landlordRequestRef.current = null
+        }
       }
 
       const cache = getDashboardCache()
       const cacheKey = 'landlord:dashboard'
 
-      try {
-        // Try to get from cache first (unless force refresh)
-        if (!forceRefresh) {
-          const cachedLandlordData = cache.get<LandlordDashboardData>(cacheKey)
-          if (cachedLandlordData) {
-            console.log('✅ [CACHE] HIT: landlord:dashboard')
-            setLandlordData(cachedLandlordData)
-            return
+      // Create the fetch promise and store it to prevent duplicates
+      const fetchPromise = (async () => {
+        try {
+          // Try to get from cache first (unless force refresh)
+          if (!forceRefresh) {
+            const cachedLandlordData = cache.get<LandlordDashboardData>(cacheKey)
+            if (cachedLandlordData) {
+              console.log('✅ [CACHE] HIT: landlord:dashboard')
+              setLandlordData(cachedLandlordData)
+              return
+            }
           }
-        }
 
-        // Fetch from API if not in cache
-        console.log('🔄 [LANDLORD DASHBOARD] Fetching fresh data...')
-        setLandlordLoading(true)
+          // Fetch from API if not in cache
+          console.log('🔄 [LANDLORD DASHBOARD] Fetching fresh data...')
+          
+          // Only show loading state if we don't have data yet
+          if (!landlordDataRef.current) {
+            setLandlordLoading(true)
+          } else if (forceRefresh) {
+            setLandlordRefreshing(true)
+          }
 
-        const freshData = await landlordDashboardAPI.getLandlordDashboard()
+          const freshData = await landlordDashboardAPI.getLandlordDashboard()
 
-        // Update state
-        setLandlordData(freshData)
-        setLandlordLastRefreshTime(Date.now())
+          // Update state
+          setLandlordData(freshData)
+          setLandlordLastRefreshTime(Date.now())
 
-        // Store in cache for 60 seconds (reduced from 5 min for fresher stats)
-        cache.set(cacheKey, freshData, 60 * 1000)
+          // Store in cache for 60 seconds (reduced from 5 min for fresher stats)
+          cache.set(cacheKey, freshData, 60 * 1000)
 
-        console.log('✅ [LANDLORD DASHBOARD] Dashboard data cached successfully')
+          console.log('✅ [LANDLORD DASHBOARD] Dashboard data cached successfully')
 
-        if (forceRefresh) {
-          toast.success('Dashboard refreshed')
-        }
-      } catch (error: any) {
-        console.error('❌ [LANDLORD DASHBOARD] Failed to fetch dashboard:', error)
-        
-        // 🚀 IMPROVEMENT: Don't show error toast if we have cached data
-        // Just log it and continue with cached data
-        if (!landlordData) {
-          // Only show error if we have no data at all
-          if (error.message?.includes('timeout')) {
-            toast.error('Dashboard is loading slowly. Please try refreshing.')
+          if (forceRefresh) {
+            toast.success('Dashboard refreshed')
+          }
+        } catch (error: any) {
+          console.error('❌ [LANDLORD DASHBOARD] Failed to fetch dashboard:', error)
+
+          // 🚀 IMPROVEMENT: Don't show error toast if we have cached data
+          // Just log it and continue with cached data
+          if (!landlordDataRef.current) {
+            // Only show error if we have no data at all
+            if (error.message?.includes('timeout')) {
+              toast.error('Dashboard is loading slowly. Please try refreshing.')
+            } else {
+              toast.error(error.message || 'Failed to load dashboard data')
+            }
           } else {
-            toast.error(error.message || 'Failed to load dashboard data')
+            // We have cached data, just show a subtle info message
+            console.log('📋 [LANDLORD DASHBOARD] Using cached data due to API error')
           }
-        } else {
-          // We have cached data, just show a subtle info message
-          console.log('📋 [LANDLORD DASHBOARD] Using cached data due to API error')
+          throw error
+        } finally {
+          setLandlordLoading(false)
+          setLandlordRefreshing(false)
+          landlordRequestRef.current = null
         }
-      } finally {
-        setLandlordLoading(false)
-        setLandlordRefreshing(false)
-      }
+      })()
+
+      landlordRequestRef.current = fetchPromise
+      await fetchPromise
     },
-    [landlordData]
+    []
   )
 
   // ============================================================================
-  // FETCH TENANT DASHBOARD WITH CACHING
+  // FETCH TENANT DASHBOARD WITH CACHING & REQUEST DEDUPLICATION
   // ============================================================================
+
+  // Track in-flight request to prevent duplicates
+  const tenantRequestRef = useRef<Promise<any> | null>(null)
+  // Stable ref for loading-state checks — avoids putting tenantData in useCallback deps
+  const tenantDataRef = useRef(tenantData)
+  tenantDataRef.current = tenantData
 
   const fetchTenantDashboard = useCallback(
     async (forceRefresh = false) => {
@@ -329,68 +362,86 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
         return
       }
 
-      // Prevent concurrent requests
-      if (tenantLoading && !forceRefresh) {
-        console.log('🚫 [TENANT DASHBOARD] Request already in progress, skipping...')
-        return
+      // 🔥 CRITICAL: Prevent duplicate concurrent requests
+      // If there's already a request in flight, wait for it instead of starting a new one
+      if (tenantRequestRef.current && !forceRefresh) {
+        console.log('🚫 [TENANT DASHBOARD] Request already in progress, waiting for existing request...')
+        try {
+          await tenantRequestRef.current
+          console.log('✅ [TENANT DASHBOARD] Existing request completed, using that data')
+          return
+        } catch (error) {
+          console.log('⚠️ [TENANT DASHBOARD] Existing request failed, will retry')
+          tenantRequestRef.current = null
+        }
       }
 
-      try {
-        // Only show loading state if we don't have data yet (not on refreshes)
-        if (!tenantData) {
-          setTenantLoading(true)
-        }
-
-        console.log('📊 [TENANT DASHBOARD] Fetching dashboard data...')
-
-        const freshData = forceRefresh
-          ? await tenantDashboardAPI.refreshTenantDashboard(user.id)
-          : await tenantDashboardAPI.getTenantDashboard(user.id)
-
-        // Normalize application statuses so the dashboard UI's
-        //   application.status === "pending"
-        // checks actually match the server's "submitted" / "under_review"
-        // values (the DB check constraint requires "submitted"). Without
-        // this, newly submitted apps show no badge in the Application
-        // Tracking section because none of the three badge branches match.
-        if (freshData?.applications && Array.isArray(freshData.applications)) {
-          freshData.applications = (freshData.applications as any[]).map((a) => ({
-            ...a,
-            status: normalizeAppStatus(a.status),
-          }))
-        }
-
-        // Update state
-        setTenantData(freshData)
-        setTenantLastRefreshTime(Date.now())
-
-        console.log('✅ [TENANT DASHBOARD] Dashboard data retrieved successfully')
-
-        if (forceRefresh) {
-          toast.success('Dashboard refreshed')
-        }
-      } catch (error: any) {
-        console.error('❌ [TENANT DASHBOARD] Failed to fetch dashboard:', error)
-        
-        // 🚀 IMPROVEMENT: Don't show error toast if we have cached data
-        // Just log it and continue with cached data
-        if (!tenantData) {
-          // Only show error if we have no data at all
-          if (error.message?.includes('timeout')) {
-            toast.error('Dashboard is loading slowly. Please try refreshing.')
-          } else {
-            toast.error(error.message || 'Failed to load dashboard data')
+      // Create the fetch promise and store it to prevent duplicates
+      const fetchPromise = (async () => {
+        try {
+          // Only show loading state if we don't have data yet (not on refreshes)
+          if (!tenantDataRef.current) {
+            setTenantLoading(true)
+          } else if (forceRefresh) {
+            setTenantRefreshing(true)
           }
-        } else {
-          // We have cached data, just show a subtle info message
-          console.log('📋 [TENANT DASHBOARD] Using cached data due to API error')
+
+          console.log('📊 [TENANT DASHBOARD] Fetching dashboard data...')
+
+          const freshData = forceRefresh
+            ? await tenantDashboardAPI.refreshTenantDashboard(user.id)
+            : await tenantDashboardAPI.getTenantDashboard(user.id)
+
+          // Normalize application statuses so the dashboard UI's
+          //   application.status === "pending"
+          // checks actually match the server's "submitted" / "under_review"
+          // values (the DB check constraint requires "submitted"). Without
+          // this, newly submitted apps show no badge in the Application
+          // Tracking section because none of the three badge branches match.
+          if (freshData?.applications && Array.isArray(freshData.applications)) {
+            freshData.applications = (freshData.applications as any[]).map((a) => ({
+              ...a,
+              status: normalizeAppStatus(a.status),
+            }))
+          }
+
+          // Update state
+          setTenantData(freshData)
+          setTenantLastRefreshTime(Date.now())
+
+          console.log('✅ [TENANT DASHBOARD] Dashboard data retrieved successfully')
+
+          if (forceRefresh) {
+            toast.success('Dashboard refreshed')
+          }
+        } catch (error: any) {
+          console.error('❌ [TENANT DASHBOARD] Failed to fetch dashboard:', error)
+
+          // 🚀 IMPROVEMENT: Don't show error toast if we have cached data
+          // Just log it and continue with cached data
+          if (!tenantDataRef.current) {
+            // Only show error if we have no data at all
+            if (error.message?.includes('timeout')) {
+              toast.error('Dashboard is loading slowly. Please try refreshing.')
+            } else {
+              toast.error(error.message || 'Failed to load dashboard data')
+            }
+          } else {
+            // We have cached data, just show a subtle info message
+            console.log('📋 [TENANT DASHBOARD] Using cached data due to API error')
+          }
+          throw error
+        } finally {
+          setTenantLoading(false)
+          setTenantRefreshing(false)
+          tenantRequestRef.current = null
         }
-      } finally {
-        setTenantLoading(false)
-        setTenantRefreshing(false)
-      }
+      })()
+
+      tenantRequestRef.current = fetchPromise
+      await fetchPromise
     },
-    [user, tenantData]
+    [user]
   )
 
   // ============================================================================

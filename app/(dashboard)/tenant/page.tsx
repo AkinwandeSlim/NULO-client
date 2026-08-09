@@ -21,7 +21,7 @@ import {
   X, FileCheck, DollarSign,
   AlertTriangle, CheckCheck, Loader2,
   RefreshCw, Wallet, CalendarClock, Plus, Mail, CheckCircle2,
-  Home, CreditCard, TrendingUp,
+  Home, CreditCard, TrendingUp, Bot,
 } from "lucide-react"
 import Link from "next/link"
 import { applicationsAPI } from "@/lib/api/applications"
@@ -39,9 +39,10 @@ import {
 import { toast } from "sonner"
 import { notificationsAPI } from "@/lib/api/notifications"
 import { calculateAgreementBreakdown } from "@/lib/utils/rentalCalculations"
+import { normalizeAppStatus } from "@/lib/utils/applicationStatus"
 import { agreementsAPI } from "@/lib/api/agreements"
 import { ReportIssueModal } from "@/components/maintenance/ReportIssueModal"
-import PropFlowChat from "@/components/propflow/PropFlowChat"
+
 import {
   isBannerDismissed,
   dismissBanner as persistBannerDismissal,
@@ -73,7 +74,7 @@ export default function TenantDashboard() {
 
   const [mounted, setMounted] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [allDataLoading, setAllDataLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [recentPayments, setRecentPayments] = useState<any[]>([])
   const [paymentsLoading, setPaymentsLoading] = useState(true)
   const [dismissedApprovalBanner, setDismissedApprovalBanner] = useState<string[]>([])
@@ -197,47 +198,36 @@ export default function TenantDashboard() {
     restoreDismissedBanners()
   }, [mounted])
 
-  // ✅ Fetch dashboard data on mount or when user changes
-  // ============================================================================
-  // FETCH ON MOUNT — always force a fresh fetch so the user sees up-to-date
-  // data (e.g. after making a payment on /tenant/payments and clicking
-  // "Overview" on the navbar). The 5-minute API-layer cache is bypassed.
-  // ============================================================================
-  // ✅ FIX: Use a ref to always call the LATEST fetchTenantDashboard function
-  // (which is recreated on every tenantData change due to useCallback in the
-  // context), but exclude it from the useEffect's dependency array to avoid
-  // an infinite re-fetch loop. Also use a guard ref to prevent overlapping
-  // fetches if the effect somehow fires twice in a row.
-  const fetchFnRef = useRef(fetchTenantDashboard)
-  fetchFnRef.current = fetchTenantDashboard
-  const fetchInFlightRef = useRef(false)
-
+  // Optimized dashboard data fetching - fetch ONCE on mount
   useEffect(() => {
     if (!mounted || !user || user.user_type !== 'tenant') {
-      setAllDataLoading(false)
+      setInitialLoad(false)
       return
     }
-    if (fetchInFlightRef.current) return  // guard against rapid re-fires
 
-    setAllDataLoading(true)
-    fetchInFlightRef.current = true
-
-    // ✅ FIX: Pass `true` to bypass the 5-min client-side cache. The previous
-    // behaviour showed stale data (e.g. "0 active leases" after a payment)
-    // because the cache survived in-memory across /tenant/payments →
-    // /tenant navigation. Only a hard refresh cleared it.
-    fetchFnRef.current(true)
-      .then(() => {
-        setAllDataLoading(false)
-      })
-      .catch((error) => {
+    // Initial load - use cached data for faster display
+    const loadDashboard = async () => {
+      try {
+        // Use cache on initial load for instant display, unless explicitly refreshing
+        await fetchTenantDashboard(false)
+        // Debug: Log tenant data after fetch
+        console.log('📊 [TENANT PAGE] Dashboard data loaded:', {
+          stats: tenantData?.stats,
+          hasAgreements: tenantData?.agreements?.length || 0,
+          hasApplications: tenantData?.applications?.length || 0,
+          hasViewings: tenantData?.viewingRequests?.length || 0,
+          hasFavorites: tenantData?.favorites?.length || 0,
+        })
+      } catch (error) {
         console.error('❌ Dashboard fetch failed:', error)
-        setAllDataLoading(false)
-      })
-      .finally(() => {
-        fetchInFlightRef.current = false
-      })
-  }, [mounted, user?.id, user?.user_type, pathname])
+      } finally {
+        setInitialLoad(false)
+      }
+    }
+
+    loadDashboard()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, user?.id, user?.user_type])
 
   // Fetch tenant payments for banner notifications
   useEffect(() => {
@@ -329,8 +319,8 @@ export default function TenantDashboard() {
     return () => clearInterval(pollInterval)
   }, [user?.id, paymentsLoading, recentPayments, invalidateTenantCache])
 
-  // Show loading spinner if context is loading or local loading state
-  const isLoading = loading || allDataLoading
+  // Show loading spinner if context is loading OR initial load
+  const isLoading = loading || initialLoad
 
   const trackActivity = useCallback(
     async (activityType: any, metadata?: any) => {
@@ -697,16 +687,43 @@ export default function TenantDashboard() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
         <div className="max-w-7xl mx-auto space-y-6">
-          <Skeleton className="h-10 w-2/3" />
-          <Skeleton className="h-5 w-1/3" />
-          <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+          {/* Header Skeleton */}
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-2/3" />
+            <Skeleton className="h-5 w-1/3" />
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Skeleton className="h-48 lg:col-span-2 rounded-xl" />
-            <Skeleton className="h-48 rounded-xl" />
+          
+          {/* Stats Cards Skeleton */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Card key={i} className="border-orange-200 bg-white/80">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <Skeleton className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-20" />
+                      <Skeleton className="h-8 w-12" />
+                      <Skeleton className="h-4 w-24" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-          <Skeleton className="h-64 rounded-xl" />
+
+          {/* Main Content Skeleton */}
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2 space-y-6">
+              <Skeleton className="h-64 rounded-xl" />
+              <Skeleton className="h-48 rounded-xl" />
+              <Skeleton className="h-48 rounded-xl" />
+            </div>
+            <div className="space-y-5">
+              <Skeleton className="h-64 rounded-xl" />
+              <Skeleton className="h-48 rounded-xl" />
+              <Skeleton className="h-48 rounded-xl" />
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -808,6 +825,10 @@ export default function TenantDashboard() {
             case "payment-ready": {
               const a = activeBanner.data as any
               const bothSigned = Boolean(a.tenant_signed_at && a.landlord_signed_at)
+              const matchingApp = tenantData?.applications?.find(
+                (app: any) => app.property_id === a.property_id && app.propflow_thread_id
+              )
+              const hasPropFlow = !!matchingApp?.propflow_thread_id
               return (
                 <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-purple-200 bg-purple-50">
                   <div className="flex items-center gap-3 min-w-0">
@@ -816,8 +837,8 @@ export default function TenantDashboard() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-purple-900">
-                        {bothSigned 
-                          ? "✅ Both parties signed! Complete payment to activate your tenancy" 
+                        {bothSigned
+                          ? "✅ Both parties signed! Complete payment to activate your tenancy"
                           : "Agreement signed — make your payment to activate tenancy"}
                       </p>
                       <p className="text-xs text-purple-700 truncate">{a.property_title || "Your property"}</p>
@@ -827,6 +848,24 @@ export default function TenantDashboard() {
                     <Link href={`/tenant/agreements/${a.id}`}>
                       <Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white h-8 text-xs">Pay Now</Button>
                     </Link>
+                    {hasPropFlow && (
+                      <button
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('propflow:open', {
+                            detail: {
+                              workflow_id: matchingApp!.propflow_thread_id,
+                              bothSigned: true  // skip sign stage – show payment simulation
+                            }
+                          }))
+                          setDismissedPaymentBanners(p => [...p, a.id])
+                          dismissBanner(buildBannerKey("agreement_signed", `payment-${a.id}`))
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-50 to-purple-100 hover:from-purple-100 hover:to-purple-200 text-purple-700 text-xs font-semibold shadow-sm transition-all duration-150"
+                      >
+                        <Bot className="h-3.5 w-3.5" />
+                        Continue in PropFlow
+                      </button>
+                    )}
                     <button onClick={() => { setDismissedPaymentBanners(p => [...p, a.id]); dismissBanner(buildBannerKey("agreement_signed", `payment-${a.id}`)) }}
                       className="text-purple-400 hover:text-purple-600" aria-label="Dismiss">
                       <X className="h-4 w-4" />
@@ -837,6 +876,10 @@ export default function TenantDashboard() {
             }
             case "approval": {
               const a = activeBanner.data as any
+              const matchingApp = tenantData?.applications?.find(
+                (app: any) => app.property_id === a.property_id && app.propflow_thread_id
+              )
+              const hasPropFlow = !!matchingApp?.propflow_thread_id
               return (
                 <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-green-200 bg-green-50">
                   <div className="flex items-center gap-3 min-w-0">
@@ -855,6 +898,21 @@ export default function TenantDashboard() {
                         Sign Now
                       </Button>
                     </Link>
+                    {hasPropFlow && (
+                      <button
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('propflow:open', {
+                            detail: { workflow_id: matchingApp!.propflow_thread_id }
+                          }))
+                          setDismissedApprovalBanner(p => [...p, a.id])
+                          dismissBanner(buildBannerKey("agreement_signed", a.id))
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-300 bg-gradient-to-r from-orange-50 to-orange-100 hover:from-orange-100 hover:to-orange-200 text-orange-700 text-xs font-semibold shadow-sm transition-all duration-150"
+                      >
+                        <Bot className="h-3.5 w-3.5" />
+                        Continue in PropFlow
+                      </button>
+                    )}
                     <button onClick={() => { setDismissedApprovalBanner(p => [...p, a.id]); dismissBanner(buildBannerKey("agreement_signed", a.id)) }}
                       className="text-green-400 hover:text-green-600" aria-label="Dismiss">
                       <X className="h-4 w-4" />
@@ -1062,7 +1120,7 @@ export default function TenantDashboard() {
                 a.status !== "REJECTED" && a.status !== "CANCELLED" && a.status !== "EXPIRED"
               )
               const allApplications = tenantData?.applications ?? []
-              const pendingApps = allApplications.filter((a: any) => a.status === "pending" || a.status === "submitted" || a.status === "under_review")
+              const pendingApps = allApplications.filter((a: any) => normalizeAppStatus(a.status) === "pending")
               const approvedApps = allApplications.filter((a: any) => a.status === "approved")
               const allViewings = tenantData?.viewingRequests ?? []
               const pendingViewings = allViewings.filter((v: any) => v.status === "pending")
@@ -1766,6 +1824,14 @@ export default function TenantDashboard() {
                     </Button>
                   </Link>
                 ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.dispatchEvent(new CustomEvent('propflow:open'))}
+                  className="w-full justify-start border-orange-300 bg-gradient-to-r from-orange-50 to-orange-100 hover:from-orange-100 hover:to-orange-200 h-8 text-xs font-semibold text-orange-700"
+                >
+                  <Bot className="w-3.5 h-3.5 mr-2 text-orange-600" />AI PropFlow Assistant
+                </Button>
               </CardContent>
             </Card>
 
@@ -1838,8 +1904,6 @@ export default function TenantDashboard() {
         onSuccess={() => { invalidateTenantCache() }}
       />
 
-      {/* PropFlow AI Agent — floating rental assistant */}
-      <PropFlowChat />
     </div>
   )
 }

@@ -110,7 +110,7 @@ export function MarketplaceHeader({
       ? "/admin"
       : userType === "landlord"
       ? "/landlord/overview"
-      : "/tenant/overview"
+      : "/tenant"
 
   const handleLogout = async () => {
     try {

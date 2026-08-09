@@ -1148,6 +1148,19 @@ export default function PropertyDetailPage() {
                       <p className={`text-center text-[11px] mt-1.5 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`}>
                         {completedViewingId ? "Viewing linked to your application" : "Viewing recommended before applying"}
                       </p>
+
+                      {/* Continue in PropFlow — resume the AI search and apply from the chat */}
+                      {user && user.user_type !== "landlord" && (
+                        <button
+                          onClick={() => router.push("/tenant?propflow=1")}
+                          className={`w-full h-10 mt-2 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all border ${
+                            theme === "dark" ? "border-orange-500/30 text-orange-400 hover:bg-orange-950/30" : "border-orange-200 text-orange-600 hover:bg-orange-50"
+                          }`}
+                        >
+                          <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
+                          Continue in PropFlow to Apply
+                        </button>
+                      )}
                     </div>
 
                     {/* Report — ghost, low prominence */}
@@ -1250,6 +1263,19 @@ export default function PropertyDetailPage() {
             <Video className="h-3 w-3" /> Live
           </button>
         </div>
+
+        {/* Continue in PropFlow — resume the AI search from the chat */}
+        {user && user.user_type !== "landlord" && (
+          <button
+            onClick={() => router.push("/tenant?propflow=1")}
+            className={`w-full h-9 mb-2 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all border ${
+              theme === "dark" ? "bg-orange-500/15 border-orange-500/30 text-orange-400" : "bg-orange-50 border-orange-200 text-orange-600"
+            }`}
+          >
+            <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
+            Continue in PropFlow to Apply
+          </button>
+        )}
 
         <div className="flex gap-2.5">
           {/* Viewing button — tracks type, disables if already requested */}
