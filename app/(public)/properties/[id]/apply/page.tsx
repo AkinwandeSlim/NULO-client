@@ -183,13 +183,10 @@ export default function ApplicationPage() {
     const hydrate = async () => {
       try {
         const res = await applicationsAPI.getMyApplications()
-        console.log('[APPLY] getMyApplications response:', res)
 
         if (res.success && res.applications && res.applications.length > 0) {
-          console.log('[APPLY] Found', res.applications.length, 'applications')
           // Find newest app for a DIFFERENT property
           const previousApp: any = res.applications.find((app: any) => app.property_id !== propertyId)
-          console.log('[APPLY] Previous app (for different property):', previousApp)
 
           if (previousApp) {
             setFormData(prev => {
@@ -233,10 +230,8 @@ export default function ApplicationPage() {
                 })
               }
 
-              console.log('[APPLY] FormData after previous app hydration:', updated)
               return updated
             })
-            console.log('[APPLY] Pre-filled from previous application')
           } else {
             console.warn('[APPLY] No previous application found for different property')
           }
@@ -294,8 +289,6 @@ export default function ApplicationPage() {
         }
 
         if (profile) {
-          console.log('[APPLY] Profile loaded:', profile)
-          console.log('[APPLY] Profile fields - dob:', profile.date_of_birth, 'nationality:', profile.nationality, 'marital:', profile.marital_status, 'phone:', profile.phone)
           setFormData(prev => {
             const updated = {
               ...prev,
@@ -308,10 +301,8 @@ export default function ApplicationPage() {
               jobTitle: profile.job_title || '',
               employmentDuration: profile.employment_duration || prev.employmentDuration || '',
             }
-            console.log('[APPLY] FormData after profile prefill:', updated)
             return updated
           })
-          console.log('[APPLY] Personal & employment info pre-filled from tenant_profiles')
         } else {
           console.warn('[APPLY] No profile found for user:', user.id)
         }
@@ -399,9 +390,10 @@ export default function ApplicationPage() {
     }
 
     if (step === 4) {
-      // TODO: Re-enable document validation after bucket is created
-      // if (!formData.idDocument)      newErrors.idDocument      = "ID document is required"
-      // if (!formData.proofOfIncome)   newErrors.proofOfIncome   = "Proof of income is required"
+      // Bucket (application-documents) exists — enforce required docs inline.
+      // Works for both a freshly selected File and a reused SavedDoc.
+      if (!formData.idDocument)      newErrors.idDocument      = "ID document is required"
+      if (!formData.proofOfIncome)   newErrors.proofOfIncome   = "Proof of income is required"
     }
 
     if (step === 5) {
@@ -482,10 +474,6 @@ export default function ApplicationPage() {
         }
       }
 
-      console.log('✅ [APP] References Data:', referencesData)
-      console.log('✅ [APP] References Type:', typeof referencesData)
-      console.log('✅ [APP] Is Array?', Array.isArray(referencesData))
-
       const applicationData: CreateApplicationData = {
         property_id:          propertyId,
         viewing_id:           viewingIdFromUrl || undefined,
@@ -506,8 +494,6 @@ export default function ApplicationPage() {
         emergency_contact_phone: formData.emergencyContactPhone || "",
       }
 
-      console.log('Application Data:', applicationData)
-
       await applicationsAPI.create(applicationData)
 
       // Enrich tenant profile with personal info for future prefill (fire-and-forget, non-blocking).
@@ -516,7 +502,7 @@ export default function ApplicationPage() {
       // and silently 404s because there is no rewrite.
       const enrichProfile = async () => {
         try {
-          const res = await apiClient.post('/api/v1/tenants/enrich-profile', {
+          await apiClient.post('/api/v1/tenants/enrich-profile', {
             employment_status: formData.employmentStatus,
             company_name: formData.employer_name,
             job_title: formData.jobTitle,
@@ -527,7 +513,6 @@ export default function ApplicationPage() {
             marital_status: formData.maritalStatus || undefined,
             phone: formData.phone || undefined,
           })
-          console.log('[APPLY] Enrichment succeeded:', res.data)
         } catch (enrichErr) {
           console.warn('[APPLY] Enrichment failed:', enrichErr)
         }
