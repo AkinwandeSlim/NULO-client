@@ -14,17 +14,25 @@
 import React, { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import {
-  Bot, Building2, CheckCircle2, ChevronDown, Eye, Loader2, Lock,
-  MapPin, MessageCircle, RotateCcw, Send, Shield, Sparkles, ThumbsUp, X,
+  AlertCircle, Bot, Building2, CheckCircle2, ChevronDown, ChevronRight, Eye,
+  Loader2, Lock, MapPin, MessageCircle, RotateCcw, Send, ShieldCheck,
+  ThumbsUp, X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
-import { applicationsAPI } from "@/lib/api/applications"
 import {
   propflowChat, propflowGuestChat, propflowSelect, propflowResume,
-  propflowSimulatePayment, propflowStatus,
-  type ChatResponse, type PropertyMatch, type StatusResponse,
+  propflowSimulatePayment, propflowStatus, propflowCompleteApplication,
+  type ChatResponse, type PropertyMatch,
+  type CompleteApplicationPayload,
 } from "@/lib/api/propflow"
+import { viewingRequestsAPI, type ViewingRequest, type ViewingRequestData } from "@/lib/api/viewingRequestsTenant"
+import TrustPassportCard from "./TrustPassportCard"
+import {
+  ViewingDecisionCard, ViewingScheduleCard, ViewingConfirmationCard,
+  ViewingStatusCard,
+  type ViewingProperty,
+} from "./ViewingFlowCard"
 
 // --- Types ------------------------------------------------------------------
 
@@ -35,9 +43,34 @@ interface Message {
   stage?: string; actionLabel?: string; actionType?: ActionType
   actionUrl?: string  // for navigation-type actions (e.g. link to dashboard page)
   signIn?: boolean    // renders the guest "log in to apply" card
+  trustPassport?: { property: PropertyMatch }  // renders the in-chat Trust Passport card
+  // Viewing scheduling (in-chat decision layer over the existing viewing API):
+  viewingDecision?: { property: ViewingProperty; index?: number }       // "view first or apply now?"
+  viewingSchedule?: { property: ViewingProperty; index?: number }       // compact scheduling form
+  viewingConfirmation?: { property: ViewingProperty; index?: number; date: string; timeSlot: string; viewingType: string }
+  viewingStatus?: { property: ViewingProperty; index?: number; request: ViewingRequest | null }
 }
 type ActionType = "select_property" | "sign_lease" | "simulate_payment" | "confirm_payment" | "restart"
+/** Viewing actions the chat can route to without calling the search graph. */
+type ChatIntent = "view" | "apply" | "status" | "accept_reschedule" | "decline_reschedule" | null
 interface PropFlowChatProps { defaultOpen?: boolean; className?: string }
+
+/** Normalise the tenant viewing-requests list response into a typed array. */
+function getViewingRequestsFrom(res: { data?: unknown }): ViewingRequest[] {
+  const d = (res as { data?: { viewing_requests?: unknown } }).data
+  return Array.isArray(d?.viewing_requests) ? (d.viewing_requests as ViewingRequest[]) : []
+}
+
+/** Callbacks the viewing cards fire back into the chat widget. */
+type ViewingHandlers = {
+  onSchedule: (p: ViewingProperty, index?: number) => void
+  onApply: (p: ViewingProperty, index?: number) => void
+  onSubmit: (p: ViewingProperty, index: number | undefined, data: ViewingRequestData) => void
+  onContinue: () => void
+  onAsk: () => void
+  onReschedule: (id: string, decision: "accept" | "decline", p: ViewingProperty, index?: number) => void
+  onRequestAgain: (p: ViewingProperty, index?: number) => void
+}
 
 const AGENT_NAME = "PropFlow"
 
@@ -114,38 +147,192 @@ function PaymentAccountCard({ accountNumber, amount }: { accountNumber: string; 
   )
 }
 
-function STAGE_LABELS(s: string) {
-  const m: Record<string, string> = {
-    awaiting_tenant_selection: "Choose", awaiting_landlord_approval: "Approval",
-    agreement_drafted: "Sign", awaiting_landlord_signature: "Countersign",
-    nomba_provisioned: "Pay", awaiting_full_payment: "Confirm",
-    disbursement_complete: "Done!", rejected: "Rejected", error: "Error",
-  }
-  return m[s]
+/**
+ * Calm contextual status shown in the header (and on messages) instead of the
+ * old red "Error" pill. A red state is only used when a real request fails and
+ * includes a "Try again" affordance. Every other stage maps to a quiet,
+ * reassuring label.
+ */
+type Tone = "slate" | "orange" | "amber" | "indigo" | "sky" | "green" | "red"
+
+const STATUS_FOR_STAGE: Record<string, { label: string; tone: Tone }> = {
+  idle: { label: "Ready", tone: "slate" },
+  intent_extracted: { label: "Finding homes", tone: "slate" },
+  needs_clarification: { label: "Just a moment", tone: "amber" },
+  awaiting_tenant_selection: { label: "Finding homes", tone: "slate" },
+  awaiting_trust_profile: { label: "Application ready", tone: "orange" },
+  application_created: { label: "Waiting for landlord review", tone: "amber" },
+  awaiting_landlord_approval: { label: "Waiting for landlord review", tone: "amber" },
+  agreement_drafted: { label: "Action needed", tone: "indigo" },
+  awaiting_landlord_signature: { label: "Action needed", tone: "indigo" },
+  nomba_provisioned: { label: "Payment pending", tone: "sky" },
+  awaiting_full_payment: { label: "Payment pending", tone: "sky" },
+  disbursement_complete: { label: "All done", tone: "green" },
 }
 
-function StagePill({ stage }: { stage: string }) {
-  const label = STAGE_LABELS(stage)
-  if (!label) return null
-  const ok = stage === "disbursement_complete" || stage === "nomba_provisioned"
-  const err = stage === "rejected" || stage === "error"
+const TONE_CLS: Record<Tone, string> = {
+  slate: "bg-slate-100 text-slate-600",
+  orange: "bg-orange-50 text-orange-700",
+  amber: "bg-amber-50 text-amber-700",
+  indigo: "bg-indigo-50 text-indigo-700",
+  sky: "bg-sky-50 text-sky-700",
+  green: "bg-emerald-50 text-emerald-700",
+  red: "bg-red-50 text-red-600",
+}
+const DOT_CLS: Record<Tone, string> = {
+  slate: "bg-slate-400", orange: "bg-orange-500", amber: "bg-amber-500",
+  indigo: "bg-indigo-500", sky: "bg-sky-500", green: "bg-emerald-500", red: "bg-red-500",
+}
+
+function StatusChip({ stage, error, onRetry, showIdle = false }: {
+  stage: string
+  error?: string | null
+  onRetry?: () => void
+  showIdle?: boolean
+}) {
+  if (error) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-600">
+        <AlertCircle className="h-3 w-3" />
+        Something went wrong
+        {onRetry && (
+          <button type="button" onClick={onRetry} className="font-semibold underline underline-offset-2 hover:text-red-700">
+            Try again
+          </button>
+        )}
+      </span>
+    )
+  }
+  const st = STATUS_FOR_STAGE[stage]
+  if (!st) return null
+  if (stage === "idle" && !showIdle) return null
   return (
-    <span className={"inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium " +
-      (ok ? "bg-green-100 text-green-700" : err ? "bg-red-100 text-red-600" : "bg-orange-100 text-orange-700")}>
-      {!ok && !err && <Sparkles className="h-2.5 w-2.5" />}
-      {label}
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium", TONE_CLS[st.tone])}>
+      <span className={cn("h-1.5 w-1.5 rounded-full", DOT_CLS[st.tone])} />
+      {st.label}
     </span>
   )
 }
 
-function ChatBubble({ msg, onSelectProperty, onAction }: {
+/** Compact in-chat card for the property the tenant selected — the full guided
+ *  application opens as a focused modal (TrustPassportCard), not inline. */
+function TrustPassportBanner({ property, onContinue }: {
+  property: PropertyMatch
+  onContinue: () => void
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center gap-3 p-3">
+        {property.images?.[0] ? (
+          <img src={property.images[0]} alt={property.title} className="h-12 w-12 rounded-lg object-cover flex-shrink-0" />
+        ) : (
+          <div className="h-12 w-12 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+            <Building2 className="h-5 w-5 text-slate-300" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-slate-800 leading-tight">Complete your application</p>
+          <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+            {property.title}{property.location ? ` · ${property.location}` : ""}
+          </p>
+          <p className="text-xs font-semibold text-orange-600 mt-0.5">
+            NGN {property.price.toLocaleString()}/mo
+          </p>
+        </div>
+        <ShieldCheck className="h-5 w-5 text-orange-500 flex-shrink-0" />
+      </div>
+      <div className="px-3 pb-3">
+        <button
+          type="button"
+          onClick={onContinue}
+          className="w-full text-sm font-medium rounded-xl py-2.5 inline-flex items-center justify-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+        >
+          Continue application
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ChatBubble({ msg, onSelectProperty, onAction, onOpenTrust, onViewing, viewingContext }: {
   msg: Message; onSelectProperty?: (i: number) => void; onAction?: (t: ActionType) => void
+  onOpenTrust?: () => void
+  onViewing?: ViewingHandlers
+  viewingContext?: { name: string; phone: string; submitting: boolean; error: string | null }
 }) {
   const isUser = msg.role === "user"
   const isSystem = msg.role === "system"
   const hasCards = !isUser && !isSystem && !!(msg.propertyMatches && msg.propertyMatches.length > 0)
   // Guest sign-in card renders full-width instead of a text bubble.
   if (msg.signIn) return <GuestSignInCard />
+  // Trust Passport renders full-width as a compact "continue" banner — the form
+  // itself lives in the focused modal so the chat stays uncluttered.
+  if (msg.trustPassport) {
+    return <TrustPassportBanner property={msg.trustPassport.property} onContinue={() => onOpenTrust?.()} />
+  }
+
+  // ── Viewing decision: "view first, or apply now?" ──────────────────────────
+  if (msg.viewingDecision && onViewing) {
+    const d = msg.viewingDecision
+    return (
+      <ViewingDecisionCard
+        property={d.property}
+        onScheduleViewing={() => onViewing.onSchedule(d.property, d.index)}
+        onApplyNow={() => onViewing.onApply(d.property, d.index)}
+        onContinueBrowsing={() => onViewing.onContinue()}
+        onAskQuestion={() => onViewing.onAsk()}
+      />
+    )
+  }
+
+  // ── Viewing scheduling: compact in-chat form ───────────────────────────────
+  if (msg.viewingSchedule && onViewing && viewingContext) {
+    const s = msg.viewingSchedule
+    return (
+      <ViewingScheduleCard
+        property={s.property}
+        defaultName={viewingContext.name}
+        defaultPhone={viewingContext.phone}
+        submitting={viewingContext.submitting}
+        error={viewingContext.error}
+        onSubmit={data => onViewing.onSubmit(s.property, s.index, data)}
+        onApplyNow={() => onViewing.onApply(s.property, s.index)}
+      />
+    )
+  }
+
+  // ── Viewing confirmation: after a successful request ───────────────────────
+  if (msg.viewingConfirmation && onViewing) {
+    const c = msg.viewingConfirmation
+    return (
+      <ViewingConfirmationCard
+        property={c.property}
+        date={c.date}
+        timeSlot={c.timeSlot}
+        viewingType={c.viewingType}
+        onApplyNow={() => onViewing.onApply(c.property, c.index)}
+        onContinueBrowsing={() => onViewing.onContinue()}
+      />
+    )
+  }
+
+  // ── Viewing status: lifecycle-aware (pending / reschedule / confirmed / …) ─
+  if (msg.viewingStatus && onViewing) {
+    const st = msg.viewingStatus
+    return (
+      <ViewingStatusCard
+        property={st.property}
+        request={st.request}
+        onContinueBrowsing={() => onViewing.onContinue()}
+        onApplyNow={() => onViewing.onApply(st.property, st.index)}
+        onRequestAnotherViewing={() => onViewing.onRequestAgain(st.property, st.index)}
+        onAcceptReschedule={() => st.request && onViewing.onReschedule(st.request.id, "accept", st.property, st.index)}
+        onDeclineReschedule={() => st.request && onViewing.onReschedule(st.request.id, "decline", st.property, st.index)}
+      />
+    )
+  }
+
   return (
     <div className={hasCards ? "space-y-2" : ""}>
       <div className={"flex gap-2 " + (isUser ? "flex-row-reverse" : "") + (isSystem ? " justify-center" : "")}>
@@ -157,7 +344,7 @@ function ChatBubble({ msg, onSelectProperty, onAction }: {
              "rounded-tl-sm bg-white text-slate-800 shadow-sm border border-slate-100")}>
             {msg.text}
           </div>
-          {!isUser && !isSystem && msg.stage && <div className="pl-1"><StagePill stage={msg.stage} /></div>}
+          {!isUser && !isSystem && msg.stage && <div className="pl-1"><StatusChip stage={msg.stage} /></div>}
           {msg.paymentAccount && <PaymentAccountCard accountNumber={msg.paymentAccount.number} amount={msg.paymentAccount.amount} />}
 
         {/* Navigation link button (opens dashboard page) */}
@@ -267,21 +454,77 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     } catch { /* ignore */ }
     return "idle"
   })
+  // Trust Passport modal — kept mounted while hidden so a partial draft survives
+  // "Save and finish later" (closing the modal never loses the tenant's inputs).
+  const [trustModalOpen, setTrustModalOpen] = useState(false)
+  const [errorBanner, setErrorBanner] = useState<{ message: string } | null>(null)
+  // Inline error shown on the viewing schedule card (e.g. duplicate request).
+  const [viewingError, setViewingError] = useState<string | null>(null)
+  const retryRef = useRef<(() => void) | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const welcomeSet = useRef(false)
+  const trustPanelRef = useRef<HTMLDivElement>(null)
+  const isLoadingRef = useRef(isLoading)
+  isLoadingRef.current = isLoading
   // Tracks whether a guest search was already replayed after login.
   const guestResumedRef = useRef(false)
+  // Latest matched properties — used to render the Trust Passport card for the
+  // property the tenant selects (the /select response doesn't echo it back).
+  const propertyMatchesRef = useRef<PropertyMatch[]>([])
+  // The viewing intent handler is defined below (after handleSelectProperty, on
+  // which it depends). sendMessage dispatches through this ref instead, so the
+  // declaration order stays readable without a temporal-dead-zone error.
+  const handleViewingIntentRef = useRef<((intent: Exclude<ChatIntent, null>) => Promise<boolean>) | null>(null)
 
-  // State for context-aware landlord review — now redirects to dashboard instead of opening chat
-  const [landlordReviewData, setLandlordReviewData] = useState<{
-    workflow_id: string;
-    application_id: string;
-    briefing?: string;
-    tenantName?: string;
-    propertyTitle?: string;
-    isLoading: boolean;
-  } | null>(null)
+  // The property currently in a viewing context (decision/schedule/status card).
+  const getContextProperty = useCallback((): { property: ViewingProperty; index?: number } | null => {
+    const m = [...messages].reverse().find(mm =>
+      mm.viewingDecision || mm.viewingSchedule || mm.viewingConfirmation || mm.viewingStatus)
+    if (!m) return null
+    return {
+      property: (m.viewingDecision?.property || m.viewingSchedule?.property || m.viewingConfirmation?.property || m.viewingStatus?.property) as ViewingProperty,
+      index: m.viewingDecision?.index ?? m.viewingSchedule?.index ?? m.viewingConfirmation?.index ?? m.viewingStatus?.index,
+    }
+  }, [messages])
+
+  // Detect browsing intent: user wants to see/filter existing results, not run a new search.
+  // Keywords: "list", "show", "prices", "which ones", "filter", "sort", "cheaper", "more expensive"
+  // Returns true if we should re-present existing cards instead of sending to the graph.
+  const detectBrowsingIntent = useCallback((text: string): boolean => {
+    if (propertyMatchesRef.current.length === 0) return false
+    const t = text.toLowerCase()
+    // Match browsing intent phrases — the user wants to inspect or filter what they already saw
+    return /\b(list|show|prices|which ones|filter|sort|cheaper|more expensive|under \d+|over \d+|have \d+ bed)\b/.test(t)
+  }, [])
+
+  // Lightweight conversational intent detection for viewing actions. Deliberately
+  // conservative: a phrase like "I want to view a 2-bed in Lekki" must NOT be
+  // hijacked — it only triggers with a strong scheduling verb or a referential
+  // "view it/first" that needs a property already in focus.
+  const detectViewingIntent = useCallback((
+    text: string,
+  ): ChatIntent => {
+    const t = text.toLowerCase()
+    const ctx = getContextProperty()
+    const hasCards = propertyMatchesRef.current.length > 0
+    const inSelection = currentStage === "awaiting_tenant_selection"
+
+    // Specific actions first — accept/decline a proposed time, or check status.
+    if (/accept (the )?(new |proposed )?(viewing )?(time|slot|date)|accept (the )?reschedule|accept (the )?new time/.test(t)) return "accept_reschedule"
+    if (/decline (the )?(new |proposed )?(viewing )?(time|slot|date)|decline (the )?reschedule/.test(t)) return "decline_reschedule"
+    if (/what('s| is) happening with my viewing|status of my viewing|track my viewing|when is my viewing|my viewing request/.test(t)) return "status"
+
+    if (/\bapply now\b|i('m| am) ready to apply|ready to apply|want to apply (for|now)|let('s|s) apply/.test(t)) return "apply"
+
+    // Strong scheduling verbs — safe to act on even before a property is picked.
+    if (/(book|schedule|arrange|request).{0,20}(viewing|inspection|tour)|(viewing|inspection|tour).{0,20}(book|schedule|arrange)|inspect (the |this )?propert|virtual tour|live tour|schedule an inspection/.test(t)) return "view"
+
+    // Referential viewing ("view it", "view first") — only with a property in focus.
+    if ((ctx || (hasCards && inSelection)) && /\bview (it|this|the property)\b|view first|viewing first|want to (view|see) (it|this)|can i (view|see|inspect) (it|this)/.test(t)) return "view"
+
+    return null
+  }, [getContextProperty, propertyMatchesRef, currentStage])
 
   const { user, userProfile } = useAuth()
   const userName = user?.full_name || user?.email?.split("@")[0] || "there"
@@ -574,9 +817,11 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
   }, [])
 
   const handleChatResponse = useCallback((r: ChatResponse) => {
+    setErrorBanner(null)
     setThreadId(r.workflow_id)
     setCurrentStage(r.current_stage)
     const matches = r.matched_properties ?? undefined
+    if (matches && matches.length > 0) propertyMatchesRef.current = matches
     const sel = r.current_stage === "awaiting_tenant_selection"
     const showingCards = sel && matches && matches.length > 0
     // Strip the enumerated property list from text when showing cards (avoids duplication)
@@ -629,25 +874,68 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
   // Removed: loadLandlordReview — Landlords now manage applications from the dashboard detail page.
   // The propflow:open event redirects landlords directly to /landlord/applications/{id}.
 
-  const sendMessage = useCallback(async () => {
-    const t = input.trim()
+  const sendMessage = useCallback(async (text?: string) => {
+    const t = (text ?? input).trim()
     if (!t || isLoading) return
     setInput(""); setIsLoading(true)
+    setErrorBanner(null)
+
+    // ── Browsing intent — user wants to see/filter existing results ──────────
+    // If results exist and the message is about browsing (list/show/prices/filter),
+    // re-present the cards instead of re-running a search (saves bandwidth on slow networks).
+    if (detectBrowsingIntent(t)) {
+      addMessage({ role: "user", text: t })
+      // Re-add the property cards with a contextual response
+      if (propertyMatchesRef.current.length > 0) {
+        addMessage({
+          role: "agent",
+          text: `Here are the ${propertyMatchesRef.current.length} properties I found for you:`,
+          propertyMatches: propertyMatchesRef.current,
+          stage: "awaiting_tenant_selection",
+        })
+      }
+      setIsLoading(false)
+      return
+    }
+
+    // ── Viewing / apply / status intent — handle locally against the existing
+    //    viewing backend instead of re-running a property search. ─────────────
+    const intent = detectViewingIntent(t)
+    if (intent) {
+      addMessage({ role: "user", text: t })
+      try {
+        await handleViewingIntentRef.current?.(intent)
+      } catch (e: any) {
+        addMessage({ role: "agent", text: "Sorry: " + (e?.message || "Something went wrong"), stage: "error" })
+      } finally {
+        setIsLoading(false)
+      }
+      return
+    }
+
+    // A new search makes any previously-shown property cards, viewing cards and
+    // in-progress application obsolete — drop them so stale "Select"/"Continue"
+    // buttons can't act on the wrong property from the new thread.
+    if (threadId) setMessages(p => p.filter(m => !m.propertyMatches && !m.trustPassport && !m.viewingDecision && !m.viewingSchedule && !m.viewingConfirmation && !m.viewingStatus))
     addMessage({ role: "user", text: t })
     try {
       if (user) {
-        handleChatResponse(await propflowChat({ message: t }))
+        // Follow-ups pass the current thread so the server carries the earlier
+        // conversation and resolves the new message in context.
+        handleChatResponse(await propflowChat({ message: t, workflow_id: threadId }))
       } else {
         // Guest (unauthenticated) search-only path. Persist the inquiry so it
         // can be replayed through the authenticated /chat after login.
         try { localStorage.setItem(GUEST_PENDING_KEY, JSON.stringify({ text: t, ts: Date.now() })) } catch { /* ignore */ }
-        handleChatResponse(await propflowGuestChat({ message: t }))
+        handleChatResponse(await propflowGuestChat({ message: t, workflow_id: threadId }))
       }
     } catch (e: any) {
-      const m = e?.message || ""
+      const m = e?.message || "Something went wrong"
       addMessage({ role: "agent", text: m.includes("401") ? "Session expired. Refresh." : "Sorry: " + m, stage: "error" })
+      setErrorBanner({ message: m })
+      retryRef.current = () => { void sendMessage(t) }
     } finally { setIsLoading(false) }
-  }, [input, isLoading, addMessage, handleChatResponse, user])
+  }, [input, isLoading, addMessage, handleChatResponse, user, threadId, detectBrowsingIntent, detectViewingIntent])
 
   const handleSelectProperty = useCallback(async (idx: number) => {
     if (isLoading) return
@@ -666,11 +954,261 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     try {
       const r = await propflowSelect(threadId, idx)
       setCurrentStage(r.current_stage)
-      addMessage({ role: "agent", text: r.response_message, stage: r.current_stage })
+
+      if (r.current_stage === "awaiting_trust_profile") {
+        // Add the compact in-chat banner for the selected property, then open the
+        // focused Trust Passport modal (the form no longer lives in the chat).
+        const property = propertyMatchesRef.current[idx]
+        addMessage({ role: "agent", text: r.response_message, stage: r.current_stage })
+        if (property) {
+          addMessage({ role: "agent", text: "", stage: r.current_stage, trustPassport: { property } })
+        }
+        setTrustModalOpen(true)
+      } else {
+        addMessage({ role: "agent", text: r.response_message, stage: r.current_stage })
+      }
     } catch (e: any) {
       addMessage({ role: "agent", text: "Selection failed: " + (e?.message || "Unknown"), stage: "error" })
+      setErrorBanner({ message: e?.message || "Something went wrong" })
     } finally { setIsLoading(false) }
   }, [threadId, isLoading, addMessage, user])
+
+  // ── Viewing scheduling — client-side decision layer over the existing
+  //     viewing_requests backend. No parallel flow, no new tables. ────────────
+
+  /** Remove any earlier viewing card (decision/schedule/status/confirmation)
+   *  for the same property, so the newest card always wins and nothing stacks. */
+  const replaceViewingCards = useCallback((property: ViewingProperty) => {
+    setMessages(p => p.filter(m => {
+      if (m.viewingDecision) return m.viewingDecision.property.id !== property.id
+      if (m.viewingSchedule) return m.viewingSchedule.property.id !== property.id
+      if (m.viewingStatus) return m.viewingStatus.property.id !== property.id
+      if (m.viewingConfirmation) return m.viewingConfirmation.property.id !== property.id
+      return true
+    }))
+  }, [])
+
+  /** Show a schedule form, unless the tenant already has an ACTIVE request for
+   *  this property (pending/confirmed/reschedule_proposed) — then show its
+   *  status instead so duplicates are never offered in the first place. */
+  const showScheduleOrStatus = useCallback(async (property: ViewingProperty, index?: number) => {
+    if (!user) { addMessage({ role: "system", text: "You'll need an account to schedule a viewing.", signIn: true }); return }
+    setViewingError(null)
+    // A schedule form is already open for this property — don't re-mount it
+    // (re-mounting would reset the tenant's inputs).
+    const newest = [...messages].reverse().find(m =>
+      m.viewingDecision || m.viewingSchedule || m.viewingStatus || m.viewingConfirmation)
+    if (newest?.viewingSchedule && newest.viewingSchedule.property.id === property.id) return
+    setIsLoading(true)
+    try {
+      const res = await viewingRequestsAPI.getMyRequests()
+      const active = ["pending", "confirmed", "reschedule_proposed"]
+      const req = res.success
+        ? getViewingRequestsFrom(res).find(r => r.property_id === property.id && active.includes(r.status))
+        : null
+      replaceViewingCards(property)
+      if (req) {
+        addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: req } })
+      } else {
+        addMessage({ role: "agent", text: "", viewingSchedule: { property, index } })
+      }
+    } catch {
+      replaceViewingCards(property)
+      addMessage({ role: "agent", text: "", viewingSchedule: { property, index } })
+    } finally { setIsLoading(false) }
+  }, [user, addMessage, messages, replaceViewingCards])
+
+  const handleViewingSubmit = useCallback(async (property: ViewingProperty, index: number | undefined, data: ViewingRequestData) => {
+    if (!user) { addMessage({ role: "system", text: "You'll need an account to request a viewing.", signIn: true }); return }
+    setViewingError(null)
+    setIsLoading(true)
+    try {
+      const res = await viewingRequestsAPI.create(data)
+      if (!res.success) {
+        const err = String(res.error || "")
+        if (/active viewing request/i.test(err)) {
+          addMessage({ role: "agent", text: "You already have an active viewing request for this property. You can track it in My Viewings." })
+          const list = await viewingRequestsAPI.getMyRequests()
+          if (list.success) {
+            const req = getViewingRequestsFrom(list).find(r => r.property_id === property.id)
+            if (req) addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: req } })
+          }
+        } else if (/in the past|cannot be in the past/i.test(err)) {
+          addMessage({ role: "agent", text: "Please choose today or a future date." })
+        } else {
+          addMessage({ role: "agent", text: "Could not send your viewing request: " + err, stage: "error" })
+        }
+        return
+      }
+      // Success — drop the stale form + any old status card, show confirmation.
+      setMessages(p => p.filter(m => !m.viewingSchedule && !(m.viewingStatus && m.viewingStatus.property.id === property.id)))
+      addMessage({
+        role: "agent", text: "",
+        viewingConfirmation: {
+          property, index,
+          date: data.preferred_date,
+          timeSlot: data.time_slot,
+          viewingType: data.viewing_type || "PHYSICAL",
+        },
+      })
+    } catch {
+      addMessage({ role: "agent", text: "We could not send your request just now. Nothing has been booked yet — please try again.", stage: "error" })
+    } finally { setIsLoading(false) }
+  }, [user, addMessage])
+
+  const handleViewingStatus = useCallback(async (property?: ViewingProperty, index?: number) => {
+    if (!user) { addMessage({ role: "system", text: "You'll need an account to track viewings.", signIn: true }); return }
+    setIsLoading(true)
+    try {
+      const res = await viewingRequestsAPI.getMyRequests()
+      if (!res.success) { addMessage({ role: "agent", text: "Could not fetch your viewings right now. Please try again.", stage: "error" }); return }
+      const requests = getViewingRequestsFrom(res)
+      const target = property ? requests.find(r => r.property_id === property.id) : requests[0]
+      if (!target) {
+        addMessage({ role: "agent", text: "You don't have any viewing requests yet. Pick a property and I'll help you schedule a viewing." })
+        return
+      }
+      addMessage({
+        role: "agent", text: "",
+        viewingStatus: { property: property || (target.property as unknown as ViewingProperty), index, request: target },
+      })
+    } catch {
+      addMessage({ role: "agent", text: "Could not fetch your viewings right now. Please try again.", stage: "error" })
+    } finally { setIsLoading(false) }
+  }, [user, addMessage])
+
+  const handleReschedule = useCallback(async (requestId: string, decision: "accept" | "decline", property: ViewingProperty, index?: number) => {
+    setIsLoading(true)
+    try {
+      const res = await viewingRequestsAPI.respondToReschedule(requestId, decision)
+      if (!res.success) {
+        addMessage({ role: "agent", text: "Could not process that response: " + (res.error || "Please try again."), stage: "error" })
+        return
+      }
+      // Refresh so the chat shows the confirmed (accept) or closed (decline) state.
+      const list = await viewingRequestsAPI.getMyRequests()
+      if (list.success) {
+        const req = getViewingRequestsFrom(list).find(r => r.id === requestId) || null
+        addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: req } })
+      }
+    } catch {
+      addMessage({ role: "agent", text: "Could not process that response. Please try again.", stage: "error" })
+    } finally { setIsLoading(false) }
+  }, [addMessage])
+
+  const applyForProperty = useCallback(async (property: ViewingProperty, index?: number) => {
+    if (!user) { addMessage({ role: "system", text: "You'll need an account to apply.", signIn: true }); return }
+    let idx = index
+    if (idx == null || idx < 0) idx = propertyMatchesRef.current.findIndex(p => p.id === property.id)
+    if (idx == null || idx < 0) {
+      addMessage({ role: "agent", text: "This property is no longer in your results. Please select it again to apply.", stage: "error" })
+      return
+    }
+    // Clear the viewing cards so the Trust Passport banner becomes the focus.
+    setMessages(p => p.filter(m => !m.viewingDecision && !m.viewingSchedule && !m.viewingConfirmation && !m.viewingStatus))
+    await handleSelectProperty(idx)
+  }, [user, addMessage, handleSelectProperty])
+
+  const handleViewingIntent = useCallback(async (
+    intent: Exclude<ChatIntent, null>,
+  ): Promise<boolean> => {
+    const ctx = getContextProperty()
+    const matches = propertyMatchesRef.current
+
+    if (intent === "view") {
+      if (ctx) { await showScheduleOrStatus(ctx.property, ctx.index); return true }
+      if (matches.length === 1) { await showScheduleOrStatus(matches[0]); return true }
+      if (matches.length > 1) {
+        addMessage({ role: "agent", text: "Which property would you like to schedule a viewing for? Tap one of the options above." })
+        return true
+      }
+      addMessage({ role: "agent", text: "Happy to help you schedule a viewing! First tell me what you're looking for — or pick a property from the results — and I'll set up the viewing for you." })
+      return true
+    }
+
+    if (intent === "apply") {
+      if (ctx) { await applyForProperty(ctx.property, ctx.index); return true }
+      if (matches.length === 1) { await applyForProperty(matches[0]); return true }
+      addMessage({ role: "agent", text: "Which property would you like to apply for? Tap one of the options above." })
+      return true
+    }
+
+    if (intent === "status") {
+      await handleViewingStatus(ctx?.property, ctx?.index)
+      return true
+    }
+
+    if (intent === "accept_reschedule" || intent === "decline_reschedule") {
+      const decision = intent === "accept_reschedule" ? "accept" : "decline"
+      if (!ctx) {
+        addMessage({ role: "agent", text: `Which viewing time would you like to ${decision}? Open the property's viewing card and choose the response there.` })
+        return true
+      }
+      const res = await viewingRequestsAPI.getMyRequests()
+      const req = getViewingRequestsFrom(res).find(r => r.property_id === ctx.property.id && r.status === "reschedule_proposed")
+      if (!req) {
+        addMessage({ role: "agent", text: "There's no proposed time awaiting your response for this property right now." })
+        return true
+      }
+      await handleReschedule(req.id, decision, ctx.property, ctx.index)
+      return true
+    }
+    return false
+  }, [getContextProperty, showScheduleOrStatus, applyForProperty, handleViewingStatus, handleReschedule, addMessage])
+
+  // Make the intent handler reachable from sendMessage (declared earlier).
+  handleViewingIntentRef.current = handleViewingIntent
+
+  const openViewingDecision = useCallback((index: number) => {
+    if (isLoading) return
+    if (!user) { addMessage({ role: "system", text: "You'll need an account to view or apply for this property.", signIn: true }); return }
+    if (!threadId) { addMessage({ role: "system", text: "Cannot proceed — session not found. Please start a new search." }); return }
+    const property = propertyMatchesRef.current[index]
+    if (!property) return
+    // Back-to-fork: replace any open form/status card for this property with the
+    // fresh "view or apply" decision.
+    replaceViewingCards(property)
+    addMessage({ role: "agent", text: "", viewingDecision: { property, index } })
+  }, [isLoading, user, threadId, addMessage, replaceViewingCards])
+
+  const handleContinueBrowsing = useCallback(() => {
+    setMessages(p => p.filter(m => !m.viewingDecision && !m.viewingSchedule && !m.viewingConfirmation && !m.viewingStatus))
+  }, [])
+
+  const handleAskQuestion = useCallback(() => {
+    // Keep the viewing card in place — just hand focus to the composer so the
+    // tenant can type their question (a non-viewing message clears the cards).
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }, [])
+
+  const viewingHandlers: ViewingHandlers = {
+    onSchedule: (p, index) => { void showScheduleOrStatus(p, index) },
+    onApply: (p, index) => { void applyForProperty(p, index) },
+    onSubmit: (p, index, data) => { void handleViewingSubmit(p, index, data) },
+    onContinue: handleContinueBrowsing,
+    onAsk: handleAskQuestion,
+    onReschedule: (id, decision, p, index) => { void handleReschedule(id, decision, p, index) },
+    onRequestAgain: (p, index) => { void showScheduleOrStatus(p, index) },
+  }
+
+  const handleCompleteTrust = useCallback(async (payload: CompleteApplicationPayload) => {
+    if (!threadId || isLoading) return
+    setIsLoading(true)
+    try {
+      const r = await propflowCompleteApplication(threadId, payload)
+      setCurrentStage(r.current_stage)
+      addMessage({ role: "agent", text: r.response_message, stage: r.current_stage })
+      // Success — close the modal and let the chat show the next step.
+      setTrustModalOpen(false)
+      setErrorBanner(null)
+    } catch (e: any) {
+      const msg = (e as any)?.message || "Submission failed"
+      addMessage({ role: "agent", text: "Submission failed: " + msg, stage: "error" })
+      setErrorBanner({ message: msg })
+      retryRef.current = () => setTrustModalOpen(true)
+      throw e  // surfaced inline by the card so the tenant can retry without reopening
+    } finally { setIsLoading(false) }
+  }, [threadId, isLoading, addMessage])
 
   const handleAction = useCallback(async (type: ActionType) => {
     if (!threadId || isLoading) return
@@ -711,7 +1249,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       } else if (type === "restart") {
         welcomeSet.current = false
         setThreadId(undefined); setCurrentStage("idle"); setMessages([])
-        setLandlordReviewData(null)
+        setLandlordReviewData(null); setViewingError(null)
         localStorage.removeItem(CHAT_STORAGE_KEY)
       }
     } catch (e: any) {
@@ -725,35 +1263,97 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
-  const actionStages = new Set(["awaiting_tenant_selection", "agreement_drafted",
+  // Stages where the chat pauses for a click, not typing. awaiting_tenant_selection
+  // is NOT included — property results stay conversational so the tenant can type
+  // a refinement ("within 500k-600k", "okay 3-bed") as well as pick a property.
+  const actionStages = new Set(["awaiting_trust_profile", "agreement_drafted",
     "awaiting_landlord_signature", "nomba_provisioned", "awaiting_full_payment", "disbursement_complete"])
 
+  // The property being applied for — drives both the in-chat banner and the
+  // focused Trust Passport modal. Use the NEWEST one in case the tenant picks a
+  // different property after saving a draft.
+  const trustMessage = [...messages].reverse().find(m => m.trustPassport)
+  const selectedTrustProperty = trustMessage?.trustPassport?.property
+
+  // Close the modal on Escape and move focus into it when it opens (a11y).
+  useEffect(() => {
+    if (!trustModalOpen) return
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isLoadingRef.current) setTrustModalOpen(false)
+    }
+    window.addEventListener("keydown", h)
+    return () => window.removeEventListener("keydown", h)
+  }, [trustModalOpen])
+
+  useEffect(() => {
+    if (!trustModalOpen) return
+    const t = setTimeout(() => trustPanelRef.current?.focus(), 80)
+    return () => clearTimeout(t)
+  }, [trustModalOpen])
+
   return (
-    <div className={"fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3" + (className ? " " + className : "")}>
+    <div className={cn("fixed right-3 bottom-3 left-3 sm:left-auto sm:right-6 sm:bottom-6 z-50 flex flex-col items-end gap-3", className)}>
       {isOpen && (
-        <div className="w-full h-[min(88dvh,720px)] sm:w-[min(460px,100vw-2rem)] sm:h-auto sm:max-h-[min(72vh,720px)] sm:min-h-[420px] bg-slate-50 rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
-          <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center"><Building2 className="h-5 w-5 text-white" /></div>
-              <div><p className="text-white font-semibold text-sm">{AGENT_NAME}</p><p className="text-white/75 text-[10px]">AI Rental Assistant</p></div>
+        <div className="w-full h-[calc(100dvh-0.75rem)] sm:w-[min(440px,100vw-2rem)] sm:h-auto sm:max-h-[min(80vh,760px)] sm:min-h-[480px] bg-white rounded-3xl shadow-2xl ring-1 ring-slate-200 flex flex-col overflow-hidden">
+          {/* Header — calm; orange reserved for accent/actions */}
+          <div className="shrink-0 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-2xl bg-orange-100 flex items-center justify-center">
+                <Building2 className="h-5 w-5 text-orange-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-slate-900 font-semibold text-sm leading-tight">{AGENT_NAME}</p>
+                <p className="text-slate-400 text-[10px]">AI Rental Assistant</p>
+              </div>
             </div>
-            {messages.length > 0 && (
-              <button onClick={() => { setThreadId(undefined); setCurrentStage("idle"); setMessages([]); setLandlordReviewData(null); welcomeSet.current = false; localStorage.removeItem(CHAT_STORAGE_KEY) }}
-                className="p-1 rounded-lg hover:bg-white/20 text-white/60 hover:text-white mr-auto" title="New Chat">
-                <RotateCcw className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {messages.length > 0 && (
+                <StatusChip
+                  stage={currentStage}
+                  error={errorBanner?.message}
+                  onRetry={() => retryRef.current?.()}
+                  showIdle={messages.length > 1}
+                />
+              )}
+              {messages.length > 0 && (
+                <button
+                  onClick={() => { setThreadId(undefined); setCurrentStage("idle"); setMessages([]); setLandlordReviewData(null); welcomeSet.current = false; setTrustModalOpen(false); setErrorBanner(null); setViewingError(null); retryRef.current = null; localStorage.removeItem(CHAT_STORAGE_KEY) }}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                  title="Start a new chat" aria-label="Start a new chat">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <button
+                onClick={() => setIsOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                aria-label="Collapse chat">
+                <ChevronDown className="h-4 w-4" />
               </button>
-            )}
-            {currentStage !== "idle" && currentStage !== "disbursement_complete" && <StagePill stage={currentStage} />}
-            <button onClick={() => setIsOpen(false)} className="p-1 rounded-lg hover:bg-white/20"><ChevronDown className="h-4 w-4 text-white" /></button>
+            </div>
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3">
+
+          {/* Messages — single scroll container */}
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3 bg-slate-50/60">
             {messages.map(msg => (
               <React.Fragment key={msg.id}>
-                <ChatBubble
-                  msg={msg}
-                  onSelectProperty={handleSelectProperty}
-                  onAction={handleAction}
-                />
+                {/* Once the application has moved past the trust gate, hide the
+                    "continue application" banner — the chat already shows the
+                    next-step message for the tenant. */}
+                {msg.trustPassport && currentStage !== "awaiting_trust_profile" ? null : (
+                  <ChatBubble
+                    msg={msg}
+                    onSelectProperty={openViewingDecision}
+                    onAction={handleAction}
+                    onOpenTrust={() => setTrustModalOpen(true)}
+                    onViewing={viewingHandlers}
+                    viewingContext={{
+                      name: user?.full_name || "",
+                      phone: (user?.phone_number as string) || (userProfile as any)?.phone || "",
+                      submitting: isLoading,
+                      error: viewingError,
+                    }}
+                  />
+                )}
               </React.Fragment>
             ))}
             {isLoading && (
@@ -767,15 +1367,18 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
             )}
             <div ref={messagesEndRef} />
           </div>
+
+          {/* Composer — hidden while the tenant completes the formal application */}
           {!actionStages.has(currentStage) && (
-            <div className="px-3 pb-3">
-              <div className="flex items-end gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-sm">
+            <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-3">
+              <div className="flex items-end gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-sm transition-shadow focus-within:border-orange-300 focus-within:ring-2 focus-within:ring-orange-100">
                 <textarea ref={inputRef} rows={1} value={input} onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown} placeholder="Type your message..."
+                  onKeyDown={handleKeyDown}
+                  placeholder={currentStage === "awaiting_tenant_selection" ? "Refine your search or pick a property…" : "Type your message..."}
                   className="flex-1 resize-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none min-h-[24px] max-h-24 leading-relaxed"
                   disabled={isLoading} />
-                <button onClick={sendMessage} disabled={isLoading || !input.trim()}
-                  className={"flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center " +
+                <button onClick={() => sendMessage()} disabled={isLoading || !input.trim()}
+                  className={"flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors " +
                     (input.trim() && !isLoading ? "bg-orange-500 hover:bg-orange-600 text-white" : "bg-slate-100 text-slate-400")}>
                   {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </button>
@@ -784,12 +1387,44 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
           )}
         </div>
       )}
+
+      {/* Floating launcher — hidden inside the sheet on mobile when open */}
       <button onClick={() => setIsOpen(v => !v)}
-        className={"w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 " +
-          (isOpen ? "bg-slate-800 hover:bg-slate-700" : "bg-orange-500 hover:bg-orange-600")}
+        className={cn(
+          "w-14 h-14 rounded-full shadow-lg items-center justify-center transition-all duration-200",
+          isOpen ? "hidden sm:flex bg-slate-800 hover:bg-slate-700" : "flex bg-orange-500 hover:bg-orange-600",
+        )}
         aria-label={isOpen ? "Close" : "Open PropFlow"}>
         {isOpen ? <X className="h-6 w-6 text-white" /> : <MessageCircle className="h-6 w-6 text-white" />}
       </button>
+
+      {/* Trust Passport modal — desktop: focused centred panel over a dimmed
+          backdrop; mobile: full-screen sheet with sticky header/footer. Always
+          mounted (hidden) so a "Save and finish later" draft survives closing. */}
+      {selectedTrustProperty && (
+        <div className={cn("fixed inset-0 z-[70] items-end justify-center sm:items-center", trustModalOpen ? "flex" : "hidden")}>
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+            onClick={() => { if (!isLoadingRef.current) setTrustModalOpen(false) }}
+            aria-hidden="true"
+          />
+          <div
+            ref={trustPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Complete your application"
+            tabIndex={-1}
+            className="relative flex flex-col w-full h-full sm:w-[min(660px,calc(100vw-2.5rem))] sm:h-auto sm:max-h-[min(92dvh,900px)] sm:my-5 sm:rounded-3xl bg-white shadow-2xl overflow-hidden outline-none"
+          >
+            <TrustPassportCard
+              property={selectedTrustProperty}
+              onSubmit={handleCompleteTrust}
+              isLoading={isLoading}
+              onSaveLater={() => setTrustModalOpen(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

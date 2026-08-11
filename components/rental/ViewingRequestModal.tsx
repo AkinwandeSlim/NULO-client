@@ -290,8 +290,8 @@ export default function ViewingRequestModal({
               <CheckCircle2 className="h-16 w-16 text-green-500 mb-4" />
               <p className={`mb-4 text-center max-w-md ${theme === "dark" ? "text-white/80" : "text-slate-700"}`}>
                 Your request for <strong className={theme === "dark" ? "text-white" : ""}>{property.title}</strong> was submitted successfully.<br />
-                The landlord will respond {landlordResponseTime}.<br />
-                You'll receive confirmation via SMS and email.
+                Your request is awaiting landlord confirmation. The landlord will respond {landlordResponseTime}.<br />
+                We will update you in Nulo, by email, and by SMS when available.
               </p>
               <div className={`rounded-xl p-4 mb-6 w-full max-w-md ${theme === "dark" ? "bg-blue-900/20 border-blue-500/30" : "bg-blue-50 border-blue-200"} border`}>
               <h4 className={`font-medium mb-3 flex items-center gap-2 ${theme === "dark" ? "text-blue-400" : "text-blue-900"}`}>
@@ -366,7 +366,7 @@ export default function ViewingRequestModal({
                 <div className={`mt-2 p-3 rounded-lg ${theme === "dark" ? "bg-blue-900/20 border-blue-500/30" : "bg-blue-50 border-blue-200"} border`}>
                   <p className={`text-xs ${theme === "dark" ? "text-blue-300" : "text-blue-800"}`}>
                     {/* <strong>📋 Next Step:</strong> The landlord will review your viewing request. Once confirmed, you'll be able to apply directly from your dashboard. */}
-                    <strong>📋 Next Step:</strong> You've scheduled your viewing. Ready to apply? Submit your application now and stand out before the landlord confirms.
+                    <strong>📋 Next Step:</strong> Your request is pending. You can apply now, or wait until the landlord confirms the exact appointment time.
                   </p>
                 </div>
               </div>
