@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { viewingRequestsAPI } from "@/lib/api/viewingRequestsLandlord"
+import { ViewingReviewDialog } from "@/components/rental/ViewingReviewDialog"
 import { toast } from "sonner"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
@@ -22,8 +23,10 @@ const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed='
 const STATUS_LABELS: Record<string, string> = {
   pending:   'Awaiting Review',
   confirmed: 'Confirmed',
+  reschedule_proposed: 'Awaiting Tenant',
   completed: 'Completed',
   cancelled: 'Cancelled',
+  no_show: 'No-show',
 }
 
 // Card defined OUTSIDE the page component to prevent the remount bug:
@@ -32,19 +35,20 @@ const STATUS_LABELS: Record<string, string> = {
 interface ViewingCardProps {
   request: any
   updatingId: string | null
-  onApprove: (id: string) => void
+  onApprove: (request: any) => void
   onReject: (id: string) => void
-  onReapprove: (id: string) => void
-  onMoveToPending: (id: string) => void
   onComplete: (id: string) => void
+  onNoShow: (id: string) => void
 }
 
 function getStatusBadgeStyle(status: string) {
   const styles: Record<string, string> = {
     pending:   "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
     confirmed: "bg-green-100 text-green-800 border-green-200 font-semibold",
+    reschedule_proposed: "bg-violet-100 text-violet-800 border-violet-200 font-semibold",
     completed: "bg-blue-100 text-blue-800 border-blue-200 font-semibold",
     cancelled: "bg-slate-100 text-slate-800 border-slate-200 font-semibold",
+    no_show: "bg-red-100 text-red-800 border-red-200 font-semibold",
   }
   return styles[status] || styles.pending
 }
@@ -53,8 +57,10 @@ function getPriorityBorder(status: string) {
   switch (status) {
     case 'pending':   return 'border-l-4 border-l-orange-500'
     case 'confirmed': return 'border-l-4 border-l-green-500'
+    case 'reschedule_proposed': return 'border-l-4 border-l-violet-500'
     case 'completed': return 'border-l-4 border-l-blue-500'
     case 'cancelled': return 'border-l-4 border-l-slate-300'
+    case 'no_show': return 'border-l-4 border-l-red-500'
     default:          return 'border-l-4 border-l-orange-500'
   }
 }
@@ -62,8 +68,10 @@ function getPriorityBorder(status: string) {
 function getStatusIcon(status: string) {
   switch (status) {
     case 'confirmed': return <CheckCircle className="h-5 w-5 text-green-600" />
+    case 'reschedule_proposed': return <Clock className="h-5 w-5 text-violet-600" />
     case 'completed': return <CheckCircle className="h-5 w-5 text-blue-600" />
     case 'cancelled': return <XCircle className="h-5 w-5 text-slate-500" />
+    case 'no_show': return <XCircle className="h-5 w-5 text-red-600" />
     default:          return <AlertCircle className="h-5 w-5 text-orange-600" />
   }
 }
@@ -93,10 +101,12 @@ function formatViewingType(type: string) {
   return types[type] ?? type
 }
 
-function ViewingRequestCard({ request, updatingId, onApprove, onReject, onReapprove, onMoveToPending, onComplete }: ViewingCardProps) {
+function ViewingRequestCard({ request, updatingId, onApprove, onReject, onComplete, onNoShow }: ViewingCardProps) {
   const property = request.property
   const tenant = request.tenant
-  const isFuture = new Date(request.preferred_date) >= new Date()
+  const appointmentDate = request.confirmed_date || request.preferred_date
+  const appointmentTime = request.confirmed_time || request.time_slot
+  const isFuture = new Date(appointmentDate) >= new Date()
 
   return (
     <Card className={`border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-all duration-300 ${getPriorityBorder(request.status)}`}>
@@ -188,8 +198,8 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onReappr
                   <Calendar className="h-4 w-4 text-blue-600" />
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-700">{formatDateCard(request.preferred_date)}</div>
-                  <div className="text-xs text-slate-500">Date</div>
+                  <div className="font-semibold text-slate-700">{formatDateCard(appointmentDate)}</div>
+                  <div className="text-xs text-slate-500">{request.confirmed_date ? 'Confirmed date' : 'Requested date'}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -197,8 +207,8 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onReappr
                   <Clock className="h-4 w-4 text-orange-600" />
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-700">{formatTimeSlotCard(request.time_slot)}</div>
-                  <div className="text-xs text-slate-500">Time Slot</div>
+                  <div className="font-semibold text-slate-700">{request.confirmed_time || formatTimeSlotCard(appointmentTime)}</div>
+                  <div className="text-xs text-slate-500">{request.confirmed_time ? 'Confirmed time' : 'Preferred time'}</div>
                 </div>
               </div>
             </div>
@@ -243,7 +253,7 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onReappr
                   <Button
                     size="sm"
                     className="bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm"
-                    onClick={() => onApprove(request.id)}
+                    onClick={() => onApprove(request)}
                     disabled={updatingId === request.id}
                   >
                     {updatingId === request.id ? (
@@ -251,7 +261,7 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onReappr
                     ) : (
                       <CheckCircle className="mr-2 h-4 w-4" />
                     )}
-                    Confirm Viewing
+                    Review request
                   </Button>
                   <Button
                     size="sm"
@@ -266,40 +276,10 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onReappr
                 </>
               )}
 
-              {request.status === 'cancelled' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-green-300 text-green-600 hover:bg-green-50"
-                  onClick={() => onReapprove(request.id)}
-                  disabled={updatingId === request.id}
-                >
-                  {updatingId === request.id ? (
-                    <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin mr-2" />
-                  ) : (
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                  )}
-                  Re-approve
-                </Button>
-              )}
-
               {request.status === 'confirmed' && (
                 <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-orange-300 text-orange-600 hover:bg-orange-50"
-                    onClick={() => onMoveToPending(request.id)}
-                    disabled={updatingId === request.id}
-                  >
-                    {updatingId === request.id ? (
-                      <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin mr-2" />
-                    ) : (
-                      <AlertCircle className="mr-2 h-4 w-4" />
-                    )}
-                    Move to Pending
-                  </Button>
                   {!isFuture && (
+                    <>
                     <Button
                       variant="outline"
                       size="sm"
@@ -314,6 +294,17 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onReappr
                       )}
                       Mark as Completed
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-red-300 text-red-700 hover:bg-red-50"
+                      onClick={() => onNoShow(request.id)}
+                      disabled={updatingId === request.id}
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Mark no-show
+                    </Button>
+                    </>
                   )}
                   {isFuture && (
                     <Button
@@ -335,6 +326,13 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onReappr
                   Viewing Confirmed
                 </Badge>
               )}
+
+              {request.status === 'reschedule_proposed' && (
+                <Badge className="bg-violet-100 text-violet-800 border-violet-200 font-semibold">
+                  <Clock className="h-3 w-3 mr-1" />
+                  Waiting for tenant response
+                </Badge>
+              )}
             </div>
 
           </div>
@@ -353,6 +351,7 @@ export default function LandlordViewingsPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [reviewingRequest, setReviewingRequest] = useState<any | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -379,46 +378,44 @@ export default function LandlordViewingsPage() {
 
   const handleUpdateStatus = async (
     requestId: string,
-    newStatus: 'confirmed' | 'cancelled' | 'pending' | 'completed',
-    notes?: string
+    newStatus: 'confirmed' | 'reschedule_proposed' | 'cancelled' | 'completed' | 'no_show',
+    notes?: string,
+    appointment?: { confirmed_date: string; confirmed_time: string }
   ) => {
     try {
       setUpdatingId(requestId)
-      await viewingRequestsAPI.review(requestId, { status: newStatus, landlord_notes: notes })
+      await viewingRequestsAPI.review(requestId, { status: newStatus, landlord_notes: notes, ...appointment })
       setViewingRequests(prev =>
-        prev.map(r => r.id === requestId ? { ...r, status: newStatus, landlord_notes: notes } : r)
+        prev.map(r => r.id === requestId ? { ...r, status: newStatus, landlord_notes: notes, ...appointment } : r)
       )
       if (newStatus === 'confirmed') {
-        try { await viewingRequestsAPI.sendSms(requestId, 'confirmation') } catch {}
         toast.success('Viewing confirmed — tenant has been notified!')
       } else if (newStatus === 'cancelled') {
         toast.success('Viewing request declined')
-      } else if (newStatus === 'pending') {
-        toast.success('Viewing request moved back to pending')
       } else if (newStatus === 'completed') {
         toast.success('Viewing marked as completed')
+      } else if (newStatus === 'no_show') {
+        toast.success('Viewing marked as no-show')
+      } else if (newStatus === 'reschedule_proposed') {
+        toast.success('New time proposed — waiting for the tenant to accept or decline')
       }
+      return true
     } catch (error: any) {
       console.error('Failed to update request:', error)
-      toast.error(error.message || 'Failed to update request')
+      toast.error(error.response?.data?.detail || error.message || 'Failed to update request')
+      return false
     } finally {
       setUpdatingId(null)
     }
   }
 
-  const handleApprove = (id: string) =>
-    handleUpdateStatus(id, 'confirmed', 'Your viewing request has been approved.')
+  const handleApprove = (request: any) => setReviewingRequest(request)
   const handleReject = (id: string) =>
     handleUpdateStatus(id, 'cancelled', 'Unfortunately, this time slot is not available.')
 
-  const handleReapprove = (id: string) =>
-    handleUpdateStatus(id, 'confirmed', 'Re-approving your viewing request.')
-
-  const handleMoveToPending = (id: string) =>
-    handleUpdateStatus(id, 'pending', 'Moving this request back to pending status.')
-
   const handleComplete = (id: string) =>
     handleUpdateStatus(id, 'completed', 'Viewing has been completed successfully.')
+  const handleNoShow = (id: string) => handleUpdateStatus(id, 'no_show', 'Tenant did not attend the viewing.')
 
   const filteredRequests = viewingRequests.filter(r => {
     const matchesSearch =
@@ -433,9 +430,10 @@ export default function LandlordViewingsPage() {
 
   const groupedRequests = {
     pending: filteredRequests.filter(r => r.status === 'pending'),
+    awaitingTenant: filteredRequests.filter(r => r.status === 'reschedule_proposed'),
     upcoming: filteredRequests.filter(r => {
       const isConfirmed = r.status === 'confirmed'
-      const preferredDate = new Date(r.preferred_date)
+      const preferredDate = new Date(r.confirmed_date || r.preferred_date)
       const today = new Date()
       today.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
       preferredDate.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
@@ -443,7 +441,7 @@ export default function LandlordViewingsPage() {
       return isConfirmed && isUpcoming
     }),
     past: filteredRequests.filter(r => {
-      const preferredDate = new Date(r.preferred_date)
+      const preferredDate = new Date(r.confirmed_date || r.preferred_date)
       const today = new Date()
       today.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
       preferredDate.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
@@ -452,6 +450,7 @@ export default function LandlordViewingsPage() {
       return (
         r.status === 'completed' ||
         r.status === 'cancelled' ||
+        r.status === 'no_show' ||
         (r.status === 'confirmed' && isPast)
       )
     }),
@@ -462,7 +461,7 @@ export default function LandlordViewingsPage() {
     pending:  viewingRequests.filter(r => r.status === 'pending').length,
     upcoming: viewingRequests.filter(r => {
       const isConfirmed = r.status === 'confirmed'
-      const preferredDate = new Date(r.preferred_date)
+      const preferredDate = new Date(r.confirmed_date || r.preferred_date)
       const today = new Date()
       today.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
       preferredDate.setHours(0, 0, 0, 0) // Set to start of day for fair comparison
@@ -696,9 +695,31 @@ export default function LandlordViewingsPage() {
                             updatingId={updatingId}
                             onApprove={handleApprove}
                             onReject={handleReject}
-                            onReapprove={handleReapprove}
-                            onMoveToPending={handleMoveToPending}
                             onComplete={handleComplete}
+                            onNoShow={handleNoShow}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {groupedRequests.awaitingTenant.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-violet-600" />
+                        Awaiting Tenant Response ({groupedRequests.awaitingTenant.length})
+                      </h3>
+                      <p className="text-sm text-slate-600 mb-3">A new appointment time has been proposed. The tenant must accept it before it becomes confirmed.</p>
+                      <div className="space-y-3">
+                        {groupedRequests.awaitingTenant.map(request => (
+                          <ViewingRequestCard
+                            key={request.id}
+                            request={request}
+                            updatingId={updatingId}
+                            onApprove={handleApprove}
+                            onReject={handleReject}
+                            onComplete={handleComplete}
+                            onNoShow={handleNoShow}
                           />
                         ))}
                       </div>
@@ -719,9 +740,8 @@ export default function LandlordViewingsPage() {
                             updatingId={updatingId}
                             onApprove={handleApprove}
                             onReject={handleReject}
-                            onReapprove={handleReapprove}
-                            onMoveToPending={handleMoveToPending}
                             onComplete={handleComplete}
+                            onNoShow={handleNoShow}
                           />
                         ))}
                       </div>
@@ -742,9 +762,8 @@ export default function LandlordViewingsPage() {
                             updatingId={updatingId}
                             onApprove={handleApprove}
                             onReject={handleReject}
-                            onReapprove={handleReapprove}
-                            onMoveToPending={handleMoveToPending}
                             onComplete={handleComplete}
+                            onNoShow={handleNoShow}
                           />
                         ))}
                       </div>
@@ -758,6 +777,24 @@ export default function LandlordViewingsPage() {
         </CardContent>
       </Card>
 
+      <ViewingReviewDialog
+        request={reviewingRequest}
+        open={Boolean(reviewingRequest)}
+        submitting={Boolean(reviewingRequest && updatingId === reviewingRequest.id)}
+        onClose={() => setReviewingRequest(null)}
+        onConfirm={async ({ confirmed_date, confirmed_time, landlord_notes }: any) => {
+          const updated = await handleUpdateStatus(reviewingRequest.id, 'confirmed', landlord_notes, { confirmed_date, confirmed_time })
+          if (updated) setReviewingRequest(null)
+        }}
+        onPropose={async ({ confirmed_date, confirmed_time, landlord_notes }: any) => {
+          const updated = await handleUpdateStatus(reviewingRequest.id, 'reschedule_proposed', landlord_notes, { confirmed_date, confirmed_time })
+          if (updated) setReviewingRequest(null)
+        }}
+        onDecline={async (landlord_notes: string) => {
+          const updated = await handleUpdateStatus(reviewingRequest.id, 'cancelled', landlord_notes)
+          if (updated) setReviewingRequest(null)
+        }}
+      />
     </div>
   )
 }

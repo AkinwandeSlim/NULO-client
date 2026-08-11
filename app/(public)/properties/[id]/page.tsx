@@ -296,8 +296,10 @@ export default function PropertyDetailPage() {
   }
 
   const confirmViewing = (viewingRequest: any) => {
-    // Capture the viewing ID for smart apply CTA
+    // A request is pending landlord review; keep the property page in sync so
+    // tenants cannot immediately submit another request from a stale button.
     if (viewingRequest?.id) setCompletedViewingId(viewingRequest.id)
+    setHasExistingViewing(true)
   }
 
   const shareProperty = () => {

@@ -25,7 +25,7 @@ export interface ViewingRequestData {
 }
 
 export interface ViewingRequestUpdateData {
-  status?: 'pending' | 'confirmed' | 'cancelled' | 'completed'
+  status?: 'pending' | 'confirmed' | 'reschedule_proposed' | 'cancelled' | 'completed' | 'no_show'
   landlord_notes?: string
   confirmed_date?: string
   confirmed_time?: string
@@ -42,10 +42,16 @@ export interface ViewingRequest {
   message?: string
   tenant_name: string
   viewing_type?: 'PHYSICAL' | 'VIRTUAL' | 'LIVE_VIDEO'
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed'
+  status: 'pending' | 'confirmed' | 'reschedule_proposed' | 'cancelled' | 'completed' | 'no_show'
   landlord_notes?: string
   confirmed_date?: string
   confirmed_time?: string
+  // Confirmed-only details. The backend masks these to null unless the viewing
+  // is confirmed, so they can never leak before the appointment is fixed.
+  safety_instructions?: string
+  caretaker_name?: string
+  caretaker_phone?: string
+  meeting_url?: string
   created_at: string
   updated_at: string
   property?: {
@@ -168,6 +174,15 @@ export const viewingRequestsAPI = {
         success: false,
         error: error.response?.data?.detail || 'Failed to cancel viewing request'
       }
+    }
+  },
+
+  respondToReschedule: async (id: string, decision: 'accept' | 'decline') => {
+    try {
+      const response = await apiClient.post(`/api/v1/viewing-requests/${id}/reschedule-decision`, { decision })
+      return { success: true, data: response.data }
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.detail || 'Failed to respond to reschedule' }
     }
   },
 

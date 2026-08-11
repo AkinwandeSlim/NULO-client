@@ -25,10 +25,15 @@ export interface ViewingRequest {
   contact_number: string;
   tenant_name: string;
   message?: string;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed'; // DB only allows these 4
+  status: 'pending' | 'confirmed' | 'reschedule_proposed' | 'cancelled' | 'completed' | 'no_show';
   landlord_notes?: string;
   confirmed_date?: string;
   confirmed_time?: string;
+  safety_instructions?: string;
+  caretaker_name?: string;
+  caretaker_phone?: string;
+  meeting_url?: string;
+  no_show_reason?: string;
   created_at: string;
   updated_at?: string;
   property?: any;
@@ -57,14 +62,19 @@ export interface CreateViewingRequestData {
 }
 
 export interface LandlordReviewData {
-  status: 'confirmed' | 'cancelled' | 'pending' | 'completed';
+  status: 'confirmed' | 'reschedule_proposed' | 'cancelled' | 'completed' | 'no_show';
   landlord_notes?: string;
   confirmed_date?: string;
   confirmed_time?: string;
+  safety_instructions?: string;
+  caretaker_name?: string;
+  caretaker_phone?: string;
+  meeting_url?: string;
+  no_show_reason?: string;
 }
 
 export interface UpdateViewingRequestData {
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  status: 'pending' | 'confirmed' | 'reschedule_proposed' | 'cancelled' | 'completed' | 'no_show';
   landlord_notes?: string;
   confirmed_date?: string;
   confirmed_time?: string;

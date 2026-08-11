@@ -24,6 +24,10 @@ export interface PropertyMatch {
   images?: string[]
   landlord_id?: string
   property_type?: string
+  /** Present only when the property supports the viewing type — lets the chat
+   *  offer Virtual tour / Live video viewings without guessing. */
+  virtual_tour_url?: string
+  video_tour_url?: string
 }
 
 export interface ExtractedIntent {
@@ -93,6 +97,26 @@ export interface SimulatePaymentResponse {
   error?: string | null
 }
 
+export interface CompleteApplicationPayload {
+  documents: string[];                       // storage paths (≥2: identity + income)
+  references: Record<string, { name: string; phone: string; relationship?: string }>;
+  consent: boolean;
+  phone_number?: string;
+  employment_status?: string;
+  employer_name?: string;
+  job_title?: string;
+  employment_duration?: string;
+  monthly_income?: number;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  move_in_date?: string;
+  lease_duration?: string;
+  number_of_occupants?: number;
+  has_pets?: boolean;
+  pet_details?: string;
+  message?: string;
+}
+
 export type ResumeDecision = 'approved' | 'rejected' | 'signed' | 'confirm_payment'
 
 // ─── API Calls ────────────────────────────────────────────────────────────────
@@ -100,16 +124,20 @@ export type ResumeDecision = 'approved' | 'rejected' | 'signed' | 'confirm_payme
 /**
  * Send a tenant inquiry to PropFlow.
  * On first call, creates a new thread. Expects workflow_id in response.
+ * On FOLLOW-UP calls, pass the current workflow_id so the server loads the
+ * prior conversation and resolves the new message in context (conversational
+ * refinement, e.g. "within 500k-600k" adjusting the earlier search).
  */
 export async function propflowChat(params: {
   message: string
   use_memory?: boolean
   mock_mode?: boolean
+  workflow_id?: string
 }): Promise<ChatResponse> {
   const { data } = await apiClient.post<ChatResponse>(
     '/api/v1/propflow/chat',
     params,
-    { timeout: 60_000 },
+    { timeout: 120_000 }, // Increased to 120s for slow networks (Nigeria). First intent extraction can be slow.
   )
   return data
 }
@@ -123,18 +151,20 @@ export async function propflowChat(params: {
  */
 export async function propflowGuestChat(params: {
   message: string
+  workflow_id?: string
 }): Promise<ChatResponse> {
   const { data } = await apiClient.post<ChatResponse>(
     '/api/v1/propflow/chat/guest',
     params,
-    { timeout: 60_000 },
+    { timeout: 120_000 }, // Increased to 120s for slow networks
   )
   return data
 }
 
 /**
  * Tenant selects a property from matched results.
- * Resumes the workflow past INTERRUPT #1.
+ * Records the pick and pauses at the Trust Passport gate — the application
+ * is NOT created until propflowCompleteApplication() is called.
  */
 export async function propflowSelect(
   workflow_id: string,
@@ -143,7 +173,28 @@ export async function propflowSelect(
   const { data } = await apiClient.post<SelectResponse>(
     `/api/v1/propflow/select/${workflow_id}`,
     { property_index },
-    { timeout: 60_000 },
+    { timeout: 90_000 }, // Increased to 90s — property selection is faster but can still be slow
+  )
+  return data
+}
+
+/**
+ * Submit the Trust Passport (documents, references, consent) and resume the
+ * workflow so the application is created WITH the trust data attached.
+ * Returns the resulting stage (typically awaiting_landlord_approval).
+ */
+export async function propflowCompleteApplication(
+  workflow_id: string,
+  payload: CompleteApplicationPayload,
+): Promise<SelectResponse> {
+  const { data } = await apiClient.post<SelectResponse>(
+    `/api/v1/propflow/complete-application/${workflow_id}`,
+    payload,
+    // Heaviest endpoint: resume runs create_application + enrich_qualify
+    // (Supabase writes, briefing, mem0, landlord notification). 180s so a
+    // slow-but-healthy run succeeds; the server also caps mem0/notification
+    // work so nothing hangs forever.
+    { timeout: 180_000 },
   )
   return data
 }

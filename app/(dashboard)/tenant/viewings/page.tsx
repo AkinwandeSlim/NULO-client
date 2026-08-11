@@ -33,13 +33,16 @@ interface ViewingCardProps {
 request: any
 cancelingId: string | null
 onCancel: (id: string) => void
+onRescheduleDecision: (id: string, decision: 'accept' | 'decline') => void
 applications: any[] // Add applications data
 }
 
-function ViewingRequestCard({ request, cancelingId, onCancel, applications }: ViewingCardProps) {
+function ViewingRequestCard({ request, cancelingId, onCancel, onRescheduleDecision, applications }: ViewingCardProps) {
   const property = request.property
+  const appointmentDate = request.confirmed_date || request.preferred_date
+  const appointmentTime = request.confirmed_time || request.time_slot
   const isUpcoming = (request.status === 'confirmed' || request.status === 'pending') && 
-    new Date(request.preferred_date) >= new Date()
+    new Date(appointmentDate) >= new Date()
   const isConfirmed = request.status === 'confirmed'
   const isCompleted = request.status === 'completed'
   
@@ -181,8 +184,8 @@ function ViewingRequestCard({ request, cancelingId, onCancel, applications }: Vi
                   <Calendar className="h-4 w-4 text-blue-600" />
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-700">{formatDate(request.preferred_date)}</div>
-                  <div className="text-xs text-slate-500">Date</div>
+                  <div className="font-semibold text-slate-700">{formatDate(appointmentDate)}</div>
+                  <div className="text-xs text-slate-500">{request.confirmed_date ? 'Confirmed date' : 'Requested date'}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -191,8 +194,8 @@ function ViewingRequestCard({ request, cancelingId, onCancel, applications }: Vi
                 </div>
                 <div>
                   {/* ✅ Format time slot properly instead of showing raw 'afternoon' */}
-                  <div className="font-semibold text-slate-700">{formatTimeSlot(request.time_slot)}</div>
-                  <div className="text-xs text-slate-500">Time Slot</div>
+                  <div className="font-semibold text-slate-700">{request.confirmed_time || formatTimeSlot(appointmentTime)}</div>
+                  <div className="text-xs text-slate-500">{request.confirmed_time ? 'Confirmed time' : 'Preferred time'}</div>
                 </div>
               </div>
             </div>
@@ -222,9 +225,11 @@ function ViewingRequestCard({ request, cancelingId, onCancel, applications }: Vi
                 </div>
               </div>
             )}
+            {request.status === 'confirmed' && (request.safety_instructions || request.caretaker_name || request.meeting_url) && <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><strong>Viewing instructions</strong>{request.safety_instructions && <p>{request.safety_instructions}</p>}{request.caretaker_name && <p>Contact: {request.caretaker_name}{request.caretaker_phone ? ` — ${request.caretaker_phone}` : ''}</p>}{request.meeting_url && <a className="font-semibold underline" href={request.meeting_url} target="_blank">Join live viewing</a>}</div>}
 
             {/* Actions */}
             <div className="flex items-center gap-3 pt-4 border-t border-slate-200 flex-wrap">
+              {request.status === 'reschedule_proposed' && <><Button size="sm" onClick={() => onRescheduleDecision(request.id, 'accept')}>Accept new time</Button><Button size="sm" variant="outline" onClick={() => onRescheduleDecision(request.id, 'decline')}>Decline new time</Button></>}
               {/* ✅ FIX 8: Apply Now button — visible for pending, confirmed, and completed viewings */}
               {/* BUT disabled if already applied for this property */}
               {showApplyNow && (
@@ -260,7 +265,7 @@ function ViewingRequestCard({ request, cancelingId, onCancel, applications }: Vi
               
               {/* Cancel only for pending/confirmed future viewings */}
               {(request.status === 'pending' || request.status === 'confirmed') && 
-                new Date(request.preferred_date) >= new Date() && (
+                new Date(appointmentDate) >= new Date() && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -331,10 +336,10 @@ export default function ViewingsPage() {
   const fetchViewingRequests = async () => {
     try {
       setLoading(true)
-      // ✅ FIX 1 cont: tenant client returns { success, data } — handle correctly
       const response = await viewingRequestsAPI.getAll()
-      if (response.success) {
-        setViewingRequests(response.data?.viewing_requests || [])
+      if (response.success && response.data) {
+        // API client wraps: { success: true, data: { viewing_requests, count } }
+        setViewingRequests((response.data as any).viewing_requests || [])
       } else {
         toast.error('Failed to load viewing requests')
       }
@@ -372,6 +377,13 @@ export default function ViewingsPage() {
       setCancelingId(null)
     }
   }
+  const handleRescheduleDecision = async (requestId: string, decision: 'accept' | 'decline') => {
+    const result = await viewingRequestsAPI.respondToReschedule(requestId, decision)
+    if (!result.success) return toast.error(result.error || 'Could not update viewing')
+    // Refetch to get the fresh state from the server (confirmed date/time, safety details, etc.)
+    await fetchViewingRequests()
+    toast.success(decision === 'accept' ? 'Viewing time confirmed' : 'Reschedule declined')
+  }
 
 
   const filteredRequests = viewingRequests.filter(request => {
@@ -388,13 +400,13 @@ export default function ViewingsPage() {
   const groupedRequests = {
     upcoming: filteredRequests.filter(r => 
       (r.status === 'confirmed' || r.status === 'pending') && 
-      new Date(r.preferred_date) >= new Date()
+      new Date(r.confirmed_date || r.preferred_date) >= new Date()
     ),
     // ✅ FIX 5: Removed 'pending' group — merged into 'upcoming' (they're all scheduled viewings)
     past: filteredRequests.filter(r => 
       r.status === 'completed' || 
       r.status === 'cancelled' ||
-      ((r.status === 'confirmed' || r.status === 'pending') && new Date(r.preferred_date) < new Date())
+      ((r.status === 'confirmed' || r.status === 'pending') && new Date(r.confirmed_date || r.preferred_date) < new Date())
     )
   }
 
@@ -402,7 +414,7 @@ export default function ViewingsPage() {
     total: viewingRequests.length,
     pending: viewingRequests.filter(r => r.status === 'pending').length,
     confirmed: viewingRequests.filter(r => 
-      r.status === 'confirmed' && new Date(r.preferred_date) >= new Date()
+      r.status === 'confirmed' && new Date(r.confirmed_date || r.preferred_date) >= new Date()
     ).length,
     completed: viewingRequests.filter(r => r.status === 'completed').length
   }
@@ -589,7 +601,7 @@ export default function ViewingsPage() {
                       </h3>
                       <div className="space-y-3">
                         {groupedRequests.upcoming.map(request => (
-                          <ViewingRequestCard key={request.id} request={request} cancelingId={cancelingId} onCancel={handleCancelRequest} applications={applications} />
+                          <ViewingRequestCard key={request.id} request={request} cancelingId={cancelingId} onCancel={handleCancelRequest} onRescheduleDecision={handleRescheduleDecision} applications={applications} />
                         ))}
                       </div>
                     </div>
@@ -604,7 +616,7 @@ export default function ViewingsPage() {
                       </h3>
                       <div className="space-y-3">
                         {groupedRequests.past.map(request => (
-                          <ViewingRequestCard key={request.id} request={request} cancelingId={cancelingId} onCancel={handleCancelRequest} applications={applications} />
+                          <ViewingRequestCard key={request.id} request={request} cancelingId={cancelingId} onCancel={handleCancelRequest} onRescheduleDecision={handleRescheduleDecision} applications={applications} />
                         ))}
                       </div>
                     </div>
@@ -618,7 +630,3 @@ export default function ViewingsPage() {
     </div>
   )
 }
-
-
-
-

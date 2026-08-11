@@ -882,12 +882,12 @@ export default function LandlordApplicationDetailPage() {
                 <CardHeader className="border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-purple-50/30">
                   <CardTitle className="flex items-center gap-2 text-sm text-slate-900">
                     <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                      <Zap className="h-4 w-4 text-indigo-600" />
+                      <FileText className="h-4 w-4 text-indigo-600" />
                     </div>
                     <div className="flex items-center gap-2">
-                      AI Briefing
+                      Application Summary
                       <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px] ml-1">
-                        AI-Assisted
+                        Auto-generated
                       </Badge>
                     </div>
                   </CardTitle>
