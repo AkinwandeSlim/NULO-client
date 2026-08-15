@@ -327,7 +327,7 @@ export function MarketplaceHeader({
                         ? 'bg-orange-500 text-white'
                         : "text-slate-600 dark:text-white/70 hover:bg-white dark:hover:bg-white/10"
                     }`}
-                    title="Default (Split View)"
+                    title="Split View"
                   >
                     <MapPin className="h-4 w-4" />
                   </button>

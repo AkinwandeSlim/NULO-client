@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Menu, X, Home, Building2, LayoutGrid, User, LogOut, Search, ChevronDown, Bell, Settings, MessageSquare, Heart, Calendar, Info, BookOpen, Phone, FileText } from "lucide-react"
+import { Menu, X, Home, Building2, LayoutGrid, User, LogOut, Search, ChevronDown, Bell, Settings, MessageSquare, Heart, Calendar, Info, BookOpen, Phone, FileText, Moon, Sun } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/contexts/AuthContext"
+import { useTheme } from "@/contexts/ThemeContext"
 import { NotificationBell } from "@/components/notifications/NotificationBell"
 import { toast } from "sonner"
 
@@ -41,6 +42,7 @@ export function Navbar() {
   
   // Use real Supabase auth - ✅ FIXED: Use userProfile instead of profile
   const { user, userProfile, loading, signOut } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const isAuthenticated = !!user
   
   // Debug: Log user data to understand structure (disabled in production)
@@ -177,22 +179,26 @@ export function Navbar() {
   }, [searchQuery, router])
 
   return (
-    <nav className={`fixed top-0 z-50 w-full transition-all duration-300 ${
+    <nav className={`dashboard-navbar fixed top-0 z-50 w-full transition-all duration-300 ${
       scrolled 
-        ? 'bg-white/95 backdrop-blur-md shadow-lg border-b border-slate-200' 
-        : 'bg-white/98 backdrop-blur-lg border-b border-slate-100 shadow-sm'
+        ? 'bg-white/95 dark:bg-black/90 backdrop-blur-md shadow-lg border-b border-slate-200 dark:border-white/[0.08]' 
+        : 'bg-white/98 dark:bg-black/95 backdrop-blur-lg border-b border-slate-100 dark:border-white/[0.06] shadow-sm'
     }`}>
       <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Main Navigation Row */}
-        <div className="flex h-14 sm:h-16 items-center justify-between gap-3">
+          <div className="flex h-14 items-center gap-2 sm:h-16 sm:gap-3 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto]">
           {/* Logo - Complete with text included */}
           <Link href="/" className="flex items-center group flex-shrink-0">
-            <Logo size={40} className="transition-transform group-hover:scale-105" />
+            <Logo
+              size={40}
+              variant={theme === "dark" ? "light" : "default"}
+              className="transition-transform group-hover:scale-105"
+            />
           </Link>
 
           {/* Desktop Navigation Links */}
           {showNavLinks && (
-            <div className="hidden md:flex items-center gap-1 flex-1 max-w-2xl">
+            <div className="desktop-nav hidden min-w-0 items-center gap-1 overflow-x-auto px-2 lg:flex">
               {isDashboard && isAuthenticated ? (
                 /* ── Dashboard mode: show role-specific section links ── */
                 <>
@@ -432,17 +438,26 @@ export function Navbar() {
           )}
 
           {/* Right Actions - Desktop */}
-          <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+          <div className="dashboard-actions ml-auto hidden min-w-fit flex-shrink-0 items-center gap-2 lg:flex">
             {!mounted || loading ? (
               <div className="h-9 w-32 bg-slate-100 animate-pulse rounded-lg" />
             ) : isAuthenticated ? (
               <>
+                {/* Theme Toggle */}
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className={`rounded-full p-2 transition-colors hover:text-orange-400 ${theme === "dark" ? "text-white/90 hover:bg-white/10" : "text-slate-900 hover:bg-slate-100"}`}
+                  aria-label="Toggle theme"
+                >
+                  {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                </button>
                 {/* Notification Bell */}
                 <NotificationBell />
                 {/* Profile Dropdown Menu */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+                    <button className="flex shrink-0 items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
                       <Avatar className="h-8 w-8 border-2 border-slate-200">
                         {getAvatarDisplay.showAvatar && getAvatarDisplay.avatarUrl ? (
                           <AvatarImage 
@@ -459,7 +474,7 @@ export function Navbar() {
                           {getAvatarDisplay.initials}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="hidden lg:block text-left">
+                      <div className="hidden 2xl:block text-left">
                         <p className="text-sm font-medium text-slate-900">
                           {user?.full_name || user?.email?.split('@')[0] || user?.email || 'User'}
                         </p>
@@ -467,7 +482,7 @@ export function Navbar() {
                           {userTypeLabel}
                         </p>
                       </div>
-                      <ChevronDown className="h-4 w-4 text-slate-500 hidden lg:block" />
+                      <ChevronDown className="h-4 w-4 text-slate-500 hidden 2xl:block" />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 z-[150]">
@@ -619,7 +634,7 @@ export function Navbar() {
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden h-9 w-9 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+            className="lg:hidden h-9 w-9 text-slate-700 dark:text-white hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-white/10"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -629,7 +644,7 @@ export function Navbar() {
 
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-slate-200 bg-white max-h-[calc(100vh-7.5rem)] overflow-y-auto">
+        <div className="lg:hidden border-t border-slate-200 dark:border-white/10 bg-white dark:bg-[#0A0A0A] max-h-[calc(100vh-7.5rem)] overflow-y-auto">
           <div className="px-4 py-3 space-y-1">
             {/* ✅ NEW: Mobile Navigation Links */}
             {showNavLinks && (
@@ -637,7 +652,7 @@ export function Navbar() {
                 <Link 
                   href="/" 
                   className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all ${
-                    isActive('/') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                    isActive('/') ? 'text-orange-600 bg-orange-50 dark:bg-orange-500/10' : 'text-slate-700 dark:text-white/80 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-white/10'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
@@ -647,7 +662,7 @@ export function Navbar() {
                 <Link
                   href="/properties"
                   className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all ${
-                    isActive('/properties') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                    isActive('/properties') ? 'text-orange-600 bg-orange-50 dark:bg-orange-500/10' : 'text-slate-700 dark:text-white/80 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-white/10'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
@@ -657,7 +672,7 @@ export function Navbar() {
                 <Link
                   href="/about"
                   className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all ${
-                    isActive('/about') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                    isActive('/about') ? 'text-orange-600 bg-orange-50 dark:bg-orange-500/10' : 'text-slate-700 dark:text-white/80 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-white/10'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
@@ -667,7 +682,7 @@ export function Navbar() {
                 <Link
                   href="/contact"
                   className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all ${
-                    isActive('/contact') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                    isActive('/contact') ? 'text-orange-600 bg-orange-50 dark:bg-orange-500/10' : 'text-slate-700 dark:text-white/80 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-white/10'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
@@ -677,7 +692,7 @@ export function Navbar() {
                 <Link
                   href="/blog"
                   className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all ${
-                    isActive('/blog') ? 'text-orange-600 bg-orange-50' : 'text-slate-700 hover:text-orange-600 hover:bg-orange-50'
+                    isActive('/blog') ? 'text-orange-600 bg-orange-50 dark:bg-orange-500/10' : 'text-slate-700 dark:text-white/80 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-white/10'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
@@ -777,6 +792,31 @@ export function Navbar() {
                   </Button>
                 </>
               )}
+            </div>
+
+            {/* Mobile Theme Toggle */}
+            <div className={`flex items-center justify-between border-t pt-3 mt-3 ${theme === "dark" ? "border-white/10" : "border-slate-200"}`}>
+              <span className={`text-xs font-medium ${theme === "dark" ? "text-white/50" : "text-slate-500"}`}>
+                {theme === "dark" ? "Dark Mode" : "Light Mode"}
+              </span>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${theme === "dark" ? "text-white/80 hover:bg-white/10" : "text-slate-700 hover:bg-slate-100"}`}
+                aria-label="Toggle theme"
+              >
+                {theme === "dark" ? (
+                  <>
+                    <Sun className="h-4 w-4 text-orange-400" />
+                    <span className="text-xs font-medium">Switch to Light</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="h-4 w-4 text-orange-500" />
+                    <span className="text-xs font-medium">Switch to Dark</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

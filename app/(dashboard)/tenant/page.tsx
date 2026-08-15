@@ -610,25 +610,45 @@ export default function TenantDashboard() {
     }
 
     // Priority 2: Application Approval Banner
+    // Trigger: agreement waiting for tenant signature (PENDING_TENANT), OR
+    //          approved application without an agreement yet (edge case).
     const pendingAgreements = tenantData?.agreements?.filter((agreement: any) => {
       const isPending = agreement.status === "PENDING_TENANT" ||
                        (agreement.status === "PENDING" && !agreement.tenant_signed_at)
       return isPending && !isBannerDismissed(buildBannerKey('agreement_signed', agreement.id)) && !dismissedApprovalBanner.includes(agreement.id)
     }) || []
 
-    if (pendingAgreements.length > 0) {
-      return { type: 'approval', data: pendingAgreements[0] }
+    // Also detect approved applications that haven't produced an agreement yet.
+    // The PropFlow workflow sets agreement_drafted which creates the agreement row,
+    // so this is defensive — it catches any race where the agreement hasn't been
+    // created but the application is approved.
+    const approvedNoAgreement = tenantData?.applications?.filter((app: any) => {
+      if (app.status !== "approved") return false
+      const hasAgreement = tenantData?.agreements?.some(
+        (a: any) => a.property_id === app.property_id
+      )
+      return !hasAgreement && !dismissedApprovalBanner.includes(app.id)
+    }) || []
+
+    const approvalData = pendingAgreements.length > 0
+      ? { type: 'approval' as const, data: pendingAgreements[0] }
+      : approvedNoAgreement.length > 0
+        ? { type: 'approval' as const, data: approvedNoAgreement[0] }
+        : null
+
+    if (approvalData) {
+      return approvalData
     }
 
     // Priority 3: Viewing Confirmed Banner
-    const confirmedViewings = tenantData?.viewingRequests?.filter((viewing: any) => {
-      const isConfirmed = viewing.status === 'confirmed'
+    const viewingConfirmed = tenantData?.viewingRequests?.filter((viewing: any) => {
+      const isViewingConfirmed = viewing.status === 'confirmed'
       const isNotDismissed = !isBannerDismissed(buildBannerKey('viewing_confirmed', viewing.id)) && !dismissedViewingBanners.includes(viewing.id)
-      return isConfirmed && isNotDismissed
+      return isViewingConfirmed && isNotDismissed
     }) || []
 
-    if (confirmedViewings.length > 0) {
-      return { type: 'viewing', data: confirmedViewings[0] }
+    if (viewingConfirmed.length > 0) {
+      return { type: 'viewing', data: viewingConfirmed[0] }
     }
 
     // Priority 4: Tenancy Status Banner
@@ -746,12 +766,12 @@ export default function TenantDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
+    <div className="tenant-dashboard min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
       <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
 
         {/* ── Partial-load warning ── */}
         {!tenantData.isComplete && (tenantData.failedSections?.length ?? 0) > 0 && (
-          <div className="flex items-center justify-between gap-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="tenant-status-banner flex items-center justify-between gap-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
             <div className="flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
               <p className="text-sm text-amber-800">
@@ -830,7 +850,7 @@ export default function TenantDashboard() {
               )
               const hasPropFlow = !!matchingApp?.propflow_thread_id
               return (
-                <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-purple-200 bg-purple-50">
+                <div className="tenant-status-banner flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-purple-200 bg-purple-50">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="h-9 w-9 bg-purple-500 rounded-full flex items-center justify-center shrink-0">
                       <DollarSign className="h-5 w-5 text-white" />
@@ -881,7 +901,7 @@ export default function TenantDashboard() {
               )
               const hasPropFlow = !!matchingApp?.propflow_thread_id
               return (
-                <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-green-200 bg-green-50">
+                <div className="tenant-status-banner flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-green-200 bg-green-50">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="h-9 w-9 bg-green-500 rounded-full flex items-center justify-center shrink-0">
                       <CheckCircle2 className="h-5 w-5 text-white" />
@@ -924,7 +944,7 @@ export default function TenantDashboard() {
             case "viewing": {
               const v = activeBanner.data as any
               return (
-                <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-blue-200 bg-blue-50">
+                <div className="tenant-status-banner flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-blue-200 bg-blue-50">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="h-9 w-9 bg-blue-500 rounded-full flex items-center justify-center shrink-0">
                       <Calendar className="h-5 w-5 text-white" />
@@ -949,7 +969,7 @@ export default function TenantDashboard() {
               const { isActive, activeAgreement: aa, agreements } = activeBanner.data as any
               const bannerId = `tenancy-${isActive ? "active" : "pending"}`
               return (
-                <div className={`flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 ${isActive ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+                <div className={`tenant-status-banner flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 ${isActive ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
                   <div className="flex items-center gap-3 min-w-0">
                     {isActive
                       ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
@@ -976,7 +996,7 @@ export default function TenantDashboard() {
             }
             case "payment-success":
               return (
-                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-green-200 bg-green-50">
+                <div className="tenant-status-banner flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-green-200 bg-green-50">
                   <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
                   <p className="text-sm font-semibold text-green-900 flex-1">Payment received — tenancy is active!</p>
                   <Link href="/tenant/payments">

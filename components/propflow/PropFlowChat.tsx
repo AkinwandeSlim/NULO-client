@@ -467,11 +467,32 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
   const trustPanelRef = useRef<HTMLDivElement>(null)
   const isLoadingRef = useRef(isLoading)
   isLoadingRef.current = isLoading
+
+  // Auto-grow the composer: `rows={1}` + `max-h-24` alone clips wrapped text
+  // (the first line disappears behind a 1-row field unless the user scrolls).
+  // Recompute height from scrollHeight on every keystroke, capped at max-h-24.
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 96)}px`
+  }, [input])
   // Tracks whether a guest search was already replayed after login.
   const guestResumedRef = useRef(false)
   // Latest matched properties — used to render the Trust Passport card for the
   // property the tenant selects (the /select response doesn't echo it back).
-  const propertyMatchesRef = useRef<PropertyMatch[]>([])
+  const propertyMatchesRef = useRef<PropertyMatch[]>(
+    (() => {
+      try {
+        const saved = localStorage.getItem(CHAT_STORAGE_KEY)
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          return parsed.propertyMatches || []
+        }
+      } catch { /* ignore corrupt data */ }
+      return []
+    })()
+  )
   // The viewing intent handler is defined below (after handleSelectProperty, on
   // which it depends). sendMessage dispatches through this ref instead, so the
   // declaration order stays readable without a temporal-dead-zone error.
@@ -515,7 +536,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     if (/decline (the )?(new |proposed )?(viewing )?(time|slot|date)|decline (the )?reschedule/.test(t)) return "decline_reschedule"
     if (/what('s| is) happening with my viewing|status of my viewing|track my viewing|when is my viewing|my viewing request/.test(t)) return "status"
 
-    if (/\bapply now\b|i('m| am) ready to apply|ready to apply|want to apply (for|now)|let('s|s) apply/.test(t)) return "apply"
+    if (/\bapply now\b|'i am ready to apply'|'am ready to apply'|ready to apply|'want to apply for'|'want to apply now'|'let's apply'|'continue my application'|'start application'|'apply for that property'|i am ready to apply|am ready to apply|want to apply for|want to apply now|let['\u2019]s apply|continue my application|start application|apply for that property|i want to apply|i('d| would) like to apply/.test(t)) return "apply"
 
     // Strong scheduling verbs — safe to act on even before a property is picked.
     if (/(book|schedule|arrange|request).{0,20}(viewing|inspection|tour)|(viewing|inspection|tour).{0,20}(book|schedule|arrange)|inspect (the |this )?propert|virtual tour|live tour|schedule an inspection/.test(t)) return "view"
@@ -541,9 +562,10 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         messages: messages.slice(-50),  // keep last 50 messages max
         threadId,
         currentStage,
+        propertyMatches: propertyMatchesRef.current,
       }))
     } catch { /* storage full — silently ignore */ }
-  }, [messages, threadId, currentStage])
+  }, [messages, threadId, currentStage, propertyMatchesRef])
 
   // Auto-open when arriving via "Continue in PropFlow" (/tenant?propflow=1).
   // Reads the URL once, opens the panel, and strips the param so a refresh or
@@ -952,7 +974,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     setIsLoading(true)
     addMessage({ role: "system", text: "Selected option " + (idx + 1) + "..." })
     try {
-      const r = await propflowSelect(threadId, idx)
+      const r = await propflowSelect(threadId, { property_index: idx })
       setCurrentStage(r.current_stage)
 
       if (r.current_stage === "awaiting_trust_profile") {
@@ -1004,11 +1026,27 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       const res = await viewingRequestsAPI.getMyRequests()
       const active = ["pending", "confirmed", "reschedule_proposed"]
       const req = res.success
-        ? getViewingRequestsFrom(res).find(r => r.property_id === property.id && active.includes(r.status))
+        ? getViewingRequestsFrom(res).find(r => r.property?.id === property.id && active.includes(r.status))
         : null
       replaceViewingCards(property)
+      
       if (req) {
-        addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: req } })
+        // ✨ SMART FLOW: Check if viewing is in the past
+        const viewingDate = req.confirmed_date || req.preferred_date
+        const isPastDate = viewingDate && new Date(viewingDate) < new Date(new Date().setHours(0, 0, 0, 0))
+        
+        // If viewing was completed or confirmed but in the past, suggest application
+        if (req.status === "completed" || (req.status === "confirmed" && isPastDate)) {
+          addMessage({ 
+            role: "agent", 
+            text: `Your viewing for this property has been completed. Would you like to proceed with your application?`
+          })
+          addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: req } })
+        }
+        // For future confirmed or pending viewings, show the status card normally
+        else {
+          addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: req } })
+        }
       } else {
         addMessage({ role: "agent", text: "", viewingSchedule: { property, index } })
       }
@@ -1029,9 +1067,22 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         if (/active viewing request/i.test(err)) {
           addMessage({ role: "agent", text: "You already have an active viewing request for this property. You can track it in My Viewings." })
           const list = await viewingRequestsAPI.getMyRequests()
+          console.log('[PropFlow] Viewing requests API response:', list)
           if (list.success) {
-            const req = getViewingRequestsFrom(list).find(r => r.property_id === property.id)
-            if (req) addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: req } })
+            const allRequests = getViewingRequestsFrom(list)
+            console.log('[PropFlow] All viewing requests:', allRequests)
+            console.log('[PropFlow] Looking for property_id:', property.id)
+            // Fix: API returns property object, not property_id directly
+            const req = allRequests.find(r => r.property?.id === property.id)
+            console.log('[PropFlow] Found existing viewing request:', req)
+            if (req) {
+              addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: req } })
+            } else {
+              console.warn('[PropFlow] No matching viewing request found for property:', property.id)
+              console.warn('[PropFlow] Available property IDs:', allRequests.map(r => r.property?.id))
+            }
+          } else {
+            console.error('[PropFlow] Failed to fetch viewing requests:', list.error)
           }
         } else if (/in the past|cannot be in the past/i.test(err)) {
           addMessage({ role: "agent", text: "Please choose today or a future date." })
@@ -1063,7 +1114,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       const res = await viewingRequestsAPI.getMyRequests()
       if (!res.success) { addMessage({ role: "agent", text: "Could not fetch your viewings right now. Please try again.", stage: "error" }); return }
       const requests = getViewingRequestsFrom(res)
-      const target = property ? requests.find(r => r.property_id === property.id) : requests[0]
+      const target = property ? requests.find(r => r.property?.id === property.id) : requests[0]
       if (!target) {
         addMessage({ role: "agent", text: "You don't have any viewing requests yet. Pick a property and I'll help you schedule a viewing." })
         return
@@ -1098,16 +1149,80 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
 
   const applyForProperty = useCallback(async (property: ViewingProperty, index?: number) => {
     if (!user) { addMessage({ role: "system", text: "You'll need an account to apply.", signIn: true }); return }
-    let idx = index
-    if (idx == null || idx < 0) idx = propertyMatchesRef.current.findIndex(p => p.id === property.id)
-    if (idx == null || idx < 0) {
-      addMessage({ role: "agent", text: "This property is no longer in your results. Please select it again to apply.", stage: "error" })
+    if (!threadId) {
+      addMessage({ role: "system", text: "Cannot apply — session not found. Please start a new search or refresh the page." })
       return
     }
-    // Clear the viewing cards so the Trust Passport banner becomes the focus.
-    setMessages(p => p.filter(m => !m.viewingDecision && !m.viewingSchedule && !m.viewingConfirmation && !m.viewingStatus))
-    await handleSelectProperty(idx)
-  }, [user, addMessage, handleSelectProperty])
+
+    // ── Viewing context (informational only, never blocks) ───────────────
+    // Show the viewing status card alongside the application flow so the
+    // tenant has full context. The viewing cards remain visible after
+    // applying (append-only, no filtering).
+    setIsLoading(true)
+    let existingViewing: ViewingRequest | null = null
+    try {
+      const res = await viewingRequestsAPI.getMyRequests()
+      if (res.success) {
+        const allRequests = getViewingRequestsFrom(res)
+        existingViewing = allRequests.find(r => r.property?.id === property.id) || null
+      }
+    } catch {
+      // viewing fetch is best-effort, never block the application
+    }
+
+    addMessage({ role: "system", text: `Applying for ${property.title}...` })
+
+    try {
+      // ── Call /select with property_id (prefer id; fall back to index) ──
+      const hasId = !!(property as any).id
+      const r = hasId
+        ? await propflowSelect(threadId, { property_id: (property as any).id })
+        : index != null
+          ? await propflowSelect(threadId, { property_index: index })
+          : await propflowSelect(threadId, { property_id: property.id })
+
+      setCurrentStage(r.current_stage)
+
+      const stage = r.current_stage
+
+      // ── Already-in-progress: thread at a protected stage ───────────────
+      // The server returned the existing stage without overwriting it.
+      // Don't open Trust Passport; show the existing application state.
+      if (stage !== "awaiting_trust_profile" && r.success) {
+        if (existingViewing) {
+          addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: existingViewing } })
+        }
+        addMessage({ role: "agent", text: r.response_message, stage })
+        setIsLoading(false)
+        return
+      }
+
+      // ── Fresh application: show the Trust Passport banner + modal ──────
+      addMessage({ role: "agent", text: r.response_message, stage })
+
+      // Show the viewing status card as context alongside the application
+      if (existingViewing) {
+        addMessage({ role: "agent", text: "", viewingStatus: { property, index, request: existingViewing } })
+      }
+
+      // Cast ViewingProperty to PropertyMatch for trustPassport
+      addMessage({
+        role: "agent", text: "", stage,
+        trustPassport: { property: property as unknown as PropertyMatch },
+      })
+      setTrustModalOpen(true)
+    } catch (e: any) {
+      const errMsg = e?.message || "Unknown error"
+      addMessage({
+        role: "agent",
+        text: `Could not apply for this property: ${errMsg}. Please try again.`,
+        stage: "error",
+      })
+      setErrorBanner({ message: errMsg })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [user, threadId, addMessage, setCurrentStage, setTrustModalOpen, setErrorBanner])
 
   const handleViewingIntent = useCallback(async (
     intent: Exclude<ChatIntent, null>,
@@ -1145,7 +1260,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         return true
       }
       const res = await viewingRequestsAPI.getMyRequests()
-      const req = getViewingRequestsFrom(res).find(r => r.property_id === ctx.property.id && r.status === "reschedule_proposed")
+      const req = getViewingRequestsFrom(res).find(r => r.property?.id === ctx.property.id && r.status === "reschedule_proposed")
       if (!req) {
         addMessage({ role: "agent", text: "There's no proposed time awaiting your response for this property right now." })
         return true
@@ -1249,7 +1364,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       } else if (type === "restart") {
         welcomeSet.current = false
         setThreadId(undefined); setCurrentStage("idle"); setMessages([])
-        setLandlordReviewData(null); setViewingError(null)
+        setViewingError(null)
         localStorage.removeItem(CHAT_STORAGE_KEY)
       }
     } catch (e: any) {
@@ -1292,9 +1407,9 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
   }, [trustModalOpen])
 
   return (
-    <div className={cn("fixed right-3 bottom-3 left-3 sm:left-auto sm:right-6 sm:bottom-6 z-50 flex flex-col items-end gap-3", className)}>
+    <div className={cn("propflow-shell fixed right-3 bottom-3 left-3 sm:left-auto sm:right-6 sm:bottom-6 z-50 flex flex-col items-end gap-3", className)}>
       {isOpen && (
-        <div className="w-full h-[calc(100dvh-0.75rem)] sm:w-[min(440px,100vw-2rem)] sm:h-auto sm:max-h-[min(80vh,760px)] sm:min-h-[480px] bg-white rounded-3xl shadow-2xl ring-1 ring-slate-200 flex flex-col overflow-hidden">
+        <div className="propflow-panel w-full h-[calc(100dvh-0.75rem)] sm:w-[min(440px,100vw-2rem)] sm:h-auto sm:max-h-[min(80vh,760px)] sm:min-h-[480px] bg-white rounded-3xl shadow-2xl ring-1 ring-slate-200 flex flex-col overflow-hidden">
           {/* Header — calm; orange reserved for accent/actions */}
           <div className="shrink-0 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -1317,7 +1432,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
               )}
               {messages.length > 0 && (
                 <button
-                  onClick={() => { setThreadId(undefined); setCurrentStage("idle"); setMessages([]); setLandlordReviewData(null); welcomeSet.current = false; setTrustModalOpen(false); setErrorBanner(null); setViewingError(null); retryRef.current = null; localStorage.removeItem(CHAT_STORAGE_KEY) }}
+                  onClick={() => { setThreadId(undefined); setCurrentStage("idle"); setMessages([]); welcomeSet.current = false; setTrustModalOpen(false); setErrorBanner(null); setViewingError(null); retryRef.current = null; localStorage.removeItem(CHAT_STORAGE_KEY) }}
                   className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
                   title="Start a new chat" aria-label="Start a new chat">
                   <RotateCcw className="h-3.5 w-3.5" />
@@ -1414,7 +1529,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
             aria-modal="true"
             aria-label="Complete your application"
             tabIndex={-1}
-            className="relative flex flex-col w-full h-full sm:w-[min(660px,calc(100vw-2.5rem))] sm:h-auto sm:max-h-[min(92dvh,900px)] sm:my-5 sm:rounded-3xl bg-white shadow-2xl overflow-hidden outline-none"
+            className="propflow-panel relative flex flex-col w-full h-full sm:w-[min(660px,calc(100vw-2.5rem))] sm:h-auto sm:max-h-[min(92dvh,900px)] sm:my-5 sm:rounded-3xl bg-white shadow-2xl overflow-hidden outline-none"
           >
             <TrustPassportCard
               property={selectedTrustProperty}

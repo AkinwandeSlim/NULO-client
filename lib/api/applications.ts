@@ -157,7 +157,10 @@ export const applicationsAPI = {
     const response = await apiClient.post(
       '/api/v1/applications/upload-document',
       formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
+      { 
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000, // 120 seconds (2 minutes) for large file uploads in Nigeria
+      },
     )
     return response.data
   },

@@ -383,7 +383,7 @@ export default function DashboardLayout({
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF9F1] via-[#FEF7E6] to-[#FFF5E1]">
+    <div className="dashboard-shell min-h-screen bg-[#FCFBF9] text-slate-900 dark:bg-black dark:text-white">
       {/* UPDATED: Use unified Navbar component */}
       <Navbar />
 
@@ -391,7 +391,7 @@ export default function DashboardLayout({
       <div className="pt-14">
         {/* Sidebar */}
         <aside
-          className={`fixed top-14 left-0 z-40 h-[calc(100vh-3.5rem)] w-64 bg-white border-r border-slate-200 transition-transform duration-300 lg:translate-x-0 ${
+          className={`dashboard-sidebar fixed top-14 left-0 z-40 h-[calc(100vh-3.5rem)] w-64 bg-white/95 border-r border-slate-200/80 backdrop-blur-xl transition-transform duration-300 dark:bg-[#0A0A0A]/95 dark:border-white/[0.08] lg:translate-x-0 ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -400,12 +400,20 @@ export default function DashboardLayout({
 
 
             {/* Dashboard Section Header */}
-            <div className="mb-4">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2">
+            <div className="mb-4 flex items-center justify-between px-2">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.16em] px-2 dark:text-slate-400">
                 {userType === 'admin' ? 'Admin Control Panel' : 
                  userType === 'landlord' ? 'Property Management' : 
                  'Rental Journey'}
               </div>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(false)}
+                className="lg:hidden inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-orange-50 hover:text-orange-600 dark:text-slate-400 dark:hover:bg-orange-500/10"
+                aria-label="Close navigation"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
 
             {/* Navigation Links with Sections */}
@@ -420,11 +428,11 @@ export default function DashboardLayout({
                     {sectionGroup.collapsible ? (
                       <button
                         onClick={() => toggleSection(sectionGroup.section)}
-                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-slate-100 transition-colors group"
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors group"
                       >
                         <div className="flex items-center gap-3 flex-1">
-                          {SectionIcon && <SectionIcon className="h-4 w-4 text-slate-600 group-hover:text-orange-600" />}
-                          <span className="text-sm font-semibold text-slate-700 group-hover:text-orange-600">
+                          {SectionIcon && <SectionIcon className="h-4 w-4 text-slate-600 dark:text-slate-400 group-hover:text-orange-600" />}
+                          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 group-hover:text-orange-600">
                             {sectionGroup.section}
                           </span>
                         </div>
@@ -432,7 +440,7 @@ export default function DashboardLayout({
                       </button>
                     ) : (
                       <div className="px-3 py-2 mb-2">
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-[0.16em]">
                           {sectionGroup.section}
                         </p>
                       </div>
@@ -458,7 +466,7 @@ export default function DashboardLayout({
                                 } ${
                                   isActive
                                     ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 shadow-sm"
-                                    : "text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                                    : "text-slate-700 dark:text-slate-300 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-500/10"
                                 }`}
                               >
                                 <Icon className="h-4 w-4 flex-shrink-0" />
@@ -480,13 +488,13 @@ export default function DashboardLayout({
             </nav>
 
             {/* Bottom Actions */}
-            <div className="space-y-2 pt-4 border-t border-slate-200 mt-4">
+            <div className="space-y-2 pt-4 border-t border-slate-200 dark:border-white/[0.08] mt-4">
               {/* Browse Properties - Only for tenants */}
               {userType === 'tenant' && (
                 <Link href="/properties">
                   <Button
                     variant="ghost"
-                    className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                    className="w-full justify-start gap-3 text-slate-700 dark:text-slate-300 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-500/10"
                     onClick={() => setSidebarOpen(false)}
                   >
                     <Home className="h-5 w-5" />
@@ -500,7 +508,7 @@ export default function DashboardLayout({
                 <Link href="/landlord/properties/new">
                   <Button 
                     variant="ghost" 
-                    className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                    className="w-full justify-start gap-3 text-slate-700 dark:text-slate-300 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-500/10"
                     onClick={() => setSidebarOpen(false)}
                   >
                     <Building2 className="h-5 w-5" />
@@ -517,7 +525,7 @@ export default function DashboardLayout({
               }>
                 <Button 
                   variant="ghost" 
-                  className="w-full justify-start gap-3 text-slate-700 hover:text-orange-600 hover:bg-orange-50"
+                  className="w-full justify-start gap-3 text-slate-700 dark:text-slate-300 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-500/10"
                   onClick={() => setSidebarOpen(false)}
                 >
                   <SettingsIcon className="h-5 w-5" />
@@ -552,15 +560,15 @@ export default function DashboardLayout({
         </aside>
 
         {/* Mobile top bar — hamburger to open sidebar. Hidden on desktop where sidebar is always visible. */}
-        <div className="lg:hidden fixed top-14 left-0 right-0 z-30 bg-white/95 backdrop-blur-sm border-b border-slate-200 px-4 h-11 flex items-center gap-3 shadow-sm">
+        <div className="lg:hidden fixed top-14 left-0 right-0 z-30 bg-white/95 dark:bg-[#0A0A0A]/95 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.08] px-4 h-11 flex items-center gap-3 shadow-sm">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-1.5 rounded-lg text-slate-600 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-colors"
             aria-label="Open navigation"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="text-sm font-medium text-slate-600 truncate">
+          <span className="text-sm font-medium text-slate-600 dark:text-slate-300 truncate">
             {userType === 'admin' ? 'Admin Panel' : userType === 'landlord' ? 'Property Management' : 'My Dashboard'}
           </span>
         </div>

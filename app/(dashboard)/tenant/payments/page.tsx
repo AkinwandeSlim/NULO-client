@@ -112,7 +112,7 @@ function PaymentRow({ row, onViewDetails, onProvisionNuban }: RowProps) {
   const balance = Math.max(expected - received, 0)
 
   return (
-    <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
+    <Card className="tenant-payment-row border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
       <CardContent className="p-5">
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
@@ -144,7 +144,7 @@ function PaymentRow({ row, onViewDetails, onProvisionNuban }: RowProps) {
         </div>
 
         {/* Payment status block */}
-        <div className="mt-4 p-4 rounded-lg border border-dashed border-orange-300 bg-orange-50/50">
+        <div className="payment-status-panel mt-4 p-4 rounded-lg border border-dashed border-orange-300 bg-orange-50/50">
           {isProvisioned && (row.reconciliation_status === "FULL_PAYMENT" || row.reconciliation_status === "RECONCILED") ? (
             <>
               <div className="flex items-center gap-2 mb-2">
@@ -341,7 +341,7 @@ export default function TenantPaymentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
+    <div className="tenant-payments min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
 
         {/* ── Header ── */}

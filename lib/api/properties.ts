@@ -63,6 +63,7 @@ export const propertiesAPI = {
     options?: {
       skipCache?: boolean;
       signal?: AbortSignal;
+      requestKey?: string;
     }
   ): Promise<PropertySearchResponse> => {
     const startTime = performance.now();
@@ -145,7 +146,7 @@ export const propertiesAPI = {
       }
       
       // OPTIMIZATION 4: Create cancellable request with LONGER timeout
-      const requestKey = `search_${queryParams.toString()}`;
+      const requestKey = options?.requestKey || `search_${queryParams.toString()}`;
       const cancelToken = RequestManager.createCancelToken(requestKey);
       
       // OPTIMIZATION 4: Use optimized HTTP client with EXTENDED timeout (30s for slow Supabase)
@@ -226,7 +227,9 @@ export const propertiesAPI = {
               }
             }
           ).catch(() => {});
-        }, 100);
+        // Don't compete with the initial cards, images, and map. The next
+        // page still arrives before a typical user reaches pagination.
+        }, 1500);
       }
       
       console.log(`✅ [SEARCH COMPLETE] ${duration.toFixed(0)}ms - ${serverData.properties?.length || 0} results`);

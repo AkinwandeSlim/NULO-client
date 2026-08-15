@@ -67,6 +67,7 @@ const DEFAULT_LAGOS_LAT = 6.5244
 const DEFAULT_LAGOS_LNG = 3.3792
 const SEARCH_DEBOUNCE_MS = 300
 const ITEMS_PER_PAGE = 24
+const MARKETPLACE_VIEW_PREFERENCE_KEY = 'nulo_marketplace_view_mode'
 
 interface SearchFilters {
   location?: string
@@ -93,7 +94,7 @@ export default function PropertiesPage() {
   useSignupCallbackUrl()
 
   // State
-  const [viewMode, setViewMode] = useState<ViewMode>('split')
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
   // ✅ Lazy-initialize from URL params so the very first fetch is already correct.
   // Without this, state defaults to '' / 'featured' / etc., causing a wrong
   // unfiltered fetch before the URL-params effect can set the real values.
@@ -105,6 +106,9 @@ export default function PropertiesPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [renderState, setRenderState] = useState<'loading' | 'error' | 'empty' | 'loaded'>('loading')
+  // Mapbox is valuable, but its bundle, WebGL context, and tiles should not
+  // compete with the first visible property cards on a cold page load.
+  const [shouldLoadMap, setShouldLoadMap] = useState(false)
 
   // Filters — also lazy-initialized from URL params for the same reason
   const [priceRange, setPriceRange] = useState<[number, number]>(() => {
@@ -135,6 +139,8 @@ export default function PropertiesPage() {
 
   // Refs
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const latestSearchId = useRef(0)
+  const hasSavedViewPreference = useRef(false)
   // Tracks whether the URL-params effect is running for the first time.
   // On first render, lazy useState already applied the URL params — we skip
   // the effect to avoid a redundant state-set → re-render → double-fetch.
@@ -158,6 +164,8 @@ export default function PropertiesPage() {
   // ============================================================================
 
   const fetchProperties = useCallback(async (page: number = 1, forceRefresh: boolean = false) => {
+    const searchId = ++latestSearchId.current
+
     try {
       setIsLoading(true)
       setError(null)
@@ -193,7 +201,13 @@ export default function PropertiesPage() {
 
       const response = await propertiesAPI.search(filters, {
         skipCache: forceRefresh,
+        // All marketplace searches share one cancellation slot. A superseded
+        // filter request therefore cannot race the most recent result.
+        requestKey: 'marketplace-search',
       })
+
+      // A newer search has already started, so its result owns the UI.
+      if (searchId !== latestSearchId.current) return
 
       console.log('✅ [PROPERTIES] Response:', {
         total: response.pagination?.total,
@@ -204,7 +218,6 @@ export default function PropertiesPage() {
 
       setProperties(response.properties || [])
       setPagination(response.pagination)
-      setCurrentPage(page)
 
       if (response.properties?.length === 0) {
         setRenderState('empty')
@@ -218,14 +231,18 @@ export default function PropertiesPage() {
         console.log('🔍 [PROPERTIES] Search cancelled (expected behavior)')
         return
       }
+
+      if (searchId !== latestSearchId.current) return
       
       console.error('❌ [PROPERTIES] Fetch error:', err)
       setError(err instanceof Error ? err.message : 'Failed to load properties')
       setRenderState('error')
     } finally {
-      setIsLoading(false)
+      if (searchId === latestSearchId.current) {
+        setIsLoading(false)
+      }
     }
-  }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy])
+  }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy, quickFilter])
 
   const loadFavoritesInFlight = useRef(false)
 
@@ -360,22 +377,37 @@ export default function PropertiesPage() {
 
   // ✅ Responsive view mode - Auto-switch based on screen size
   useEffect(() => {
-    const handleResize = () => {
-      // Tailwind lg breakpoint is 1024px
-      // Mobile: < 1024px -> List view
-      // Desktop: >= 1024px -> Split view
-      const isMobile = window.innerWidth < 1024
-      setViewMode(isMobile ? 'list' : 'split')
+    const applyDefaultView = () => {
+      if (hasSavedViewPreference.current) return
+
+      if (window.innerWidth < 1024) {
+        setViewMode('list')
+        return
+      }
+
+      setViewMode(searchQuery.trim() ? 'split' : 'grid')
     }
 
-    // Set initial view mode on mount
-    handleResize()
+    try {
+      const savedView = localStorage.getItem(MARKETPLACE_VIEW_PREFERENCE_KEY) as ViewMode | null
+      if (savedView && ['grid', 'list', 'split', 'map'].includes(savedView)) {
+        hasSavedViewPreference.current = true
+        setViewMode(savedView)
+        return
+      }
+    } catch {}
 
-    // Add resize listener
-    window.addEventListener('resize', handleResize)
-    
-    // Cleanup
-    return () => window.removeEventListener('resize', handleResize)
+    applyDefaultView()
+    window.addEventListener('resize', applyDefaultView)
+    return () => window.removeEventListener('resize', applyDefaultView)
+  }, [searchQuery])
+
+  const handleViewModeChange = useCallback((mode: ViewMode) => {
+    hasSavedViewPreference.current = true
+    setViewMode(mode)
+    try {
+      localStorage.setItem(MARKETPLACE_VIEW_PREFERENCE_KEY, mode)
+    } catch {}
   }, [])
 
   // Sync URL params → filter state when the URL changes (e.g. browser back/forward).
@@ -425,15 +457,55 @@ export default function PropertiesPage() {
   // Load properties when filters change
   useEffect(() => {
     fetchProperties(currentPage)
-  }, [searchQuery, priceRange, selectedType, minBeds, minBaths, sortBy, currentPage, quickFilter])
+  }, [currentPage, fetchProperties])
 
   // Load favorites on page arrival and when user changes
   // force=true bypasses the 2s debounce so hearts are red immediately on load
   useEffect(() => {
-    if (user && !authLoading) {
+    // Favorites are non-critical for first paint. Let the property result and
+    // its images take priority, then hydrate heart states in the background.
+    if (user && !authLoading && renderState !== 'loading') {
       loadFavorites(true)
     }
-  }, [user?.id, authLoading])
+  }, [user?.id, authLoading, renderState, loadFavorites])
+
+  // Defer Mapbox until the listing has painted. Selecting the dedicated map
+  // view remains immediate, while the default split view becomes responsive
+  // even on slower connections and devices.
+  useEffect(() => {
+    if (shouldLoadMap || viewMode === 'list' || viewMode === 'grid') return
+
+    if (viewMode === 'map') {
+      setShouldLoadMap(true)
+      return
+    }
+
+    if (isLoading || properties.length === 0) return
+
+    const loadMap = () => setShouldLoadMap(true)
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+      cancelIdleCallback?: (id: number) => void
+    }
+
+    if (idleWindow.requestIdleCallback) {
+      const idleId = idleWindow.requestIdleCallback(loadMap, { timeout: 1200 })
+      return () => idleWindow.cancelIdleCallback?.(idleId)
+    }
+
+    const timeoutId = window.setTimeout(loadMap, 500)
+    return () => window.clearTimeout(timeoutId)
+  }, [isLoading, properties.length, shouldLoadMap, viewMode])
+
+  const handleMapPropertySelect = useCallback((property: any | null) => {
+    setSelectedProperty(property)
+    if (property) {
+      window.setTimeout(() => {
+        const card = document.getElementById(`property-card-${property.id}`)
+        card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 100)
+    }
+  }, [])
 
   // ============================================================================
   // RENDER - MARKETPLACE LAYOUT
@@ -448,7 +520,7 @@ export default function PropertiesPage() {
           setCurrentPage(1)
         }}
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        onViewModeChange={handleViewModeChange}
         propertyType={selectedType}
         onPropertyTypeChange={(type) => {
           setSelectedType(type)
@@ -540,7 +612,7 @@ export default function PropertiesPage() {
                 {/* 2-column property cards */}
                 {!isLoading && properties.length > 0 && (
                   <div className="grid grid-cols-2 gap-3">
-                    {properties.map((property) => (
+                    {properties.map((property, index) => (
                       <div
                         key={property.id}
                         id={`property-card-${property.id}`}
@@ -551,6 +623,7 @@ export default function PropertiesPage() {
                         }`}
                         onClick={() => {
                           // Select property for map sync (don't navigate)
+                          setShouldLoadMap(true)
                           setSelectedProperty(property)
                           
                           // Scroll to card in view
@@ -564,6 +637,8 @@ export default function PropertiesPage() {
                             <img
                               src={property.images[0]}
                               alt={property.title}
+                              loading={index < 4 ? 'eager' : 'lazy'}
+                              decoding="async"
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
                           ) : (
@@ -668,6 +743,7 @@ export default function PropertiesPage() {
                               onClick={(e) => { 
                                 e.stopPropagation(); 
                                 // Select property and fly to it on map
+                                setShouldLoadMap(true)
                                 setSelectedProperty(property)
                                 // Scroll to card
                                 const card = document.getElementById(`property-card-${property.id}`)
@@ -703,7 +779,7 @@ export default function PropertiesPage() {
                     <PaginationControls
                       pagination={pagination}
                       currentPage={currentPage}
-                      onPageChange={(page) => fetchProperties(page)}
+                      onPageChange={setCurrentPage}
                     />
                   </div>
                 )}
@@ -721,20 +797,21 @@ export default function PropertiesPage() {
                   </div>
                 </div>
               )}
-              <PropertyMapOptimized
-                properties={properties}
-                selectedProperty={selectedProperty}
-                onPropertySelect={(property) => {
-                  setSelectedProperty(property)
-                  if (property) {
-                    setTimeout(() => {
-                      const card = document.getElementById(`property-card-${property.id}`)
-                      card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                    }, 100)
-                  }
-                }}
-                zoom={11}
-              />
+              {shouldLoadMap ? (
+                <PropertyMapOptimized
+                  properties={properties}
+                  selectedProperty={selectedProperty}
+                  onPropertySelect={handleMapPropertySelect}
+                  zoom={11}
+                />
+              ) : (
+                <div className={`h-full flex items-center justify-center ${theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-100'}`}>
+                  <div className="text-center">
+                    <Loader2 className="h-7 w-7 animate-spin text-orange-500 mx-auto mb-2" />
+                    <p className={`text-sm ${theme === 'dark' ? 'text-white/60' : 'text-slate-600'}`}>Preparing map…</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -749,12 +826,18 @@ export default function PropertiesPage() {
                 </div>
               </div>
             )}
-            <PropertyMapOptimized
-              properties={properties}
-              selectedProperty={selectedProperty}
-              onPropertySelect={setSelectedProperty}
-              zoom={11}
-            />
+            {shouldLoadMap ? (
+              <PropertyMapOptimized
+                properties={properties}
+                selectedProperty={selectedProperty}
+                onPropertySelect={handleMapPropertySelect}
+                zoom={11}
+              />
+            ) : (
+              <div className={`h-full flex items-center justify-center ${theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-100'}`}>
+                <Loader2 className="h-7 w-7 animate-spin text-orange-500" />
+              </div>
+            )}
           </div>
 
         ) : (
@@ -808,7 +891,7 @@ export default function PropertiesPage() {
                     <PaginationControls
                       pagination={pagination}
                       currentPage={currentPage}
-                      onPageChange={(page) => fetchProperties(page)}
+                      onPageChange={setCurrentPage}
                     />
                   </div>
                 )}

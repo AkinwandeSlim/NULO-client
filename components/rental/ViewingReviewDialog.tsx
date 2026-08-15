@@ -1,11 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { CalendarCheck2, CalendarClock, Check, Clock, MessageSquare, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { cn } from "@/lib/utils"
+import { dialogStyles as s } from "@/lib/utils/dialogStyles"
 
 export function ViewingReviewDialog({ request, open, submitting, onClose, onConfirm, onPropose, onDecline }: any) {
   const [confirmedDate, setConfirmedDate] = useState("")
@@ -14,7 +17,11 @@ export function ViewingReviewDialog({ request, open, submitting, onClose, onConf
 
   useEffect(() => {
     if (!request) return
-    setConfirmedDate(request.confirmed_date || request.preferred_date || "")
+    // Pre-fill date: use confirmed_date if set, or preferred_date if it's today/future.
+    // Never pre-fill a past date — the backend rejects it with 422.
+    const today = new Date().toISOString().slice(0, 10)
+    const rawDate = request.confirmed_date || request.preferred_date || ""
+    setConfirmedDate(rawDate >= today ? rawDate : today)
     setConfirmedTime(request.confirmed_time || "")
     setNotes(request.landlord_notes || "")
   }, [request])
@@ -28,50 +35,113 @@ export function ViewingReviewDialog({ request, open, submitting, onClose, onConf
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="w-[calc(100%-2rem)] max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-xl sm:w-full">
-        <DialogHeader className="border-b border-slate-200 bg-slate-50 px-6 py-5 text-left">
-          <DialogTitle className="text-xl font-semibold text-slate-900">Review viewing appointment</DialogTitle>
-          <DialogDescription className="mt-1 text-sm leading-6 text-slate-600">
-            Confirm the exact appointment, or propose a new time for the tenant to accept.
-          </DialogDescription>
+      <DialogContent className={s.card}>
+        <DialogHeader className={cn(s.header, 'pt-16')}>
+          <div className="flex items-start gap-3">
+            <span className="mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-600 ring-1 ring-orange-200/70 dark:bg-orange-500/10 dark:text-orange-400 dark:ring-orange-500/20">
+              <CalendarCheck2 className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1 pt-2">
+              <DialogTitle className={s.title}>
+                Review viewing appointment
+              </DialogTitle>
+              <DialogDescription className={s.description}>
+                Confirm the exact appointment, or propose a new time for the tenant to accept.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-5 px-6 py-6">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+        <div className={s.body}>
+          <div className={s.section}>
+            <div className={s.sectionLabel}>
+              <Clock className="h-3.5 w-3.5" />
+              Appointment slot
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
-                <Label htmlFor="viewing-date" className="text-sm font-medium text-slate-700">Date</Label>
-                <Input id="viewing-date" type="date" min={new Date().toISOString().slice(0, 10)} value={confirmedDate} onChange={(e) => setConfirmedDate(e.target.value)} />
+                <Label htmlFor="viewing-date" className={s.label}>
+                  Date
+                </Label>
+                <Input
+                  id="viewing-date"
+                  type="date"
+                  min={new Date().toISOString().slice(0, 10)}
+                  value={confirmedDate}
+                  onChange={(e) => setConfirmedDate(e.target.value)}
+                  className={s.input}
+                />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="viewing-time" className="text-sm font-medium text-slate-700">Exact time</Label>
-                <Input id="viewing-time" type="time" value={confirmedTime} onChange={(e) => setConfirmedTime(e.target.value)} />
+                <Label htmlFor="viewing-time" className={s.label}>
+                  Exact time
+                </Label>
+                <Input
+                  id="viewing-time"
+                  type="time"
+                  value={confirmedTime}
+                  onChange={(e) => setConfirmedTime(e.target.value)}
+                  className={s.input}
+                />
               </div>
             </div>
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="viewing-note" className="text-sm font-medium text-slate-700">
-              Message to tenant <span className="font-normal text-slate-400">(optional)</span>
+            <Label htmlFor="viewing-note" className={s.label}>
+              <span className="inline-flex items-center gap-1.5">
+                <MessageSquare className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                Message to tenant
+                <span className={s.labelOptional}>(optional)</span>
+              </span>
             </Label>
-            <Textarea id="viewing-note" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="For example: Please meet the caretaker at the gate." className="min-h-24 resize-none" />
+            <Textarea
+              id="viewing-note"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="For example: Please meet the caretaker at the gate."
+              className={s.textarea}
+            />
           </div>
 
-          <p className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+          <p className={s.infoAmber}>
             Proposing a time keeps the request pending until the tenant accepts it. Confirming schedules the viewing immediately.
           </p>
         </div>
 
-        <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <Button variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700" disabled={submitting} onClick={() => onDecline(notes || "This time is unavailable.")}>
+        <div className={s.footer}>
+          <Button
+            variant="outline"
+            className={s.danger}
+            disabled={submitting}
+            onClick={() => onDecline(notes || "This time is unavailable.")}
+          >
+            <X className="h-4 w-4" />
             Decline request
           </Button>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button variant="outline" disabled={!canSubmit} onClick={() => onPropose(appointment)}>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Button
+              variant="outline"
+              disabled={!canSubmit}
+              onClick={() => onPropose(appointment)}
+              className={s.secondary}
+            >
+              <CalendarClock className="h-4 w-4" />
               Propose time
             </Button>
-            <Button disabled={!canSubmit} onClick={() => onConfirm(appointment)}>
-              {submitting ? "Saving..." : "Confirm viewing"}
+            <Button
+              className={s.primary}
+              disabled={!canSubmit}
+              onClick={() => onConfirm(appointment)}
+            >
+              {submitting ? (
+                "Saving..."
+              ) : (
+                <>
+                  <Check className="h-4 w-4" />
+                  Confirm viewing
+                </>
+              )}
             </Button>
           </div>
         </div>

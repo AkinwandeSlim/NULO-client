@@ -53,6 +53,8 @@ import propertyVerificationAPI, {
   formatAddress,
   getPrimaryImage
 } from "@/lib/api/propertyVerification"
+import { cn } from "@/lib/utils"
+import { dialogStyles as s } from "@/lib/utils/dialogStyles"
 
 export default function PropertyVerification() {
   const router = useRouter()
@@ -713,20 +715,20 @@ export default function PropertyVerification() {
 
         {/* Property Details Dialog */}
         <Dialog open={!!selectedProperty && !actionDialogOpen} onOpenChange={(open) => !open && setSelectedProperty(null)}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className={cn(s.card, 'max-w-4xl')}>
             {selectedProperty && (
               <>
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2 text-orange-900">
-                    <Home className="h-5 w-5" />
+                <DialogHeader className={s.header}>
+                  <DialogTitle className={cn(s.title, 'flex items-center gap-2')}>
+                    <Home className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                     {selectedProperty.title}
                   </DialogTitle>
                 </DialogHeader>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                <div className="grid grid-cols-1 gap-6 px-6 py-6 md:grid-cols-2">
                   {/* Property Images */}
                   <div>
-                    <h3 className="font-semibold text-gray-900 mb-3">Property Images</h3>
+                    <h3 className="mb-3 font-semibold text-slate-900 dark:text-slate-100">Property Images</h3>
                     <div className="grid grid-cols-2 gap-2">
                       {selectedProperty.images && selectedProperty.images.length > 0 ? (
                         selectedProperty.images.slice(0, 4).map((image, index) => (
@@ -734,105 +736,107 @@ export default function PropertyVerification() {
                             key={index}
                             src={image}
                             alt={`Property image ${index + 1}`}
-                            className="w-full h-32 object-cover rounded-lg"
+                            className="h-32 w-full rounded-lg object-cover"
                             onError={(e) => {
                               e.currentTarget.src = '/images/property-placeholder.svg'
                             }}
                           />
                         ))
                       ) : (
-                        <div className="col-span-2 h-32 bg-gray-200 rounded-lg flex items-center justify-center">
-                          <Image className="h-8 w-8 text-gray-400" />
+                        <div className="col-span-2 flex h-32 items-center justify-center rounded-lg bg-slate-200 dark:bg-slate-800">
+                          <Image className="h-8 w-8 text-slate-400 dark:text-slate-500" />
                         </div>
                       )}
                     </div>
                   </div>
-                  
+
                   {/* Property Details */}
                   <div>
-                    <h3 className="font-semibold text-gray-900 mb-3">Property Details</h3>
+                    <h3 className="mb-3 font-semibold text-slate-900 dark:text-slate-100">Property Details</h3>
                     <div className="space-y-3">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Type:</span>
-                        <span className="font-medium capitalize">{selectedProperty.property_type}</span>
+                        <span className="text-slate-600 dark:text-slate-400">Type:</span>
+                        <span className="font-medium capitalize text-slate-900 dark:text-slate-100">{selectedProperty.property_type}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Bedrooms:</span>
-                        <span className="font-medium">{selectedProperty.beds}</span>
+                        <span className="text-slate-600 dark:text-slate-400">Bedrooms:</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">{selectedProperty.beds}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Bathrooms:</span>
-                        <span className="font-medium">{selectedProperty.baths}</span>
+                        <span className="text-slate-600 dark:text-slate-400">Bathrooms:</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">{selectedProperty.baths}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Size:</span>
-                        <span className="font-medium">{selectedProperty.sqft} sqft</span>
+                        <span className="text-slate-600 dark:text-slate-400">Size:</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">{selectedProperty.sqft} sqft</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Rent:</span>
-                        <span className="font-medium text-orange-600">{formatPrice(selectedProperty.price)}/month</span>
+                        <span className="text-slate-600 dark:text-slate-400">Rent:</span>
+                        <span className="font-medium text-orange-600 dark:text-orange-400">{formatPrice(selectedProperty.price)}/month</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Security Deposit:</span>
-                        <span className="font-medium">{formatPrice(selectedProperty.security_deposit)}</span>
+                        <span className="text-slate-600 dark:text-slate-400">Security Deposit:</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">{formatPrice(selectedProperty.security_deposit)}</span>
                       </div>
                     </div>
                   </div>
                 </div>
-                
-                {/* Description */}
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-3">Description</h3>
-                  <p className="text-gray-600">{selectedProperty.description}</p>
-                </div>
-                
-                {/* Amenities */}
-                {selectedProperty.amenities && selectedProperty.amenities.length > 0 && (
+
+                <div className="space-y-6 px-6 pb-6">
+                  {/* Description */}
                   <div>
-                    <h3 className="font-semibold text-gray-900 mb-3">Amenities</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedProperty.amenities.map((amenity, index) => (
-                        <Badge key={index} variant="outline" className="flex items-center gap-1">
-                          {getAmenityIcon(amenity)}
-                          {amenity}
-                        </Badge>
-                      ))}
+                    <h3 className="mb-3 font-semibold text-slate-900 dark:text-slate-100">Description</h3>
+                    <p className="text-slate-600 dark:text-slate-400">{selectedProperty.description}</p>
+                  </div>
+
+                  {/* Amenities */}
+                  {selectedProperty.amenities && selectedProperty.amenities.length > 0 && (
+                    <div>
+                      <h3 className="mb-3 font-semibold text-slate-900 dark:text-slate-100">Amenities</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedProperty.amenities.map((amenity, index) => (
+                          <Badge key={index} variant="outline" className="flex items-center gap-1">
+                            {getAmenityIcon(amenity)}
+                            {amenity}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Landlord Info */}
+                  <div>
+                    <h3 className="mb-3 font-semibold text-slate-900 dark:text-slate-100">Landlord Information</h3>
+                    <div className={s.section}>
+                      <p className="font-medium text-slate-900 dark:text-slate-100">{selectedProperty.landlord?.full_name || 'Unknown'}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">{selectedProperty.landlord?.email || 'No email'}</p>
+                      <Badge className="mt-2">
+                        {selectedProperty.landlord?.verification_status || 'Unknown'}
+                      </Badge>
                     </div>
                   </div>
-                )}
-                
-                {/* Landlord Info */}
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-3">Landlord Information</h3>
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <p className="font-medium">{selectedProperty.landlord?.full_name || 'Unknown'}</p>
-                    <p className="text-sm text-gray-600">{selectedProperty.landlord?.email || 'No email'}</p>
-                    <Badge className="mt-2">
-                      {selectedProperty.landlord?.verification_status || 'Unknown'}
-                    </Badge>
-                  </div>
+
+                  {/* Actions */}
+                  {selectedProperty.verification_status === 'pending' && (
+                    <div className={cn('flex gap-3 pt-4', 'border-t border-slate-200 dark:border-slate-800')}>
+                      <Button
+                        onClick={() => openActionDialog(selectedProperty, 'approve')}
+                        className={cn(s.primary, 'bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-400 dark:shadow-green-500/20 shadow-green-600/20 hover:shadow-green-600/30 dark:hover:shadow-green-500/30')}
+                      >
+                        <CheckCircle className="mr-2 h-4 w-4" />
+                        Approve Property
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => openActionDialog(selectedProperty, 'reject')}
+                        className={s.danger}
+                      >
+                        <XCircle className="mr-2 h-4 w-4" />
+                        Reject Property
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                
-                {/* Actions */}
-                {selectedProperty.verification_status === 'pending' && (
-                  <div className="flex gap-3 pt-4 border-t">
-                    <Button
-                      onClick={() => openActionDialog(selectedProperty, 'approve')}
-                      className="bg-green-600 hover:bg-green-700 text-white"
-                    >
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Approve Property
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => openActionDialog(selectedProperty, 'reject')}
-                      className="border-red-200 text-red-700 hover:bg-red-50"
-                    >
-                      <XCircle className="h-4 w-4 mr-2" />
-                      Reject Property
-                    </Button>
-                  </div>
-                )}
               </>
             )}
           </DialogContent>
@@ -840,53 +844,53 @@ export default function PropertyVerification() {
 
         {/* Action Dialog */}
         <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+          <DialogContent className={cn(s.card, s.cardMd)}>
+            <DialogHeader className={s.header}>
+              <DialogTitle className={cn(s.title, 'flex items-center gap-2')}>
                 {pendingAction === 'approve' ? (
                   <>
-                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                     Approve Property
                   </>
                 ) : (
                   <>
-                    <XCircle className="h-5 w-5 text-red-600" />
+                    <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
                     Reject Property
                   </>
                 )}
               </DialogTitle>
             </DialogHeader>
-            
+
             {actionProperty && (
-              <div className="space-y-4">
+              <div className={cn(s.body, 'space-y-4')}>
                 <div>
-                  <p className="font-medium">{actionProperty.title}</p>
-                  <p className="text-sm text-gray-500">{formatAddress(actionProperty)}</p>
+                  <p className="font-medium text-slate-900 dark:text-slate-100">{actionProperty.title}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{formatAddress(actionProperty)}</p>
                 </div>
-                
+
                 {pendingAction === 'reject' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className={cn(s.label, 'mb-2 block')}>
                       Rejection Reason *
                     </label>
                     <Textarea
                       placeholder="Please provide a reason for rejection..."
                       value={rejectionReason}
                       onChange={(e) => setRejectionReason(e.target.value)}
-                      className="border-red-200 focus:border-red-500 focus:ring-red-500"
+                      className={cn(s.textarea, 'border-red-200 focus:border-red-500 focus:ring-red-500 dark:border-red-800/60')}
                     />
                   </div>
                 )}
-                
+
                 {pendingAction === 'approve' && (
-                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                    <p className="text-sm text-green-800">
+                  <div className={s.infoCardGreen}>
+                    <p className="text-sm text-green-800 dark:text-green-200">
                       This property will be approved and listed on the marketplace for tenants to view and apply for.
                     </p>
                   </div>
                 )}
-                
-                <div className="flex gap-3 pt-4">
+
+                <div className="flex gap-3 pt-4 sm:justify-end">
                   <Button
                     onClick={() => {
                       if (pendingAction === 'approve') {
@@ -895,12 +899,16 @@ export default function PropertyVerification() {
                         handleReject(actionProperty)
                       }
                     }}
-                    className={pendingAction === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
+                    className={
+                      pendingAction === 'approve'
+                        ? cn(s.primary, 'bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-400 dark:shadow-green-500/20 shadow-green-600/20 hover:shadow-green-600/30 dark:hover:shadow-green-500/30')
+                        : cn(s.primary, 'bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-400 dark:shadow-red-500/20 shadow-red-600/20 hover:shadow-red-600/30 dark:hover:shadow-red-500/30')
+                    }
                     disabled={isActionInProgress || (pendingAction === 'reject' && !rejectionReason.trim())}
                   >
                     {isActionInProgress ? (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         {pendingAction === 'approve' ? 'Approving...' : 'Rejecting...'}
                       </>
                     ) : (
@@ -915,7 +923,7 @@ export default function PropertyVerification() {
                       setPendingAction(null)
                       setRejectionReason("")
                     }}
-                    className="border-gray-200 text-gray-700 hover:bg-gray-50"
+                    className={s.outline}
                     disabled={isActionInProgress}
                   >
                     Cancel
@@ -928,53 +936,53 @@ export default function PropertyVerification() {
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={deleteDialogOpen} onOpenChange={(open) => !open && closeDeleteDialog()}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-red-700">
+          <DialogContent className={cn(s.card, s.cardMd)}>
+            <DialogHeader className={s.header}>
+              <DialogTitle className={cn(s.title, 'flex items-center gap-2 text-red-700 dark:text-red-400')}>
                 <Trash2 className="h-5 w-5" />
                 Delete Property
               </DialogTitle>
             </DialogHeader>
 
             {propertyToDelete && (
-              <div className="space-y-4">
+              <div className={cn(s.body, 'space-y-4')}>
                 <div>
-                  <p className="font-medium text-gray-900">{propertyToDelete.title}</p>
-                  <p className="text-sm text-gray-500">{formatAddress(propertyToDelete)}</p>
+                  <p className="font-medium text-slate-900 dark:text-slate-100">{propertyToDelete.title}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{formatAddress(propertyToDelete)}</p>
                 </div>
 
-                <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-                  <p className="text-sm text-red-800">
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800/50 dark:bg-red-950/40">
+                  <p className="text-sm text-red-800 dark:text-red-200">
                     This will <strong>soft-delete</strong> the property. It will be:
                   </p>
-                  <ul className="text-sm text-red-800 list-disc list-inside mt-2 space-y-1">
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-red-800 dark:text-red-200">
                     <li>Hidden from the public marketplace</li>
                     <li>Removed from the landlord's listings</li>
                     <li>Removed from the admin verification queue</li>
                   </ul>
                 </div>
 
-                <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                  <p className="text-xs text-amber-800">
+                <div className={cn(s.infoAmber, '!p-3 !rounded-lg')}>
+                  <p className="text-xs text-amber-800 dark:text-amber-200">
                     <strong>Note:</strong> This action is blocked if the property has any active or signed
                     tenant agreements. You can recover the property later from the database if needed.
                   </p>
                 </div>
 
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-3 pt-2 sm:justify-end">
                   <Button
                     onClick={handleDelete}
-                    className="bg-red-600 hover:bg-red-700 text-white"
+                    className={cn(s.primary, 'bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-400 dark:shadow-red-500/20 shadow-red-600/20 hover:shadow-red-600/30 dark:hover:shadow-red-500/30')}
                     disabled={isDeleting}
                   >
                     {isDeleting ? (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Deleting...
                       </>
                     ) : (
                       <>
-                        <Trash2 className="w-4 h-4 mr-2" />
+                        <Trash2 className="mr-2 h-4 w-4" />
                         Delete Property
                       </>
                     )}
@@ -982,7 +990,7 @@ export default function PropertyVerification() {
                   <Button
                     variant="outline"
                     onClick={closeDeleteDialog}
-                    className="border-gray-200 text-gray-700 hover:bg-gray-50"
+                    className={s.outline}
                     disabled={isDeleting}
                   >
                     Cancel

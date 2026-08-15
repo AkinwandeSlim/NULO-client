@@ -59,8 +59,8 @@ function PropertyMapOptimized({
   center,
   zoom = 12,
   formatPrice: customFormatPrice,
-  currentPage = 1,
-  itemsPerPage = 20
+  currentPage,
+  itemsPerPage
 }: PropertyMapProps) {
   // Theme
   const { theme } = useTheme()
@@ -77,9 +77,12 @@ function PropertyMapOptimized({
   
   // ✅ OPTIMIZED: Paginate properties for better performance
   const visibleProperties = useMemo(() => {
+    // Search results are already paginated by the marketplace API. Other
+    // consumers may still pass their full result set with local pagination.
+    if (!currentPage || !itemsPerPage) return properties
+
     const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    return properties.slice(startIndex, endIndex)
+    return properties.slice(startIndex, startIndex + itemsPerPage)
   }, [properties, currentPage, itemsPerPage])
   
   // ✅ OPTIMIZED: Calculate bounds for auto-fitting
@@ -125,7 +128,9 @@ function PropertyMapOptimized({
         center: center || [3.3792, 6.5244], // Lagos default
         zoom,
         attributionControl: false,
-        antialias: true,
+        // The marketplace map is 2D; MSAA provides no visible benefit here
+        // but costs GPU/memory on every initial map instance.
+        antialias: false,
         refreshExpiredTiles: false,
         fadeDuration: 0,
         trackResize: true,

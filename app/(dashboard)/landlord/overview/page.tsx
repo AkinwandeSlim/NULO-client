@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge"
 import { PropertyLifecycleBadge } from "@/components/ui/verification-badge"
 import { PropertyCard } from "@/components/landlord/PropertyCard"
 import {
-  Building2, Calendar, MessageSquare, DollarSign,
+  Building2, Calendar, Clock, MessageSquare, DollarSign,
   Eye, Plus, MapPin, Bed, Bath, Square,
   ArrowRight, AlertCircle, CheckCircle, CheckCircle2,
   Bell, Settings, Activity, FileText,
@@ -325,7 +325,8 @@ export default function LandlordDashboard() {
       // causing stale "Occupied: 1" / "0 signed" stats to persist after the
       // tenant's payment status changed. Now the user always sees the
       // freshest data when navigating via the navbar "Overview" button.
-      setHasFetchedOnce(false)
+      // NOTE: Do NOT setHasFetchedOnce(false) here — that resets the guard
+      // mid-render and causes a skeleton flash when data is already loaded.
       landlordFetchInFlightRef.current = true
       fetchLandlordFnRef.current(true)
         .catch(() => { /* error handled in context */ })
@@ -346,13 +347,13 @@ export default function LandlordDashboard() {
 
 
 
-  // Fetch viewing requests once landlordData is available.
-
-  // First check if data is in cache, otherwise fetch separately
+  // Fetch each activity panel once per signed-in landlord. Do not depend on the
+  // full dashboard object: it is replaced during refreshes and was repeatedly
+  // restarting these requests, causing visible skeleton flicker.
 
   useEffect(() => {
 
-    if (!landlordData) return
+    if (!user?.id) return
 
     
 
@@ -364,8 +365,6 @@ export default function LandlordDashboard() {
         // (manual DB changes need to be reflected immediately)
 
         console.log('🔄 [OVERVIEW] Fetching viewing requests from API...')
-
-        setViewingsLoading(true)
 
         const data = await landlordViewingRequestsAPI.getLandlord()
 
@@ -385,15 +384,17 @@ export default function LandlordDashboard() {
 
           : []
 
-        // Show pending + confirmed only -- completed/cancelled not actionable on overview
+        // Show actionable states only -- completed/cancelled not actionable on overview.
+        // reschedule_proposed ("Awaiting Tenant") stays visible so the landlord sees
+        // their proposed time is still pending the tenant's response.
 
-        setViewingRequests(list.filter((v: any) => v.status === 'pending' || v.status === 'confirmed' || v.status === 'completed'))
+        setViewingRequests(list.filter((v: any) => v.status === 'pending' || v.status === 'confirmed' || v.status === 'reschedule_proposed' || v.status === 'completed'))
 
       } catch (err) {
 
         console.error('❌ Failed to fetch viewings for overview:', err)
 
-        setViewingRequests([])
+        // Preserve the last known good rows if a transient request fails.
 
       } finally {
 
@@ -405,7 +406,7 @@ export default function LandlordDashboard() {
 
     fetchViewings()
 
-  }, [landlordData])
+  }, [user?.id])
 
 
 
@@ -415,7 +416,7 @@ export default function LandlordDashboard() {
 
   useEffect(() => {
 
-    if (!landlordData) return
+    if (!user?.id) return
 
     
 
@@ -427,8 +428,6 @@ export default function LandlordDashboard() {
         // (manual DB changes need to be reflected immediately)
 
         console.log('🔄 [OVERVIEW] Fetching applications from API...')
-
-        setApplicationsLoading(true)
 
         const data = await applicationsAPI.getReceivedApplications()
 
@@ -462,7 +461,7 @@ export default function LandlordDashboard() {
 
         console.error('❌ Failed to fetch applications for overview:', err)
 
-        setApplications([])
+        // Preserve the last known good rows if a transient request fails.
 
       } finally {
 
@@ -474,7 +473,7 @@ export default function LandlordDashboard() {
 
     fetchApplications()
 
-  }, [landlordData])
+  }, [user?.id])
 
 
 
@@ -484,7 +483,7 @@ export default function LandlordDashboard() {
 
   useEffect(() => {
 
-    if (!landlordData) return
+    if (!user?.id) return
 
     
 
@@ -496,8 +495,6 @@ export default function LandlordDashboard() {
         // (manual DB changes need to be reflected immediately)
 
         console.log('🔄 [OVERVIEW] Fetching agreements from API...')
-
-        setAgreementsLoading(true)
 
         const data = await agreementsAPI.getMyAgreements()
 
@@ -537,7 +534,7 @@ export default function LandlordDashboard() {
 
         console.error('❌ Failed to fetch agreements for overview:', err)
 
-        setAgreements([])
+        // Preserve the last known good rows if a transient request fails.
 
       } finally {
 
@@ -549,7 +546,7 @@ export default function LandlordDashboard() {
 
     fetchAgreements()
 
-  }, [landlordData])
+  }, [user?.id])
 
 
 
@@ -672,9 +669,11 @@ export default function LandlordDashboard() {
           // → propflow_thread_id) in landlordData.receivedApplications, which is
           // only refreshed on dashboard fetch. If the payment arrived live while
           // the page was open, receivedApplications is stale → the banner shows
-          // Release-only. Refresh the dashboard so the thread resolves and the
-          // button appears without needing a manual page reload.
-          fetchLandlordDashboard(true)
+          // Release-only. Refresh the dashboard in the background (non-loading)
+          // so the thread resolves and the button appears without a skeleton flash.
+          // fetchLandlordDashboard with forceRefresh=false uses the cache if
+          // available, which means it won't set loading=true at all.
+          fetchLandlordDashboard(false)
         }
       } catch (error: any) {
         // Network glitch or server hiccup -- keep the previous payments data intact
@@ -1516,11 +1515,14 @@ export default function LandlordDashboard() {
 
   // ─── Loading — same spinner as tenant ────────────────────────────────────────
 
-  // ✅ FIX: Include `!hasFetchedOnce` so we show the loading skeleton during
-  // the brief window between mount and the first fetch being attempted.
-  // Previously the page would flash the "Could not load dashboard" error
-  // because `mounted` flipped to true before `loading` did.
-  if (!mounted || loading || (user?.user_type === 'landlord' && !hasFetchedOnce)) {
+  // Show skeleton until:
+  //   • component has mounted (avoids SSR mismatch)
+  //   • AND we have either landlordData (already loaded) OR hasFetchedOnce is true
+  //     (first fetch has completed, even if it returned null/error)
+  // Using `!landlordData && !hasFetchedOnce` instead of the old `!hasFetchedOnce`
+  // alone prevents the flash that happened when setHasFetchedOnce(false) was
+  // called right before a force-refresh: data was present but the flag was reset.
+  if (!mounted || loading || (!landlordData && !hasFetchedOnce)) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
         <div className="max-w-7xl mx-auto">
@@ -1974,7 +1976,7 @@ export default function LandlordDashboard() {
           switch (activeBanner.type) {
             case 'onboarding-incomplete':
               return (
-                <Card className="mb-8 border-orange-200 bg-orange-50">
+                <Card className="landlord-status-banner mb-8 border-orange-200 bg-orange-50">
                   <CardContent className="p-4">
                     <div className="flex items-start gap-3">
                       <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
@@ -1998,7 +2000,7 @@ export default function LandlordDashboard() {
             case 'verification-rejected': {
               const { adminFeedback } = activeBanner.data
               return (
-                <Card className="mb-8 border-red-200 bg-red-50">
+                <Card className="landlord-status-banner mb-8 border-red-200 bg-red-50">
                   <CardContent className="p-4">
                     <div className="flex items-start gap-3">
                       <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
@@ -2042,7 +2044,7 @@ export default function LandlordDashboard() {
 
             case 'verification-pending':
               return (
-                <Card className="mb-8 border-blue-200 bg-blue-50">
+                <Card className="landlord-status-banner mb-8 border-blue-200 bg-blue-50">
                   <CardContent className="p-4">
                     <div className="flex items-start gap-3">
                       <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
@@ -2071,7 +2073,7 @@ export default function LandlordDashboard() {
               )
               const hasPropFlow = !!matchingApp?.propflow_thread_id
               return (
-                <Card className={`mb-8 border-2 ${isTenantTurn ? 'border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50' : 'border-purple-200 bg-gradient-to-r from-purple-50 to-violet-50'} shadow-sm`}>
+                <Card className={`landlord-status-banner mb-8 border-2 ${isTenantTurn ? 'border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50' : 'border-purple-200 bg-gradient-to-r from-purple-50 to-violet-50'} shadow-sm`}>
                   <CardContent className="p-6">
                     <div className="flex items-start gap-4">
                       <div className={`h-12 w-12 ${isTenantTurn ? 'bg-blue-500' : 'bg-purple-500'} rounded-full flex items-center justify-center flex-shrink-0`}>
@@ -2136,7 +2138,7 @@ export default function LandlordDashboard() {
               const { count, latest } = activeBanner.data
               const hasWorkflowContext = !!(latest as any)?.propflow_thread_id
               return (
-                <Card className="mb-8 border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 shadow-sm">
+                <Card className="landlord-status-banner mb-8 border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 shadow-sm">
                   <CardContent className="p-6">
                     <div className="flex items-start gap-4">
                       <div className="h-12 w-12 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
@@ -2218,7 +2220,7 @@ export default function LandlordDashboard() {
               const { count, total, propflowThreadId, agreementId } = activeBanner.data
               const hasPropFlow = !!propflowThreadId && !!agreementId
               return (
-                <Card className="mb-8 border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 shadow-sm">
+                <Card className="landlord-status-banner mb-8 border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 shadow-sm">
                   <CardContent className="p-6">
                     <div className="flex items-start gap-4">
                       <div className="h-12 w-12 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0">
@@ -2274,7 +2276,7 @@ export default function LandlordDashboard() {
               const isDeposit = recentPayment.transaction_type === 'security_deposit'
 
               return (
-                <Card className="mb-8 border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 shadow-sm">
+                <Card className="landlord-status-banner mb-8 border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 shadow-sm">
                   <CardContent className="p-5">
                     <div className="flex items-start gap-4">
                       <div className="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -2355,7 +2357,7 @@ export default function LandlordDashboard() {
               const { count, latest } = activeBanner.data
               const daysUntilExpiry = Math.ceil((new Date(latest.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
               return (
-                <Card className="mb-8 border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 shadow-sm">
+                <Card className="landlord-status-banner mb-8 border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 shadow-sm">
                   <CardContent className="p-6">
                     <div className="flex items-start gap-4">
                       <div className="h-12 w-12 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
@@ -2398,7 +2400,7 @@ export default function LandlordDashboard() {
             case 'pending-viewings': {
               const { count } = activeBanner.data
               return (
-                <Card className="mb-8 border-blue-200 bg-blue-50">
+                <Card className="landlord-status-banner mb-8 border-blue-200 bg-blue-50">
                   <CardContent className="p-4">
                     <div className="flex items-start gap-3">
                       <Calendar className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
@@ -2433,7 +2435,7 @@ export default function LandlordDashboard() {
 
             case 'no-properties':
               return (
-                <Card className="mb-8 border-green-200 bg-green-50">
+                <Card className="landlord-status-banner mb-8 border-green-200 bg-green-50">
                   <CardContent className="p-4">
                     <div className="flex items-start gap-3">
                       <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
@@ -2461,7 +2463,7 @@ export default function LandlordDashboard() {
 
         {/* Messages Banner — Task-based (auto-dismiss after 30 min) */}
         {stats.unread_messages > 0 && !isBannerDismissed(buildBannerKey('message', 'unread-messages')) && (
-          <div className="mb-8 p-5 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-xl shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="landlord-status-banner mb-8 p-5 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-xl shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3 flex-1">
                 <Mail className="h-5 w-5 text-purple-600 mt-0.5 flex-shrink-0" />
@@ -2492,18 +2494,18 @@ export default function LandlordDashboard() {
 
         {/* Revenue & Payment Tracking Card */}
         <div className="mb-12">
-          <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 shadow-md">
+          <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 shadow-md dark:border-emerald-500/30 dark:from-emerald-950/70 dark:to-[#0A0A0A]">
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div>
-                  <CardTitle className="flex items-center gap-2 text-2xl">
+                  <CardTitle className="flex items-center gap-2 text-2xl text-slate-900 dark:text-white">
                     <TrendingUp className="w-6 h-6 text-green-600" />
                     Revenue &amp; Payments
                   </CardTitle>
-                  <p className="text-sm text-slate-600 mt-1">Track rental income and payment collections</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">Track rental income and payment collections</p>
                 </div>
                 <Link href="/landlord/payments">
-                  <Button variant="outline" size="sm" className="border-green-300 text-green-700 hover:bg-green-100">
+                  <Button variant="outline" size="sm" className="border-green-300 text-green-700 hover:bg-green-100 dark:border-emerald-500/40 dark:bg-black/30 dark:text-emerald-400 dark:hover:bg-emerald-500/10">
                     View All <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
@@ -2520,7 +2522,7 @@ export default function LandlordDashboard() {
                 return null
               })()}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="p-5 rounded-lg bg-white border-2 border-green-200">
+                <div className="p-5 rounded-lg bg-white border-2 border-green-200 dark:bg-black/70 dark:border-emerald-500/40">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-semibold text-slate-600">Total Collected</p>
                     <DollarSign className="w-5 h-5 text-green-600" />
@@ -2528,7 +2530,7 @@ export default function LandlordDashboard() {
                   <p className="text-3xl font-bold text-green-600 mb-1">{formatCurrency(totalPaymentsCollected)}</p>
                   <p className="text-xs text-slate-500">All-time rent payments</p>
                 </div>
-                <div className="p-5 rounded-lg bg-white border-2 border-orange-200">
+                <div className="p-5 rounded-lg bg-white border-2 border-orange-200 dark:bg-black/70 dark:border-orange-500/40">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-semibold text-slate-600">In Escrow</p>
                     <Activity className="w-5 h-5 text-orange-600" />
@@ -2536,7 +2538,7 @@ export default function LandlordDashboard() {
                   <p className="text-3xl font-bold text-orange-600 mb-1">{formatCurrency(totalPendingAmount)}</p>
                   <p className="text-xs text-slate-500">{totalPendingAmount > 0 ? 'Ready for release' : 'No pending funds'}</p>
                 </div>
-                <div className="p-5 rounded-lg bg-white border-2 border-emerald-200">
+                <div className="p-5 rounded-lg bg-white border-2 border-emerald-200 dark:bg-black/70 dark:border-emerald-500/40">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-semibold text-slate-600">Withdrawn</p>
                     <CheckCircle className="w-5 h-5 text-emerald-600" />
@@ -2545,8 +2547,8 @@ export default function LandlordDashboard() {
                   <p className="text-xs text-slate-500">Released to your bank</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-green-100">
-                <div className="text-center p-3 rounded-lg bg-white/60">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-green-100 dark:border-emerald-500/20">
+                <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-black/40">
                   <p className="text-xs text-slate-500 mb-1">Occupied</p>
                   <p className="text-2xl font-bold text-slate-900">
                     {/* ✅ FIX: Only count ACTIVE (paid) agreements as occupied.
@@ -2559,19 +2561,19 @@ export default function LandlordDashboard() {
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5">properties</p>
                 </div>
-                <div className="text-center p-3 rounded-lg bg-white/60">
+                <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-black/40">
                   <p className="text-xs text-slate-500 mb-1">Monthly Rate</p>
                   <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.monthly_revenue || 0)}</p>
                   <p className="text-xs text-slate-400 mt-0.5">per month</p>
                 </div>
-                <div className="text-center p-3 rounded-lg bg-white/60">
+                <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-black/40">
                   <p className="text-xs text-slate-500 mb-1">Pending Release</p>
                   <p className="text-2xl font-bold text-orange-600">
                     {receivedPayments.filter((p: any) => p.disbursement_status !== 'released' && p.reconciliation_status === 'FULL_PAYMENT').length}
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5">payments</p>
                 </div>
-                <div className="text-center p-3 rounded-lg bg-white/60">
+                <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-black/40">
                   <p className="text-xs text-slate-500 mb-1">Occupancy Rate</p>
                   <p className="text-2xl font-bold text-emerald-600">
                     {stats.total_properties > 0
@@ -3163,7 +3165,7 @@ export default function LandlordDashboard() {
               </div>
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
                 <CardContent className="p-6">
-                  {viewingsLoading ? (
+                  {viewingsLoading && viewingRequests.length === 0 ? (
                     <div className="space-y-3">{[1,2,3].map(i => <div key={`viewing-skeleton-${i}`} className="h-20 rounded-xl bg-slate-100 animate-pulse" />)}</div>
                   ) : viewingRequests.length === 0 ? (
                     <div className="text-center py-8">
@@ -3188,7 +3190,9 @@ export default function LandlordDashboard() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <h4 className="font-semibold text-slate-900 truncate">{tenantName}</h4>
-                                {isConfirmed ? (
+                                {request.status === 'reschedule_proposed' ? (
+                                  <Badge className="bg-violet-100 text-violet-800 border-violet-200 font-semibold"><Clock className="h-3 w-3 mr-1" />Awaiting Tenant</Badge>
+                                ) : isConfirmed ? (
                                   <Badge className="bg-green-100 text-green-800 border-green-200 font-semibold"><CheckCircle className="h-3 w-3 mr-1" />Confirmed</Badge>
                                 ) : (
                                   <Badge className="bg-orange-100 text-orange-800 border-orange-200 font-semibold"><AlertCircle className="h-3 w-3 mr-1" />Pending</Badge>
@@ -3244,7 +3248,7 @@ export default function LandlordDashboard() {
               </div>
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
                 <CardContent className="p-6">
-                  {applicationsLoading ? (
+                  {applicationsLoading && applications.length === 0 ? (
                     <div className="space-y-3">{[1,2,3].map(i => <div key={`application-skeleton-${i}`} className="h-20 rounded-xl bg-slate-100 animate-pulse" />)}</div>
                   ) : applications.length === 0 ? (
                     <div className="text-center py-8">
@@ -3314,7 +3318,7 @@ export default function LandlordDashboard() {
               </div>
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
                 <CardContent className="p-6">
-                  {agreementsLoading ? (
+                  {agreementsLoading && agreements.length === 0 ? (
                     <div className="space-y-3">{[1,2,3].map(i => <div key={`agreement-skeleton-${i}`} className="h-20 rounded-xl bg-slate-100 animate-pulse" />)}</div>
                   ) : agreements.length === 0 ? (
                     <div className="text-center py-8">
@@ -3645,7 +3649,7 @@ export default function LandlordDashboard() {
             </Card>
 
             {/* Recent Activity */}
-            <Card className="border-2 border-slate-200 rounded-2xl shadow-lg bg-gradient-to-br from-white to-slate-50">
+            <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -3657,14 +3661,12 @@ export default function LandlordDashboard() {
               <CardContent className="p-4">
                 <div className="space-y-3">
                   {(recentActivity ?? []).length === 0 ? (
-                    <div className="flex items-center gap-3 text-sm">
-                      <div className="h-6 w-6 bg-slate-100 rounded-full flex items-center justify-center">
-                        <Activity className="h-3 w-3 text-slate-400" />
+                    <div className="py-8 text-center">
+                      <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Activity className="h-6 w-6 text-slate-400" />
                       </div>
-                      <div className="flex-1">
-                        <p className="text-slate-900 font-medium">No activity yet</p>
-                        <p className="text-slate-600 text-xs">Activity from your listings will appear here</p>
-                      </div>
+                      <p className="text-sm font-semibold text-slate-900 mb-2">No activity yet</p>
+                      <p className="text-xs text-slate-600">Activity from your listings will appear here</p>
                     </div>
                   ) : (
                     recentActivity?.slice(0, 5).map((activity: any, index: number) => (

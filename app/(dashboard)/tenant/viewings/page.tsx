@@ -5,10 +5,10 @@ import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { 
-  Calendar, Clock, MapPin, Home, 
-  ArrowLeft, CheckCircle, XCircle, 
-  AlertCircle, Trash2, MessageSquare,
+import {
+  Calendar, CalendarCheck2, Clock, MapPin, Home,
+  ArrowLeft, CheckCircle, XCircle, X,
+  AlertCircle, Loader2, Trash2, MessageSquare,
   Eye, Bell, Filter, Search, Star,
   TrendingUp, Users, Zap, FileText
 } from "lucide-react"
@@ -20,11 +20,32 @@ import { toast } from "sonner"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 
+function formatDate(dateString: string) {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  return date.toLocaleDateString('en-NG', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+}
+
+function formatTimeSlot(slot: string) {
+  const labels: Record<string, string> = {
+    morning: 'Morning (9AM – 12PM)',
+    afternoon: 'Afternoon (12PM – 4PM)',
+    evening: 'Evening (4PM – 7PM)'
+  }
+  return labels[slot] || slot
+}
+
 // ✅ FIX 4: Map raw DB status values to friendly tenant-facing labels
 // DB stores 'pending' — tenant sees 'Scheduled'. 'completed' → 'Visited'.
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Scheduled',
   confirmed: 'Confirmed',
+  reschedule_proposed: 'New Time Proposed',
   completed: 'Visited',
   cancelled: 'Cancelled'
 }
@@ -32,12 +53,13 @@ const STATUS_LABELS: Record<string, string> = {
 interface ViewingCardProps {
 request: any
 cancelingId: string | null
+reschedulingId: string | null
 onCancel: (id: string) => void
 onRescheduleDecision: (id: string, decision: 'accept' | 'decline') => void
 applications: any[] // Add applications data
 }
 
-function ViewingRequestCard({ request, cancelingId, onCancel, onRescheduleDecision, applications }: ViewingCardProps) {
+function ViewingRequestCard({ request, cancelingId, reschedulingId, onCancel, onRescheduleDecision, applications }: ViewingCardProps) {
   const property = request.property
   const appointmentDate = request.confirmed_date || request.preferred_date
   const appointmentTime = request.confirmed_time || request.time_slot
@@ -58,6 +80,7 @@ function ViewingRequestCard({ request, cancelingId, onCancel, onRescheduleDecisi
     switch (status) {
       case 'confirmed': return 'border-l-4 border-l-green-500'
       case 'pending': return 'border-l-4 border-l-orange-500'
+      case 'reschedule_proposed': return 'border-l-4 border-l-blue-500'
       case 'completed': return 'border-l-4 border-l-blue-500'
       case 'cancelled': return 'border-l-4 border-l-slate-300'
       default: return 'border-l-4 border-l-orange-500'
@@ -68,6 +91,8 @@ function ViewingRequestCard({ request, cancelingId, onCancel, onRescheduleDecisi
     switch (status) {
       case 'confirmed':
         return <CheckCircle className="h-5 w-5 text-green-600" />
+      case 'reschedule_proposed':
+        return <CalendarCheck2 className="h-5 w-5 text-blue-600" />
       case 'completed':
         return <CheckCircle className="h-5 w-5 text-blue-600" />
       case 'cancelled':
@@ -82,32 +107,12 @@ function ViewingRequestCard({ request, cancelingId, onCancel, onRescheduleDecisi
     const styles: Record<string, string> = {
       pending: "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
       confirmed: "bg-green-100 text-green-800 border-green-200 font-semibold",
+      reschedule_proposed: "bg-blue-100 text-blue-800 border-blue-200 font-semibold",
       completed: "bg-blue-100 text-blue-800 border-blue-200 font-semibold",
       // ✅ FIX 3: Removed 'rejected' — not a valid DB value
       cancelled: "bg-slate-100 text-slate-800 border-slate-200 font-semibold"
     }
     return styles[status] || styles.pending
-  }
-
-
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-NG', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    })
-  }
-
-  const formatTimeSlot = (slot: string) => {
-    const labels: Record<string, string> = {
-      morning: 'Morning (9AM – 12PM)',
-      afternoon: 'Afternoon (12PM – 4PM)',
-      evening: 'Evening (4PM – 7PM)'
-    }
-    return labels[slot] || slot
   }
 
 
@@ -229,7 +234,32 @@ function ViewingRequestCard({ request, cancelingId, onCancel, onRescheduleDecisi
 
             {/* Actions */}
             <div className="flex items-center gap-3 pt-4 border-t border-slate-200 flex-wrap">
-              {request.status === 'reschedule_proposed' && <><Button size="sm" onClick={() => onRescheduleDecision(request.id, 'accept')}>Accept new time</Button><Button size="sm" variant="outline" onClick={() => onRescheduleDecision(request.id, 'decline')}>Decline new time</Button></>}
+              {request.status === 'reschedule_proposed' && (
+                <div className="w-full mb-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <div className="flex items-start gap-2 mb-2">
+                    <CalendarCheck2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-blue-900">New time proposed by the landlord</p>
+                      <p className="text-xs text-blue-700 mt-0.5">
+                        Proposed: {formatDate(request.confirmed_date || request.preferred_date)} · {request.confirmed_time || formatTimeSlot(request.time_slot)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-1">
+                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white transition-colors"
+                      disabled={reschedulingId === request.id}
+                      onClick={() => onRescheduleDecision(request.id, 'accept')}>
+                      {reschedulingId === request.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                      Accept new time
+                    </Button>
+                    <Button size="sm" variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-100 active:bg-blue-200 transition-colors"
+                      disabled={reschedulingId === request.id}
+                      onClick={() => onRescheduleDecision(request.id, 'decline')}>
+                      <XCircle className="h-4 w-4 mr-1" /> Decline
+                    </Button>
+                  </div>
+                </div>
+              )}
               {/* ✅ FIX 8: Apply Now button — visible for pending, confirmed, and completed viewings */}
               {/* BUT disabled if already applied for this property */}
               {showApplyNow && (
@@ -314,12 +344,25 @@ export default function ViewingsPage() {
   const [viewingRequests, setViewingRequests] = useState<any[]>([])
   const [applications, setApplications] = useState<any[]>([])
   const [cancelingId, setCancelingId] = useState<string | null>(null)
+  const [reschedulingId, setReschedulingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  // Track dismissed confirmed-viewing banners by viewing ID
+  const [dismissedBanners, setDismissedBanners] = useState<string[]>([])
 
   useEffect(() => {
     fetchViewingRequests()
     fetchApplications()
+    // Initialize dismissed banners from localStorage
+    setDismissedBanners(() => {
+      const ids: string[] = []
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith('viewing-confirmed-banner-')) {
+          ids.push(key.replace('viewing-confirmed-banner-', ''))
+        }
+      }
+      return ids
+    })
   }, [])
 
   const fetchApplications = async () => {
@@ -378,11 +421,19 @@ export default function ViewingsPage() {
     }
   }
   const handleRescheduleDecision = async (requestId: string, decision: 'accept' | 'decline') => {
-    const result = await viewingRequestsAPI.respondToReschedule(requestId, decision)
-    if (!result.success) return toast.error(result.error || 'Could not update viewing')
-    // Refetch to get the fresh state from the server (confirmed date/time, safety details, etc.)
-    await fetchViewingRequests()
-    toast.success(decision === 'accept' ? 'Viewing time confirmed' : 'Reschedule declined')
+    // Guard: a request in-flight is already being processed — ignore repeat clicks
+    // so one click is enough (a second POST would 409 with "no proposal awaiting").
+    if (reschedulingId === requestId) return
+    setReschedulingId(requestId)
+    try {
+      const result = await viewingRequestsAPI.respondToReschedule(requestId, decision)
+      if (!result.success) return toast.error(result.error || 'Could not update viewing')
+      // Refetch to get the fresh state from the server (confirmed date/time, safety details, etc.)
+      await fetchViewingRequests()
+      toast.success(decision === 'accept' ? 'Viewing time confirmed' : 'Reschedule declined')
+    } finally {
+      setReschedulingId(null)
+    }
   }
 
 
@@ -398,13 +449,15 @@ export default function ViewingsPage() {
   })
 
   const groupedRequests = {
-    upcoming: filteredRequests.filter(r => 
-      (r.status === 'confirmed' || r.status === 'pending') && 
+    // Landlord proposed a new time — tenant MUST respond. Shown first with a banner.
+    needsResponse: filteredRequests.filter(r => r.status === 'reschedule_proposed'),
+    upcoming: filteredRequests.filter(r =>
+      (r.status === 'confirmed' || r.status === 'pending') &&
       new Date(r.confirmed_date || r.preferred_date) >= new Date()
     ),
     // ✅ FIX 5: Removed 'pending' group — merged into 'upcoming' (they're all scheduled viewings)
-    past: filteredRequests.filter(r => 
-      r.status === 'completed' || 
+    past: filteredRequests.filter(r =>
+      r.status === 'completed' ||
       r.status === 'cancelled' ||
       ((r.status === 'confirmed' || r.status === 'pending') && new Date(r.confirmed_date || r.preferred_date) < new Date())
     )
@@ -517,6 +570,105 @@ export default function ViewingsPage() {
         </Card>
       </div>
 
+      {/* ── Confirmed Viewing Banner ── */}
+      {(() => {
+        const confirmedViewings = viewingRequests.filter(
+          r => r.status === 'confirmed' && !dismissedBanners.includes(r.id)
+        )
+        if (confirmedViewings.length === 0) return null
+
+        // Single viewing → full detail; multiple → summary
+        const single = confirmedViewings.length === 1 ? confirmedViewings[0] : null
+
+        return (
+          <div className="space-y-3 mb-8">
+            {single ? (
+              <div className="tenant-status-banner flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-emerald-200 bg-emerald-50">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-9 w-9 bg-emerald-500 rounded-full flex items-center justify-center shrink-0">
+                    <CalendarCheck2 className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-emerald-900">
+                      Viewing confirmed for {single.property?.title || 'your property'}
+                    </p>
+                    <p className="text-xs text-emerald-700 truncate">
+                      {formatDate(single.confirmed_date || single.preferred_date)}
+                      {single.confirmed_time ? ` at ${single.confirmed_time}` : ''}
+                      {' · '}You can continue with your application now
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link
+                    href="/tenant?propflow=1"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition-all duration-150"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Continue application
+                  </Link>
+                  <Link
+                    href={`/properties/${single.property?.id}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold transition-all duration-150"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    View property
+                  </Link>
+                  <button
+                    onClick={() => {
+                      const next = [...dismissedBanners, single.id]
+                      setDismissedBanners(next)
+                      try { localStorage.setItem(`viewing-confirmed-banner-${single.id}`, '1') } catch { /* ignore */ }
+                    }}
+                    className="text-emerald-400 hover:text-emerald-600" aria-label="Dismiss"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="tenant-status-banner flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-emerald-200 bg-emerald-50">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-9 w-9 bg-emerald-500 rounded-full flex items-center justify-center shrink-0">
+                    <CalendarCheck2 className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-emerald-900">
+                      {confirmedViewings.length} confirmed viewing{confirmedViewings.length !== 1 ? 's' : ''}
+                    </p>
+                    <p className="text-xs text-emerald-700 truncate">
+                      You have confirmed viewings — you can continue with applications without waiting to view
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link
+                    href="/tenant?propflow=1"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition-all duration-150"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Continue application
+                  </Link>
+                  {confirmedViewings.map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => {
+                        const next = [...dismissedBanners, v.id]
+                        setDismissedBanners(next)
+                        try { localStorage.setItem(`viewing-confirmed-banner-${v.id}`, '1') } catch { /* ignore */ }
+                      }}
+                      className="text-emerald-400 hover:text-emerald-600" aria-label={`Dismiss ${v.property?.title || ''}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       {/* Search and Filter */}
       {viewingRequests.length > 0 && (
         <div className="flex flex-col md:flex-row gap-4 mb-8">
@@ -591,6 +743,28 @@ export default function ViewingsPage() {
                 </div>
               ) : (
                 <div className="space-y-6">
+                  {/* Needs Your Response — landlord proposed a new time. Prompt the tenant, don't hide it. */}
+                  {groupedRequests.needsResponse.length > 0 && (
+                    <div>
+                      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 mb-4 flex items-start gap-3">
+                        <AlertCircle className="h-6 w-6 text-blue-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-blue-900 font-semibold text-sm">
+                            A landlord proposed a new viewing time{groupedRequests.needsResponse.length > 1 ? ` (${groupedRequests.needsResponse.length} requests)` : ''}
+                          </p>
+                          <p className="text-blue-700 text-xs mt-0.5">
+                            Accept or decline below to keep your viewing on track.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {groupedRequests.needsResponse.map(request => (
+                          <ViewingRequestCard key={request.id} request={request} cancelingId={cancelingId} reschedulingId={reschedulingId} onCancel={handleCancelRequest} onRescheduleDecision={handleRescheduleDecision} applications={applications} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Upcoming / Scheduled */}
                   {groupedRequests.upcoming.length > 0 && (
                     <div>
@@ -601,7 +775,7 @@ export default function ViewingsPage() {
                       </h3>
                       <div className="space-y-3">
                         {groupedRequests.upcoming.map(request => (
-                          <ViewingRequestCard key={request.id} request={request} cancelingId={cancelingId} onCancel={handleCancelRequest} onRescheduleDecision={handleRescheduleDecision} applications={applications} />
+                          <ViewingRequestCard key={request.id} request={request} cancelingId={cancelingId} reschedulingId={reschedulingId} onCancel={handleCancelRequest} onRescheduleDecision={handleRescheduleDecision} applications={applications} />
                         ))}
                       </div>
                     </div>
@@ -616,7 +790,7 @@ export default function ViewingsPage() {
                       </h3>
                       <div className="space-y-3">
                         {groupedRequests.past.map(request => (
-                          <ViewingRequestCard key={request.id} request={request} cancelingId={cancelingId} onCancel={handleCancelRequest} onRescheduleDecision={handleRescheduleDecision} applications={applications} />
+                          <ViewingRequestCard key={request.id} request={request} cancelingId={cancelingId} reschedulingId={reschedulingId} onCancel={handleCancelRequest} onRescheduleDecision={handleRescheduleDecision} applications={applications} />
                         ))}
                       </div>
                     </div>

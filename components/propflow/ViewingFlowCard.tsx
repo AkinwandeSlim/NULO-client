@@ -20,7 +20,7 @@
 import React, { useState } from "react"
 import Link from "next/link"
 import {
-  Building2, CalendarCheck2, CheckCircle2, Clock, Loader2, MapPin, Video,
+  Building2, CalendarCheck2, CheckCircle2, Clock, Loader2, MapPin, Sparkles, Video,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ViewingRequest, ViewingRequestData } from "@/lib/api/viewingRequestsTenant"
@@ -93,6 +93,36 @@ function PropertyRow({ property }: { property: ViewingProperty }) {
   )
 }
 
+// ─── Step header — makes each AI turn visually distinct ──────────────────────
+// Every viewing card opens with a colored band naming the step, so a new
+// response never reads as "the same property card again". Each card type uses
+// a different color: decision=indigo, schedule=blue, confirmation=green,
+// status=per-status tone.
+const STEP_HEADER_TONE: Record<string, string> = {
+  indigo: "bg-indigo-600",
+  blue: "bg-blue-600",
+  green: "bg-emerald-600",
+  amber: "bg-amber-500",
+  slate: "bg-slate-600",
+}
+
+function StepHeader({ step, title, tone, icon }: {
+  step: string
+  title?: string
+  tone: "indigo" | "blue" | "green" | "amber" | "slate"
+  icon?: React.ReactNode
+}) {
+  return (
+    <div className={`flex items-center gap-2 px-3 py-2.5 ${STEP_HEADER_TONE[tone]}`}>
+      {icon && <span className="text-white/90 flex-shrink-0">{icon}</span>}
+      <div className="min-w-0">
+        <p className="text-white/80 text-[10px] font-semibold uppercase tracking-wider">{step}</p>
+        {title && <p className="text-white text-sm font-semibold leading-tight truncate">{title}</p>}
+      </div>
+    </div>
+  )
+}
+
 // ─── Viewing decision — "view first, or apply now?" ─────────────────────────
 
 export function ViewingDecisionCard({ property, onScheduleViewing, onApplyNow, onContinueBrowsing, onAskQuestion }: {
@@ -103,11 +133,17 @@ export function ViewingDecisionCard({ property, onScheduleViewing, onApplyNow, o
   onAskQuestion: () => void
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <PropertyRow property={property} />
+    <div className="rounded-2xl border border-indigo-200 bg-white shadow-sm overflow-hidden">
+      <StepHeader
+        step="Next step"
+        title="What would you like to do?"
+        tone="indigo"
+        icon={<Sparkles className="h-4 w-4" />}
+      />
       <div className="px-3 pb-3">
-        <p className="text-sm text-slate-700 leading-relaxed">
-          Would you like to <span className="font-semibold text-slate-800">schedule a viewing</span> first, or are you ready to apply?
+        <p className="text-sm text-slate-700 leading-relaxed pt-3">
+          <span className="font-semibold text-slate-800">{property.title}</span> — would you like to{" "}
+          <span className="font-semibold text-slate-800">schedule a viewing</span> first, or are you ready to apply?
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
@@ -228,10 +264,15 @@ export function ViewingScheduleCard({ property, defaultName, defaultPhone, submi
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-blue-200 bg-white shadow-sm overflow-hidden">
+      <StepHeader
+        step="Schedule a viewing"
+        title={property.title}
+        tone="blue"
+        icon={<CalendarCheck2 className="h-4 w-4" />}
+      />
       <div className="px-3 pt-3">
-        <p className="text-sm font-semibold text-slate-800">Schedule a viewing</p>
-        <p className="text-[11px] text-slate-500 mt-0.5">Pick a time that works for you — the landlord will confirm.</p>
+        <p className="text-[11px] text-slate-500">Pick a time that works for you — the landlord will confirm.</p>
       </div>
       <PropertyRow property={property} />
       <div className="px-3 pb-3 space-y-2.5">
@@ -296,10 +337,17 @@ export function ViewingConfirmationCard({ property, date, timeSlot, viewingType,
   onContinueBrowsing: () => void
 }) {
   return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+    <div className="rounded-2xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
+      <StepHeader
+        step="Viewing request sent"
+        title={property.title}
+        tone="green"
+        icon={<CheckCircle2 className="h-4 w-4" />}
+      />
+      <div className="p-3">
       <div className="flex items-center gap-2">
         <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
-        <p className="text-sm font-semibold text-emerald-900">Viewing request sent</p>
+        <p className="text-sm font-semibold text-emerald-900">Request received</p>
       </div>
       <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
         The landlord will review your preferred time. We'll notify you here and by email when they respond.
@@ -322,6 +370,7 @@ export function ViewingConfirmationCard({ property, date, timeSlot, viewingType,
       <div className="mt-2 flex justify-center">
         <button type="button" onClick={onContinueBrowsing}
           className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">Continue browsing</button>
+      </div>
       </div>
     </div>
   )
@@ -360,6 +409,19 @@ export function ViewingStatusCard({ property, request, onContinueBrowsing, onApp
     status === "confirmed" &&
     !!(request.safety_instructions || request.caretaker_name || request.caretaker_phone || request.meeting_url)
 
+  const statusTone: "amber" | "blue" | "green" | "slate" =
+    status === "pending" ? "amber" :
+    status === "reschedule_proposed" ? "blue" :
+    status === "confirmed" ? "green" :
+    "slate"
+  const statusStep =
+    status === "pending" ? "Awaiting landlord review" :
+    status === "reschedule_proposed" ? "New time proposed" :
+    status === "confirmed" ? "Viewing confirmed" :
+    status === "completed" ? "How did the viewing go?" :
+    status === "cancelled" ? "Request closed" :
+    "Appointment missed"
+
   const footerTwo: React.ReactNode = (
     <div className="mt-3 grid grid-cols-2 gap-2">
       <Link href="/tenant/viewings"
@@ -375,19 +437,25 @@ export function ViewingStatusCard({ property, request, onContinueBrowsing, onApp
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <StepHeader
+        step="Viewing status"
+        title={statusStep}
+        tone={statusTone}
+        icon={<Clock className="h-4 w-4" />}
+      />
       <PropertyRow property={property} />
       <div className="px-3 pb-3">
         {status === "pending" && (
           <>
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-amber-500 flex-shrink-0" />
-              <p className="text-sm font-semibold text-slate-800">Awaiting landlord review</p>
-            </div>
             <p className="text-xs text-slate-500 mt-1">Your viewing request is awaiting landlord review.</p>
             <div className="mt-2 text-xs bg-slate-50 rounded-lg p-2">
               <div className="flex justify-between gap-3"><span className="text-slate-500">Requested</span><span className="font-medium text-slate-700 text-right">{requestedLine}</span></div>
             </div>
             {footerTwo}
+            <div className="mt-2 flex justify-center">
+              <button type="button" onClick={onApplyNow}
+                className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">Apply now instead</button>
+            </div>
           </>
         )}
 
@@ -417,37 +485,73 @@ export function ViewingStatusCard({ property, request, onContinueBrowsing, onApp
 
         {status === "confirmed" && (
           <>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
-              <p className="text-sm font-semibold text-slate-800">Viewing confirmed</p>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Confirmed for <span className="font-semibold text-slate-700">{formatDate(request.confirmed_date)} at {request.confirmed_time}</span>.
-            </p>
-            {showConfirmedDetails && (
-              <div className="mt-2 rounded-lg bg-emerald-50 border border-emerald-100 p-2 text-xs space-y-1">
-                {request.safety_instructions && <p className="text-slate-600">{request.safety_instructions}</p>}
-                {request.caretaker_name && (
-                  <p className="text-slate-600">Caretaker: <span className="font-medium text-slate-700">{request.caretaker_name}</span>{request.caretaker_phone ? ` · ${request.caretaker_phone}` : ""}</p>
-                )}
-                {request.meeting_url && (
-                  <a href={request.meeting_url} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium">
-                    <Video className="h-3 w-3" /> Join live video
-                  </a>
-                )}
-              </div>
-            )}
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <Link href="/tenant/viewings"
-                className="text-sm font-medium rounded-lg py-2 text-center bg-blue-500 hover:bg-blue-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-                View my viewings
-              </Link>
-              <button type="button" onClick={onApplyNow}
-                className="text-sm font-medium rounded-lg py-2 border border-orange-200 text-orange-700 hover:bg-orange-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300">
-                Start application
-              </button>
-            </div>
+            {(() => {
+              // Check if viewing date is in the past
+              const viewingDate = request.confirmed_date || request.preferred_date
+              const isPastDate = viewingDate && new Date(viewingDate) < new Date(new Date().setHours(0, 0, 0, 0))
+              
+              if (isPastDate) {
+                // Past viewing - treat as completed
+                return (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <p className="text-sm font-semibold text-slate-800">Viewing completed</p>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Your viewing appointment was on <span className="font-semibold text-slate-700">{formatDate(request.confirmed_date)} at {request.confirmed_time}</span>.
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button type="button" onClick={onApplyNow}
+                        className="text-sm font-medium rounded-lg py-2 bg-orange-500 hover:bg-orange-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300">
+                        Start application
+                      </button>
+                      <button type="button" onClick={onContinueBrowsing}
+                        className="text-sm font-medium rounded-lg py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
+                        Keep searching
+                      </button>
+                    </div>
+                  </>
+                )
+              }
+              
+              // Future viewing - show normal confirmation
+              return (
+                <>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                    <p className="text-sm font-semibold text-slate-800">Viewing confirmed</p>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Confirmed for <span className="font-semibold text-slate-700">{formatDate(request.confirmed_date)} at {request.confirmed_time}</span>.
+                  </p>
+                  {showConfirmedDetails && (
+                    <div className="mt-2 rounded-lg bg-emerald-50 border border-emerald-100 p-2 text-xs space-y-1">
+                      {request.safety_instructions && <p className="text-slate-600">{request.safety_instructions}</p>}
+                      {request.caretaker_name && (
+                        <p className="text-slate-600">Caretaker: <span className="font-medium text-slate-700">{request.caretaker_name}</span>{request.caretaker_phone ? ` · ${request.caretaker_phone}` : ""}</p>
+                      )}
+                      {request.meeting_url && (
+                        <a href={request.meeting_url} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium">
+                          <Video className="h-3 w-3" /> Join live video
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Link href="/tenant/viewings"
+                      className="text-sm font-medium rounded-lg py-2 text-center bg-blue-500 hover:bg-blue-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-2 focus-visible:ring-blue-300">
+                      View my viewings
+                    </Link>
+                    <button type="button" onClick={onApplyNow}
+                      className="text-sm font-medium rounded-lg py-2 border border-orange-200 text-orange-700 hover:bg-orange-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300">
+                      Start application
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
           </>
         )}
 

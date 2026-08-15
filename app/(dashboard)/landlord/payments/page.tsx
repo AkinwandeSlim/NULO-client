@@ -30,6 +30,8 @@ import {
   type AgreementPaymentRow,
   type DisburseResponse,
 } from "@/lib/api/payments"
+import { cn } from "@/lib/utils"
+import { dialogStyles as s } from "@/lib/utils/dialogStyles"
 
 const formatNGN = (amount: number) =>
   `₦${Number(amount).toLocaleString("en-NG")}`
@@ -406,60 +408,60 @@ export default function LandlordPaymentsPage() {
         if (isReleasing) return // prevent closing while API is in flight
         setShowConfirm(open)
       }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-slate-900">Confirm Fund Release</DialogTitle>
-            <DialogDescription className="text-slate-600">
+        <DialogContent className={s.card}>
+          <DialogHeader className={s.header}>
+            <DialogTitle className={s.title}>Confirm Fund Release</DialogTitle>
+            <DialogDescription className={s.description}>
               Verify your bank details below. The disbursement only starts once you click Confirm.
             </DialogDescription>
           </DialogHeader>
 
           {selectedRow && (
-            <div className="py-4 space-y-4">
+            <div className={cn(s.body, 'space-y-4')}>
               {/* Property / tenant context */}
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-orange-50 border border-orange-200">
-                <Building2 className="w-4 h-4 text-orange-600 mt-0.5 shrink-0" />
+              <div className="flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-500/30 dark:bg-orange-500/10">
+                <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-orange-600 dark:text-orange-400" />
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">{selectedRow.property_title}</p>
-                  <p className="text-xs text-slate-500">Tenant: {selectedRow.tenant_name}</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{selectedRow.property_title}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Tenant: {selectedRow.tenant_name}</p>
                 </div>
               </div>
 
               {/* Amount breakdown */}
-              <div className="bg-slate-50 rounded-lg p-4 space-y-3">
+              <div className={cn(s.section, 'space-y-3')}>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Received from tenant</span>
-                  <span className="text-sm font-semibold text-slate-900">{formatNGN(selectedReceived)}</span>
+                  <span className="text-sm text-slate-600 dark:text-slate-400">Received from tenant</span>
+                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{formatNGN(selectedReceived)}</span>
                 </div>
                 {selectedPlatformFee > 0 && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">Platform fee</span>
-                    <span className="text-sm text-slate-700">− {formatNGN(selectedPlatformFee)}</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Platform fee</span>
+                    <span className="text-sm text-slate-700 dark:text-slate-300">− {formatNGN(selectedPlatformFee)}</span>
                   </div>
                 )}
-                <Separator />
+                <Separator className={s.divider} />
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-900">You will receive</span>
-                  <span className="text-xl font-bold text-orange-600">{formatNGN(selectedPayout)}</span>
+                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">You will receive</span>
+                  <span className="text-xl font-bold text-orange-600 dark:text-orange-400">{formatNGN(selectedPayout)}</span>
                 </div>
 
                 {/* Bank details */}
-                <div className="border-t border-slate-200 pt-3 space-y-2">
+                <div className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">Bank</span>
-                    <span className="text-sm font-medium text-slate-900">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Bank</span>
+                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
                       {(selectedRow as any).landlord_bank_name || "Your Bank"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">Account Number</span>
-                    <span className="text-sm font-mono font-medium text-slate-900">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Account Number</span>
+                    <span className="font-mono text-sm font-medium text-slate-900 dark:text-slate-100">
                       {(selectedRow as any).landlord_bank_account_number || "••••••••"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">Account Name</span>
-                    <span className="text-sm font-medium text-slate-900">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Account Name</span>
+                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
                       {(selectedRow as any).landlord_account_name || "Your Account Name"}
                     </span>
                   </div>
@@ -467,8 +469,8 @@ export default function LandlordPaymentsPage() {
               </div>
 
               {/* Warning */}
-              <div className="flex items-start gap-2 text-amber-700 bg-amber-50 p-3 rounded-lg">
-                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className={cn(s.infoAmber, '!p-3 !rounded-lg flex items-start gap-2')}>
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p className="text-xs">
                   Ensure the account details are correct. Transfers to wrong accounts may be irreversible.
                 </p>
@@ -476,31 +478,31 @@ export default function LandlordPaymentsPage() {
 
               {/* Processing indicator */}
               {isReleasing && (
-                <div className="flex items-center gap-2 justify-center py-2 text-sm text-orange-700 bg-orange-50 rounded-lg border border-orange-200">
-                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <div className="flex items-center justify-center gap-2 rounded-lg border border-orange-200 bg-orange-50 py-2 text-sm text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300">
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                   <span>Processing — please wait, do not close this window…</span>
                 </div>
               )}
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className={cn(s.footer, 'sm:!justify-end')}>
             <Button
               variant="outline"
               onClick={() => setShowConfirm(false)}
               disabled={isReleasing}
-              className="border-slate-300 text-slate-700"
+              className={s.outline}
             >
               Cancel
             </Button>
             <Button
               onClick={handleReleaseConfirm}
               disabled={isReleasing}
-              className="bg-orange-500 hover:bg-orange-600 text-white min-w-[160px]"
+              className={cn(s.primary, 'min-w-[160px]')}
             >
               {isReleasing
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Releasing…</>
-                : <><Banknote className="w-4 h-4 mr-2" />Confirm &amp; Release</>}
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Releasing…</>
+                : <><Banknote className="mr-2 h-4 w-4" />Confirm &amp; Release</>}
             </Button>
           </DialogFooter>
         </DialogContent>

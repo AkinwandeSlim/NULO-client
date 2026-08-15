@@ -1540,7 +1540,15 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
       // important for OAuth users whose metadata may not have been updated
       // if they signed up via Google and later sign in via email/password
       // (the JWT issued at the new sign-in carries the old user_metadata).
-      let userType: 'admin' | 'landlord' | 'tenant' = data.user.user_metadata?.user_type || 'tenant';
+      //
+      // ✅ FIX: Do NOT seed userType from JWT metadata before the DB fetch.
+      // The old code did `data.user.user_metadata?.user_type || 'tenant'` which
+      // meant a landlord whose JWT lacked user_type would start as 'tenant' for
+      // the entire sign-in flow — including redirect logic — even if the DB
+      // corrected it moments later. We now start with null and only assign once
+      // we have the DB value, falling back to metadata only if the DB fetch fails
+      // AND the metadata value is a valid role (never blind-default to 'tenant').
+      let userType: 'admin' | 'landlord' | 'tenant' | null = null;
       let dbVerificationStatus: string | null = null;
       let dbOnboardingCompleted = false;
       try {
@@ -1549,9 +1557,22 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
           .select('user_type, onboarding_completed, verification_status')
           .eq('id', data.user.id)
           .single();
-        if (dbUser?.user_type) {
-          userType = dbUser.user_type;
+        if (dbUser?.user_type && (['admin', 'landlord', 'tenant'] as const).includes(dbUser.user_type)) {
+          userType = dbUser.user_type as 'admin' | 'landlord' | 'tenant';
           console.log('✅ [AUTH] user_type resolved from DB:', userType);
+        } else {
+          // DB row missing or user_type invalid — fall back to metadata but
+          // only accept a recognised role value, never blind-default to 'tenant'.
+          const metaType = data.user.user_metadata?.user_type;
+          if (metaType && (['admin', 'landlord', 'tenant'] as const).includes(metaType)) {
+            userType = metaType as 'admin' | 'landlord' | 'tenant';
+            console.warn('⚠️ [AUTH] user_type not in DB, using JWT metadata fallback:', userType);
+          } else {
+            // Absolute last resort — safe default only when there is genuinely
+            // no record anywhere. Logged loudly so it's visible in dev tools.
+            userType = 'tenant';
+            console.error('❌ [AUTH] user_type not found in DB or metadata — defaulting to tenant. Check DB for user:', data.user.id);
+          }
         }
         // ✅ FIX: Use DB value when available — was previously only used
         // for user_type, which caused stale-JWT issues for OAuth users who
@@ -1562,7 +1583,14 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         }
         dbOnboardingCompleted = Boolean(dbUser?.onboarding_completed);
       } catch (dbErr) {
-        console.warn('⚠️ [AUTH] Could not fetch user_type from DB, using metadata:', userType);
+        // DB fetch failed entirely — fall back to metadata, same guard as above.
+        const metaType = data.user.user_metadata?.user_type;
+        if (metaType && (['admin', 'landlord', 'tenant'] as const).includes(metaType)) {
+          userType = metaType as 'admin' | 'landlord' | 'tenant';
+        } else {
+          userType = 'tenant';
+        }
+        console.warn('⚠️ [AUTH] Could not fetch user_type from DB, using metadata fallback:', userType);
       }
 
       // Build user object DIRECTLY from signIn response
@@ -1575,7 +1603,7 @@ const signUpLandlord = async (firstName: string, lastName: string, email: string
         first_name: firstName,
         last_name: lastName,
         full_name: data.user.user_metadata?.full_name || `${firstName} ${lastName}`,
-        user_type: userType,
+        user_type: userType!,
         email_verified: data.user.email_confirmed_at ? true : false,
         onboarding_completed: data.user.user_metadata?.onboarding_completed || dbOnboardingCompleted || false,
         onboarding_step: data.user.user_metadata?.onboarding_step || 1,

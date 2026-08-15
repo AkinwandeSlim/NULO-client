@@ -26,6 +26,8 @@ import {
   type DisburseResponse,
 } from "@/lib/api/payments"
 import { agreementsAPI } from "@/lib/api/agreements"
+import { cn } from "@/lib/utils"
+import { dialogStyles as s } from "@/lib/utils/dialogStyles"
 
 const formatNGN = (n: number) => `₦${Number(n).toLocaleString("en-NG")}`
 
@@ -663,71 +665,71 @@ export default function LandlordPaymentDetailPage() {
         if (isReleasing) return
         setShowReleaseConfirm(open)
       }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-slate-900">Confirm Fund Release</DialogTitle>
-            <DialogDescription className="text-slate-600">
+        <DialogContent className={s.card}>
+          <DialogHeader className={s.header}>
+            <DialogTitle className={s.title}>Confirm Fund Release</DialogTitle>
+            <DialogDescription className={s.description}>
               Verify your bank details below. The disbursement only starts once you click Confirm.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div className="bg-slate-50 rounded-lg p-4 space-y-3">
+          <div className={cn(s.body, 'space-y-4')}>
+            <div className={cn(s.section, 'space-y-3')}>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">Amount to be sent</span>
-                <span className="text-lg font-bold text-orange-600">{formatNGN(payout)}</span>
+                <span className="text-sm text-slate-600 dark:text-slate-400">Amount to be sent</span>
+                <span className="text-lg font-bold text-orange-600 dark:text-orange-400">{formatNGN(payout)}</span>
               </div>
-              <div className="border-t border-slate-200 pt-3 space-y-2">
+              <div className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Bank</span>
-                  <span className="text-sm font-medium text-slate-900">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">Bank</span>
+                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
                     {agreement.landlord_bank_name || "Your Bank"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Account Number</span>
-                  <span className="text-sm font-mono font-medium text-slate-900">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">Account Number</span>
+                  <span className="font-mono text-sm font-medium text-slate-900 dark:text-slate-100">
                     {agreement.landlord_bank_account_number || "••••••••"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Account Name</span>
-                  <span className="text-sm font-medium text-slate-900">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">Account Name</span>
+                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
                     {agreement.landlord_account_name || "Your Account Name"}
                   </span>
                 </div>
               </div>
             </div>
-            <div className="flex items-start gap-2 text-amber-700 bg-amber-50 p-3 rounded-lg">
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className={cn(s.infoAmber, '!p-3 !rounded-lg flex items-start gap-2')}>
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <p className="text-xs">
                 Ensure the account details are correct. Transfers to wrong accounts may be irreversible.
               </p>
             </div>
             {/* Processing indicator — visible while API call is in flight */}
             {isReleasing && (
-              <div className="flex items-center gap-2 justify-center py-2 text-sm text-orange-700 bg-orange-50 rounded-lg border border-orange-200">
-                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              <div className="flex items-center justify-center gap-2 rounded-lg border border-orange-200 bg-orange-50 py-2 text-sm text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                 <span>Processing — please wait, do not close this window…</span>
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className={cn(s.footer, 'sm:!justify-end')}>
             <Button
               variant="outline"
               onClick={() => setShowReleaseConfirm(false)}
               disabled={isReleasing}
-              className="border-slate-300 text-slate-700"
+              className={s.outline}
             >
               Cancel
             </Button>
             <Button
               onClick={handleReleaseConfirm}
               disabled={isReleasing}
-              className="bg-orange-500 hover:bg-orange-600 text-white min-w-[160px]"
+              className={cn(s.primary, 'min-w-[160px]')}
             >
               {isReleasing
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Releasing…</>
-                : <><Banknote className="w-4 h-4 mr-2" />Confirm &amp; Release</>}
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Releasing…</>
+                : <><Banknote className="mr-2 h-4 w-4" />Confirm &amp; Release</>}
             </Button>
           </DialogFooter>
         </DialogContent>

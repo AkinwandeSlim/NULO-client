@@ -218,14 +218,21 @@ export async function GET(request: NextRequest) {
       console.log('[GOOGLE-CB] Extracted nonce:', nonceFromState)
     } else {
       console.warn('[GOOGLE-CB] ⚠️ Unknown user type in state:', extractedType)
-      // Default to tenant for unknown types
-      userTypeFromState = 'tenant'
+      // ✅ FIX: Unknown type — treat same as missing state (preserve DB role).
+      // Do NOT default to 'tenant'; use DB value fetched below.
+      isSigninOnlyState = true
+      userTypeFromState = null
     }
   } else {
-    // ✅ NEW: Better logging when state is missing
+    // ✅ FIX: State missing/malformed — do NOT default to 'tenant'.
+    // Defaulting here is what caused landlords to become tenants when the
+    // OAuth state cookie was lost (e.g. browser privacy mode, cross-site
+    // redirects, or a second tab). Instead, treat it the same as a
+    // signin-only flow: read the role from the DB below.
     console.warn('[GOOGLE-CB] ⚠️ State parameter missing or malformed:', state)
-    console.log('[GOOGLE-CB] Defaulting to "tenant" for safety')
-    userTypeFromState = 'tenant'
+    console.log('[GOOGLE-CB] Will use DB user type (no default to tenant)')
+    isSigninOnlyState = true   // preserve DB role; do NOT sync/overwrite
+    userTypeFromState = null
   }
 
   // ── Validate CSRF nonce ────────────────────────────────────────────────────

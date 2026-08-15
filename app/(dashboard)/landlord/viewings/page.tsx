@@ -43,12 +43,12 @@ interface ViewingCardProps {
 
 function getStatusBadgeStyle(status: string) {
   const styles: Record<string, string> = {
-    pending:   "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
-    confirmed: "bg-green-100 text-green-800 border-green-200 font-semibold",
-    reschedule_proposed: "bg-violet-100 text-violet-800 border-violet-200 font-semibold",
-    completed: "bg-blue-100 text-blue-800 border-blue-200 font-semibold",
-    cancelled: "bg-slate-100 text-slate-800 border-slate-200 font-semibold",
-    no_show: "bg-red-100 text-red-800 border-red-200 font-semibold",
+    pending:   "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-700 font-semibold",
+    confirmed: "bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700 font-semibold",
+    reschedule_proposed: "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700 font-semibold",
+    completed: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700 font-semibold",
+    cancelled: "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 font-semibold",
+    no_show: "bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700 font-semibold",
   }
   return styles[status] || styles.pending
 }
@@ -109,14 +109,14 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onComple
   const isFuture = new Date(appointmentDate) >= new Date()
 
   return (
-    <Card className={`border-orange-200 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-all duration-300 ${getPriorityBorder(request.status)}`}>
+    <Card className={`border-orange-200 bg-white/80 dark:bg-slate-900/80 dark:border-slate-700 backdrop-blur-sm hover:shadow-lg transition-all duration-300 ${getPriorityBorder(request.status)}`}>
       <CardContent className="p-6">
         <div className="flex gap-6">
 
           {/* Property Image */}
           <div className="relative flex-shrink-0">
             <Link href={`/properties/${property?.id}`}>
-              <div className="w-40 h-32 rounded-xl overflow-hidden bg-slate-100 shadow-md">
+              <div className="w-40 h-32 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shadow-md">
                 <img
                   src={property?.images?.[0] || DEFAULT_PROPERTY_IMAGE}
                   alt={property?.title || 'Property'}
@@ -138,11 +138,11 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onComple
             <div className="flex items-start justify-between mb-3">
               <div className="flex-1 min-w-0">
                 <Link href={`/properties/${property?.id}`}>
-                  <h3 className="text-xl font-bold text-slate-900 mb-1 hover:text-orange-600 transition-colors truncate">
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-1 hover:text-orange-600 dark:hover:text-orange-400 transition-colors truncate">
                     {property?.title || 'Property'}
                   </h3>
                 </Link>
-                <div className="flex items-center gap-2 text-sm text-slate-600">
+                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
                   <MapPin className="h-4 w-4 text-orange-500 flex-shrink-0" />
                   <span className="font-medium truncate">{property?.location || 'Location not available'}</span>
                 </div>
@@ -155,7 +155,7 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onComple
                   </Badge>
                 </div>
                 {request.viewing_type && (
-                  <span className="text-xs text-slate-500 font-medium">
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                     {formatViewingType(request.viewing_type)}
                   </span>
                 )}
@@ -163,20 +163,20 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onComple
             </div>
 
             {/* Tenant info */}
-            <div className="flex items-center gap-3 mb-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <div className="flex items-center gap-3 mb-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
               <img
                 src={tenant?.avatar_url || DEFAULT_AVATAR + (tenant?.id || 'unknown')}
                 alt={tenant?.full_name || 'Tenant'}
-                className="h-10 w-10 rounded-full flex-shrink-0 border-2 border-white shadow-sm"
+                className="h-10 w-10 rounded-full flex-shrink-0 border-2 border-white dark:border-slate-700 shadow-sm"
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5 text-slate-400" />
-                  <p className="font-semibold text-slate-900 text-sm">
+                  <Users className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                  <p className="font-semibold text-slate-900 dark:text-slate-100 text-sm">
                     {tenant?.full_name || request.tenant_name || 'Tenant'}
                   </p>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-slate-500 mt-1 flex-wrap">
+                <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 mt-1 flex-wrap">
                   {tenant?.email && (
                     <span className="flex items-center gap-1">
                       <Mail className="h-3 w-3" />{tenant.email}
@@ -192,23 +192,23 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onComple
             </div>
 
             {/* Date & time — same pill style as tenant */}
-            <div className="flex items-center gap-6 text-sm text-slate-600 mb-4 p-3 bg-slate-50 rounded-lg">
+            <div className="flex items-center gap-6 text-sm text-slate-600 dark:text-slate-400 mb-4 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
               <div className="flex items-center gap-2">
-                <div className="h-8 w-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Calendar className="h-4 w-4 text-blue-600" />
+                <div className="h-8 w-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                  <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-700">{formatDateCard(appointmentDate)}</div>
-                  <div className="text-xs text-slate-500">{request.confirmed_date ? 'Confirmed date' : 'Requested date'}</div>
+                  <div className="font-semibold text-slate-700 dark:text-slate-300">{formatDateCard(appointmentDate)}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">{request.confirmed_date ? 'Confirmed date' : 'Requested date'}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="h-8 w-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                  <Clock className="h-4 w-4 text-orange-600" />
+                <div className="h-8 w-8 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
+                  <Clock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-700">{request.confirmed_time || formatTimeSlotCard(appointmentTime)}</div>
-                  <div className="text-xs text-slate-500">{request.confirmed_time ? 'Confirmed time' : 'Preferred time'}</div>
+                  <div className="font-semibold text-slate-700 dark:text-slate-300">{request.confirmed_time || formatTimeSlotCard(appointmentTime)}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">{request.confirmed_time ? 'Confirmed time' : 'Preferred time'}</div>
                 </div>
               </div>
             </div>
@@ -217,11 +217,11 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onComple
             {request.message && (
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <MessageSquare className="h-4 w-4 text-slate-500" />
-                  <span className="text-sm font-semibold text-slate-700">Tenant's Message</span>
+                  <MessageSquare className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Tenant's Message</span>
                 </div>
-                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                  <p className="text-sm text-blue-800 italic">"{request.message}"</p>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800">
+                  <p className="text-sm text-blue-800 dark:text-blue-300 italic">"{request.message}"</p>
                 </div>
               </div>
             )}
@@ -230,17 +230,17 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onComple
             {request.landlord_notes && (
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm font-semibold text-slate-700">Your Response</span>
+                  <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400" />
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Your Response</span>
                 </div>
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                  <p className="text-sm text-slate-600 italic">"{request.landlord_notes}"</p>
+                <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                  <p className="text-sm text-slate-600 dark:text-slate-400 italic">"{request.landlord_notes}"</p>
                 </div>
               </div>
             )}
 
             {/* Actions — same bottom-border pattern as tenant */}
-            <div className="flex items-center gap-3 pt-4 border-t border-slate-200 flex-wrap">
+            <div className="flex items-center gap-3 pt-4 border-t border-slate-200 dark:border-slate-700 flex-wrap">
               <Link href={`/properties/${property?.id}`}>
                 <Button size="sm" variant="outline" className="border-orange-200 text-orange-700 hover:bg-orange-50">
                   <Eye className="mr-2 h-4 w-4" />
@@ -473,13 +473,13 @@ export default function LandlordViewingsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 p-6">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-center min-h-[60vh]">
             <div className="text-center">
               <div className="w-20 h-20 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-              <h3 className="text-xl font-semibold text-slate-900 mb-2">Loading Viewing Requests</h3>
-              <p className="text-slate-600">Please wait while we fetch your viewing appointments...</p>
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">Loading Viewing Requests</h3>
+              <p className="text-slate-600 dark:text-slate-400">Please wait while we fetch your viewing appointments...</p>
             </div>
           </div>
         </div>
@@ -493,7 +493,7 @@ export default function LandlordViewingsPage() {
       {/* Header */}
       <div className="mb-8">
         <Link href="/landlord/overview">
-          <Button variant="ghost" size="sm" className="mb-4 text-slate-600 hover:text-slate-900">
+          <Button variant="ghost" size="sm" className="mb-4 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Dashboard
           </Button>
@@ -503,7 +503,7 @@ export default function LandlordViewingsPage() {
             <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mb-3">
               Viewing Requests
             </h1>
-            <p className="text-slate-600">
+            <p className="text-slate-600 dark:text-slate-400">
               Manage property viewing appointments from tenants
             </p>
           </div>
@@ -518,53 +518,53 @@ export default function LandlordViewingsPage() {
 
       {/* Stats cards — 4-grid for complete overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+        <Card className="border-orange-200 bg-white/80 dark:bg-slate-900/80 dark:border-slate-700 backdrop-blur-sm">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-600">Total Requests</p>
-                <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Requests</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.total}</p>
               </div>
-              <Calendar className="w-8 h-8 text-slate-400" />
+              <Calendar className="w-8 h-8 text-slate-400 dark:text-slate-500" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+        <Card className="border-orange-200 bg-white/80 dark:bg-slate-900/80 dark:border-slate-700 backdrop-blur-sm">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-600">Needs Review</p>
-                <p className="text-2xl font-bold text-orange-600">{stats.pending}</p>
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Needs Review</p>
+                <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{stats.pending}</p>
               </div>
-              <div className={`w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center ${stats.pending > 0 ? 'animate-pulse' : ''}`}>
-                <AlertCircle className="h-4 w-4 text-orange-600" />
+              <div className={`w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center ${stats.pending > 0 ? 'animate-pulse' : ''}`}>
+                <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+        <Card className="border-orange-200 bg-white/80 dark:bg-slate-900/80 dark:border-slate-700 backdrop-blur-sm">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-600">Confirmed Upcoming</p>
-                <p className="text-2xl font-bold text-green-600">{stats.upcoming}</p>
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Confirmed Upcoming</p>
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.upcoming}</p>
               </div>
-              <CheckCircle className="w-8 h-8 text-green-400" />
+              <CheckCircle className="w-8 h-8 text-green-400 dark:text-green-500" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+        <Card className="border-orange-200 bg-white/80 dark:bg-slate-900/80 dark:border-slate-700 backdrop-blur-sm">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-600">Completed Viewings</p>
-                <p className="text-2xl font-bold text-blue-600">{stats.completed}</p>
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Completed Viewings</p>
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.completed}</p>
               </div>
-              <div className={`w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center ${stats.completed > 0 ? 'animate-pulse' : ''}`}>
-                <Clock className="h-4 w-4 text-blue-600" />
+              <div className={`w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center ${stats.completed > 0 ? 'animate-pulse' : ''}`}>
+                <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               </div>
             </div>
           </CardContent>
@@ -576,13 +576,13 @@ export default function LandlordViewingsPage() {
         <div className="mb-8">
           {/* Search bar */}
           <div className="flex-1 relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
             <input
               type="text"
               placeholder="Search by property, location, or tenant name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border-2 border-slate-200 rounded-xl focus:border-orange-500 focus:outline-none bg-white"
+              className="w-full pl-10 pr-4 py-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl focus:border-orange-500 focus:outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
             />
           </div>
 
@@ -591,7 +591,7 @@ export default function LandlordViewingsPage() {
             <Button
               size="sm"
               variant={statusFilter === 'all' ? 'default' : 'outline'}
-              className={statusFilter === 'all' ? 'bg-orange-600 hover:bg-orange-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}
+              className={statusFilter === 'all' ? 'bg-orange-600 hover:bg-orange-700' : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}
               onClick={() => setStatusFilter('all')}
             >
               All ({viewingRequests.length})
@@ -599,7 +599,7 @@ export default function LandlordViewingsPage() {
             <Button
               size="sm"
               variant={statusFilter === 'pending' ? 'default' : 'outline'}
-              className={statusFilter === 'pending' ? 'bg-orange-600 hover:bg-orange-700' : 'border-orange-300 text-orange-700 hover:bg-orange-50'}
+              className={statusFilter === 'pending' ? 'bg-orange-600 hover:bg-orange-700' : 'border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20'}
               onClick={() => setStatusFilter('pending')}
             >
               <AlertCircle className="mr-1 h-3 w-3" />
@@ -608,7 +608,7 @@ export default function LandlordViewingsPage() {
             <Button
               size="sm"
               variant={statusFilter === 'confirmed' ? 'default' : 'outline'}
-              className={statusFilter === 'confirmed' ? 'bg-green-600 hover:bg-green-700' : 'border-green-300 text-green-700 hover:bg-green-50'}
+              className={statusFilter === 'confirmed' ? 'bg-green-600 hover:bg-green-700' : 'border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20'}
               onClick={() => setStatusFilter('confirmed')}
             >
               <CheckCircle className="mr-1 h-3 w-3" />
@@ -617,7 +617,7 @@ export default function LandlordViewingsPage() {
             <Button
               size="sm"
               variant={statusFilter === 'cancelled' ? 'default' : 'outline'}
-              className={statusFilter === 'cancelled' ? 'bg-slate-600 hover:bg-slate-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}
+              className={statusFilter === 'cancelled' ? 'bg-slate-600 hover:bg-slate-700' : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}
               onClick={() => setStatusFilter('cancelled')}
             >
               <XCircle className="mr-1 h-3 w-3" />
@@ -626,7 +626,7 @@ export default function LandlordViewingsPage() {
             <Button
               size="sm"
               variant={statusFilter === 'completed' ? 'default' : 'outline'}
-              className={statusFilter === 'completed' ? 'bg-blue-600 hover:bg-blue-700' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}
+              className={statusFilter === 'completed' ? 'bg-blue-600 hover:bg-blue-700' : 'border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'}
               onClick={() => setStatusFilter('completed')}
             >
               <CheckCircle className="mr-1 h-3 w-3" />
@@ -637,21 +637,21 @@ export default function LandlordViewingsPage() {
       )}
 
       {/* Main content card */}
-      <Card className="border-orange-200 bg-white/80 backdrop-blur-sm">
+      <Card className="border-orange-200 bg-white/80 dark:bg-slate-900/80 dark:border-slate-700 backdrop-blur-sm">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>All Viewing Requests</span>
-            <span className="text-sm font-normal text-slate-500">{viewingRequests.length} total</span>
+            <span className="text-slate-900 dark:text-slate-100">All Viewing Requests</span>
+            <span className="text-sm font-normal text-slate-500 dark:text-slate-400">{viewingRequests.length} total</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
           {viewingRequests.length === 0 ? (
             <div className="text-center py-20 max-w-md mx-auto">
-              <div className="h-16 w-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Calendar className="h-8 w-8 text-orange-600" />
+              <div className="h-16 w-16 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Calendar className="h-8 w-8 text-orange-600 dark:text-orange-400" />
               </div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-3">No viewing requests yet</h3>
-              <p className="text-slate-600 mb-8">
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3">No viewing requests yet</h3>
+              <p className="text-slate-600 dark:text-slate-400 mb-8">
                 Viewing requests from tenants will appear here once they start booking appointments for your properties.
               </p>
               <Link href="/landlord/properties">
@@ -665,12 +665,12 @@ export default function LandlordViewingsPage() {
             <div className="space-y-4">
               {filteredRequests.length === 0 ? (
                 <div className="text-center py-20 max-w-md mx-auto">
-                  <h3 className="text-xl font-bold text-slate-900 mb-3">No matching requests</h3>
-                  <p className="text-slate-600 mb-6">Try adjusting your search or filter</p>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-3">No matching requests</h3>
+                  <p className="text-slate-600 dark:text-slate-400 mb-6">Try adjusting your search or filter</p>
                   <Button
                     variant="outline"
                     onClick={() => { setSearchQuery(''); setStatusFilter('all') }}
-                    className="border-orange-200 text-orange-700 hover:bg-orange-50"
+                    className="border-orange-200 dark:border-orange-700 text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20"
                   >
                     Clear Filters
                   </Button>
@@ -680,10 +680,10 @@ export default function LandlordViewingsPage() {
 
                   {groupedRequests.pending.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                        <AlertCircle className="h-5 w-5 text-orange-600" />
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+                        <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                         Needs Review ({groupedRequests.pending.length})
-                        <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs animate-pulse ml-1">
+                        <Badge className="bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-700 text-xs animate-pulse ml-1">
                           Action Required
                         </Badge>
                       </h3>
@@ -705,11 +705,11 @@ export default function LandlordViewingsPage() {
 
                   {groupedRequests.awaitingTenant.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                        <Clock className="h-5 w-5 text-violet-600" />
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-violet-600 dark:text-violet-400" />
                         Awaiting Tenant Response ({groupedRequests.awaitingTenant.length})
                       </h3>
-                      <p className="text-sm text-slate-600 mb-3">A new appointment time has been proposed. The tenant must accept it before it becomes confirmed.</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">A new appointment time has been proposed. The tenant must accept it before it becomes confirmed.</p>
                       <div className="space-y-3">
                         {groupedRequests.awaitingTenant.map(request => (
                           <ViewingRequestCard
@@ -728,8 +728,8 @@ export default function LandlordViewingsPage() {
 
                   {groupedRequests.upcoming.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                        <CheckCircle className="h-5 w-5 text-green-600" />
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                         Upcoming Viewings ({groupedRequests.upcoming.length})
                       </h3>
                       <div className="space-y-3">
@@ -750,8 +750,8 @@ export default function LandlordViewingsPage() {
 
                   {groupedRequests.past.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                        <Clock className="h-5 w-5 text-slate-600" />
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-slate-600 dark:text-slate-400" />
                         Past Viewings ({groupedRequests.past.length})
                       </h3>
                       <div className="space-y-3">

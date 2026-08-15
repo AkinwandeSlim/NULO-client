@@ -16,12 +16,12 @@
 :root {
   /* Luxury African Rental Platform Palette */
   /* Warm ivory background */
-  --background: oklch(0.98 0.01 75);
+  --background: #FCFBF9;
   /* Deep charcoal text */
   --foreground: oklch(0.15 0.01 60);
 
   /* Card backgrounds - warm ivory with luxury shadow */
-  --card: oklch(0.99 0.005 75);
+  --card: #ffffff;
   --card-foreground: oklch(0.15 0.01 60);
 
   --popover: oklch(0.99 0.005 75);
@@ -74,12 +74,12 @@
 }
 
 .dark {
-  --background: oklch(0.2 0.01 60);
-  --foreground: oklch(0.95 0.005 75);
-  --card: oklch(0.25 0.01 60);
-  --card-foreground: oklch(0.95 0.005 75);
-  --popover: oklch(0.25 0.01 60);
-  --popover-foreground: oklch(0.95 0.005 75);
+  --background: #000000;
+  --foreground: #f8fafc;
+  --card: #0A0A0A;
+  --card-foreground: #f8fafc;
+  --popover: #0A0A0A;
+  --popover-foreground: #f8fafc;
   --primary: oklch(0.45 0.15 250);
   --primary-foreground: oklch(0.98 0.005 75);
   --secondary: oklch(0.42 0.06 195);
@@ -90,8 +90,8 @@
   --accent-foreground: oklch(0.2 0.01 60);
   --destructive: oklch(0.5 0.2 27);
   --destructive-foreground: oklch(0.95 0.005 75);
-  --border: oklch(0.35 0.015 65);
-  --input: oklch(0.35 0.015 65);
+  --border: rgba(255, 255, 255, 0.10);
+  --input: rgba(255, 255, 255, 0.12);
   --ring: oklch(0.45 0.15 250);
   --sidebar: oklch(0.25 0.01 60);
   --sidebar-foreground: oklch(0.95 0.005 75);
@@ -216,6 +216,710 @@
   backdrop-filter: blur(10px);
   border: 1px solid rgba(245, 158, 11, 0.2);
   box-shadow: 0 4px 16px rgba(245, 158, 11, 0.1);
+}
+
+/* Dashboard surfaces mirror the landing page: quiet ivory in light mode,
+   near-black panels with restrained orange accents in dark mode.  These are
+   scoped to the dashboard so marketplace and marketing pages keep their own
+   visual treatments. */
+.dashboard-shell {
+  background-image: radial-gradient(circle at top right, rgba(249, 115, 22, 0.07), transparent 28%);
+}
+
+.dark .dashboard-shell {
+  background-image:
+    radial-gradient(circle at top right, rgba(249, 115, 22, 0.10), transparent 28%),
+    linear-gradient(180deg, #000 0%, #080808 100%);
+}
+
+.dark .dashboard-shell .bg-white,
+.dark .dashboard-shell .bg-white\/60,
+.dark .dashboard-shell .bg-white\/80,
+.dark .dashboard-shell .bg-white\/90,
+.dark .dashboard-shell .bg-white\/95 {
+  background-color: #0A0A0A !important;
+}
+
+.dark .dashboard-shell .bg-slate-50,
+.dark .dashboard-shell .bg-slate-100,
+.dark .dashboard-shell .bg-gray-50,
+.dark .dashboard-shell .bg-gray-100 {
+  background-color: rgba(255, 255, 255, 0.045) !important;
+}
+
+.dark .dashboard-shell .bg-orange-50 {
+  background-color: rgba(249, 115, 22, 0.10) !important;
+}
+
+.dark .dashboard-shell .border-orange-100,
+.dark .dashboard-shell .border-orange-200 {
+  border-color: rgba(249, 115, 22, 0.28) !important;
+}
+
+/* Several legacy pages provide their own light gradient wrapper. Keep those
+   pages on the shared dark canvas whenever the selected theme is dark. */
+.dark .dashboard-shell .from-orange-50,
+.dark .dashboard-shell .from-\[\#FFF9F1\] {
+  --tw-gradient-from: #000 !important;
+  --tw-gradient-to: rgb(0 0 0 / 0) !important;
+}
+
+.dark .dashboard-shell .via-white,
+.dark .dashboard-shell .via-\[\#FEF7E6\] {
+  --tw-gradient-stops: var(--tw-gradient-from), #080808, var(--tw-gradient-to) !important;
+}
+
+.dark .dashboard-shell .to-slate-50,
+.dark .dashboard-shell .to-\[\#FFF5E1\] {
+  --tw-gradient-to: #0A0A0A !important;
+}
+
+.dark .dashboard-shell .border-slate-100,
+.dark .dashboard-shell .border-slate-200,
+.dark .dashboard-shell .border-gray-100,
+.dark .dashboard-shell .border-gray-200 {
+  border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+.dark .dashboard-shell .text-slate-900,
+.dark .dashboard-shell .text-slate-800,
+.dark .dashboard-shell .text-slate-700,
+.dark .dashboard-shell .text-gray-900,
+.dark .dashboard-shell .text-gray-800,
+.dark .dashboard-shell .text-gray-700 {
+  color: #f8fafc !important;
+}
+
+.dark .dashboard-shell .text-slate-600,
+.dark .dashboard-shell .text-slate-500,
+.dark .dashboard-shell .text-gray-600,
+.dark .dashboard-shell .text-gray-500 {
+  color: #a8b1c0 !important;
+}
+
+.dark .dashboard-shell input:not([type="checkbox"]),
+.dark .dashboard-shell textarea,
+.dark .dashboard-shell select {
+  background-color: #111 !important;
+  color: #f8fafc !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.dark .dashboard-shell input::placeholder,
+.dark .dashboard-shell textarea::placeholder {
+  color: #7b8798 !important;
+}
+
+.dark .dashboard-shell .hover\:bg-slate-50:hover,
+.dark .dashboard-shell .hover\:bg-slate-100:hover,
+.dark .dashboard-shell .hover\:bg-gray-50:hover {
+  background-color: rgba(249, 115, 22, 0.10) !important;
+}
+
+.dark .dashboard-navbar .text-slate-900,
+.dark .dashboard-navbar .text-slate-800,
+.dark .dashboard-navbar .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+
+.dark .dashboard-navbar .text-slate-600,
+.dark .dashboard-navbar .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+.dark .dashboard-navbar .bg-white,
+.dark .dashboard-navbar .bg-slate-50 {
+  background-color: #0A0A0A !important;
+}
+
+.dark .dashboard-navbar .border-slate-100,
+.dark .dashboard-navbar .border-slate-200,
+.dark .dashboard-navbar .border-slate-300 {
+  border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+/* Keep navigation links in their own scrollable lane. The action lane at the
+   right is non-shrinking, so notification and profile controls cannot collide
+   when a role has many desktop navigation links. */
+.desktop-nav {
+  scrollbar-width: none;
+  justify-content: safe center;
+}
+
+.desktop-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.desktop-nav > a {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Landlord overview alerts use light semantic backgrounds by default. In dark
+   mode they become dark, tinted status panels so headings, descriptions and
+   badges remain legible without a bright strip across the dashboard. */
+.dark .landlord-status-banner {
+  background: linear-gradient(135deg, rgba(17, 17, 17, 0.98), rgba(10, 10, 10, 0.98)) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.dark .landlord-status-banner .text-orange-900,
+.dark .landlord-status-banner .text-red-900,
+.dark .landlord-status-banner .text-blue-900,
+.dark .landlord-status-banner .text-purple-900,
+.dark .landlord-status-banner .text-green-900,
+.dark .landlord-status-banner .text-amber-900 {
+  color: #f8fafc !important;
+}
+
+.dark .landlord-status-banner .text-orange-800,
+.dark .landlord-status-banner .text-red-800,
+.dark .landlord-status-banner .text-blue-800,
+.dark .landlord-status-banner .text-purple-800,
+.dark .landlord-status-banner .text-green-800,
+.dark .landlord-status-banner .text-amber-800 {
+  color: #e2e8f0 !important;
+}
+
+.dark .landlord-status-banner .text-orange-700,
+.dark .landlord-status-banner .text-red-700,
+.dark .landlord-status-banner .text-blue-700,
+.dark .landlord-status-banner .text-purple-700,
+.dark .landlord-status-banner .text-green-700,
+.dark .landlord-status-banner .text-amber-700 {
+  color: #cbd5e1 !important;
+}
+
+.dark .landlord-status-banner .bg-orange-50,
+.dark .landlord-status-banner .bg-red-50,
+.dark .landlord-status-banner .bg-blue-50,
+.dark .landlord-status-banner .bg-purple-50,
+.dark .landlord-status-banner .bg-green-50,
+.dark .landlord-status-banner .bg-amber-50 {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.dark .landlord-status-banner .bg-orange-100,
+.dark .landlord-status-banner .bg-red-100,
+.dark .landlord-status-banner .bg-blue-100,
+.dark .landlord-status-banner .bg-purple-100,
+.dark .landlord-status-banner .bg-green-100,
+.dark .landlord-status-banner .bg-amber-100 {
+  background-color: rgba(255, 255, 255, 0.09) !important;
+}
+
+.dark .landlord-status-banner .hover\:bg-orange-50:hover,
+.dark .landlord-status-banner .hover\:bg-red-100:hover,
+.dark .landlord-status-banner .hover\:bg-blue-50:hover,
+.dark .landlord-status-banner .hover\:bg-purple-50:hover,
+.dark .landlord-status-banner .hover\:bg-green-50:hover,
+.dark .landlord-status-banner .hover\:bg-amber-50:hover {
+  background-color: rgba(249, 115, 22, 0.14) !important;
+}
+
+/* Tenant dashboard alerts use the same high-contrast dark panel treatment.
+   Their color still communicates status through the icon, border and primary
+   action, while copy remains easy to read on a dark dashboard. */
+.dark .tenant-status-banner {
+  background: linear-gradient(135deg, rgba(17, 17, 17, 0.98), rgba(10, 10, 10, 0.98)) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.dark .tenant-status-banner .text-purple-900,
+.dark .tenant-status-banner .text-green-900,
+.dark .tenant-status-banner .text-blue-900,
+.dark .tenant-status-banner .text-amber-900 {
+  color: #f8fafc !important;
+}
+
+.dark .tenant-status-banner .text-purple-800,
+.dark .tenant-status-banner .text-green-800,
+.dark .tenant-status-banner .text-blue-800,
+.dark .tenant-status-banner .text-amber-800 {
+  color: #e2e8f0 !important;
+}
+
+.dark .tenant-status-banner .text-purple-700,
+.dark .tenant-status-banner .text-green-700,
+.dark .tenant-status-banner .text-blue-700,
+.dark .tenant-status-banner .text-amber-700 {
+  color: #cbd5e1 !important;
+}
+
+.dark .tenant-status-banner .bg-purple-50,
+.dark .tenant-status-banner .bg-green-50,
+.dark .tenant-status-banner .bg-blue-50,
+.dark .tenant-status-banner .bg-amber-50,
+.dark .tenant-status-banner .bg-orange-50 {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.dark .tenant-status-banner .bg-purple-100,
+.dark .tenant-status-banner .bg-green-100,
+.dark .tenant-status-banner .bg-blue-100,
+.dark .tenant-status-banner .bg-amber-100,
+.dark .tenant-status-banner .bg-orange-100 {
+  background-color: rgba(255, 255, 255, 0.09) !important;
+}
+
+.dark .tenant-status-banner .hover\:bg-purple-50:hover,
+.dark .tenant-status-banner .hover\:bg-green-50:hover,
+.dark .tenant-status-banner .hover\:bg-blue-50:hover,
+.dark .tenant-status-banner .hover\:bg-amber-50:hover,
+.dark .tenant-status-banner .hover\:bg-amber-100:hover,
+.dark .tenant-status-banner .hover\:bg-orange-50:hover,
+.dark .tenant-status-banner .hover\:bg-orange-100:hover {
+  background-color: rgba(249, 115, 22, 0.14) !important;
+}
+
+/* PropFlow is a self-contained workspace that renders cards, forms and chat
+   bubbles from several components. Scope its dark treatment here so every
+   embedded flow follows the dashboard's near-black surface and readable copy. */
+.dark .propflow-shell .propflow-panel,
+.dark .propflow-shell .bg-white {
+  background-color: #0A0A0A !important;
+}
+
+.dark .propflow-shell .bg-slate-50,
+.dark .propflow-shell .bg-slate-50\/50,
+.dark .propflow-shell .bg-slate-50\/60,
+.dark .propflow-shell .bg-slate-50\/70,
+.dark .propflow-shell .bg-slate-50\/80,
+.dark .propflow-shell .bg-slate-100,
+.dark .propflow-shell .bg-slate-200 {
+  background-color: rgba(255, 255, 255, 0.055) !important;
+}
+
+.dark .propflow-shell .border-slate-100,
+.dark .propflow-shell .border-slate-200,
+.dark .propflow-shell .border-slate-300,
+.dark .propflow-shell .ring-slate-100,
+.dark .propflow-shell .ring-slate-200 {
+  border-color: rgba(255, 255, 255, 0.11) !important;
+  --tw-ring-color: rgba(255, 255, 255, 0.11) !important;
+}
+
+.dark .propflow-shell .text-slate-900,
+.dark .propflow-shell .text-slate-800,
+.dark .propflow-shell .text-slate-700 {
+  color: #f1f5f9 !important;
+}
+
+.dark .propflow-shell .text-slate-600,
+.dark .propflow-shell .text-slate-500,
+.dark .propflow-shell .text-slate-400 {
+  color: #a8b1c0 !important;
+}
+
+.dark .propflow-shell .text-orange-900,
+.dark .propflow-shell .text-green-900,
+.dark .propflow-shell .text-emerald-900,
+.dark .propflow-shell .text-blue-900,
+.dark .propflow-shell .text-purple-900,
+.dark .propflow-shell .text-amber-900 {
+  color: #f8fafc !important;
+}
+
+.dark .propflow-shell .text-orange-800,
+.dark .propflow-shell .text-green-800,
+.dark .propflow-shell .text-emerald-800,
+.dark .propflow-shell .text-blue-800,
+.dark .propflow-shell .text-purple-800,
+.dark .propflow-shell .text-amber-800 {
+  color: #e2e8f0 !important;
+}
+
+.dark .propflow-shell input,
+.dark .propflow-shell textarea,
+.dark .propflow-shell select {
+  background-color: #111 !important;
+  color: #f8fafc !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.dark .propflow-shell input::placeholder,
+.dark .propflow-shell textarea::placeholder {
+  color: #7b8798 !important;
+}
+
+.dark .propflow-shell .bg-orange-50,
+.dark .propflow-shell .bg-green-50,
+.dark .propflow-shell .bg-emerald-50,
+.dark .propflow-shell .bg-blue-50,
+.dark .propflow-shell .bg-purple-50,
+.dark .propflow-shell .bg-amber-50,
+.dark .propflow-shell .bg-red-50,
+.dark .propflow-shell .bg-orange-50\/40,
+.dark .propflow-shell .bg-orange-50\/60,
+.dark .propflow-shell .bg-green-50\/60,
+.dark .propflow-shell .bg-emerald-50\/60,
+.dark .propflow-shell .bg-blue-50\/60,
+.dark .propflow-shell .bg-purple-50\/60,
+.dark .propflow-shell .bg-amber-50\/60,
+.dark .propflow-shell .bg-red-50\/60 {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* -100 tint chips (icon wells, state badges): keep a hint of the semantic
+   colour over the near-black surface instead of the pale pastel fill, which
+   otherwise reads as an ash/gray patch in dark mode. */
+.dark .propflow-shell .bg-orange-100 {
+  background-color: rgba(249, 115, 22, 0.16) !important;
+}
+.dark .propflow-shell .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+}
+.dark .propflow-shell .bg-green-100 {
+  background-color: rgba(34, 197, 94, 0.16) !important;
+}
+.dark .propflow-shell .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+}
+.dark .propflow-shell .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.16) !important;
+}
+.dark .propflow-shell .bg-purple-100 {
+  background-color: rgba(168, 85, 247, 0.16) !important;
+}
+.dark .propflow-shell .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.16) !important;
+}
+
+.dark .propflow-shell .border-orange-100,
+.dark .propflow-shell .border-orange-200,
+.dark .propflow-shell .border-green-100,
+.dark .propflow-shell .border-green-200,
+.dark .propflow-shell .border-emerald-100,
+.dark .propflow-shell .border-emerald-200,
+.dark .propflow-shell .border-blue-100,
+.dark .propflow-shell .border-blue-200 {
+  border-color: rgba(249, 115, 22, 0.28) !important;
+}
+
+.dark .propflow-shell .hover\:bg-slate-50:hover,
+.dark .propflow-shell .hover\:bg-slate-100:hover,
+.dark .propflow-shell .hover\:bg-white:hover,
+.dark .propflow-shell .hover\:bg-orange-50:hover,
+.dark .propflow-shell .hover\:bg-green-50:hover,
+.dark .propflow-shell .hover\:bg-emerald-50:hover,
+.dark .propflow-shell .hover\:bg-blue-50:hover,
+.dark .propflow-shell .hover\:bg-slate-200:hover,
+.dark .propflow-shell .hover\:bg-orange-100:hover,
+.dark .propflow-shell .hover\:bg-green-100:hover,
+.dark .propflow-shell .hover\:bg-emerald-100:hover,
+.dark .propflow-shell .hover\:bg-blue-100:hover,
+.dark .propflow-shell .hover\:bg-amber-100:hover {
+  background-color: rgba(249, 115, 22, 0.12) !important;
+}
+
+/* Tenant payments: the payment-status panel previously retained its pale
+   translucent orange fill in dark mode, reading as a muddy gray strip. */
+.dark .tenant-payments .payment-status-panel {
+  background: linear-gradient(135deg, rgba(12, 20, 16, 0.98), rgba(10, 10, 10, 0.98)) !important;
+  border-color: rgba(34, 197, 94, 0.42) !important;
+}
+
+.dark .tenant-payments .payment-status-panel .text-slate-900,
+.dark .tenant-payments .payment-status-panel .text-slate-800,
+.dark .tenant-payments .payment-status-panel .text-slate-700 {
+  color: #f1f5f9 !important;
+}
+
+.dark .tenant-payments .payment-status-panel .text-slate-600,
+.dark .tenant-payments .payment-status-panel .text-slate-500,
+.dark .tenant-payments .payment-status-panel .text-slate-400 {
+  color: #a8b1c0 !important;
+}
+
+.dark .tenant-payments .payment-status-panel .bg-green-100,
+.dark .tenant-payments .payment-status-panel .bg-amber-100,
+.dark .tenant-payments .payment-status-panel .bg-blue-100,
+.dark .tenant-payments .payment-status-panel .bg-slate-100 {
+  background-color: rgba(255, 255, 255, 0.09) !important;
+}
+
+.dark .tenant-payments .payment-status-panel .border-green-200,
+.dark .tenant-payments .payment-status-panel .border-amber-200,
+.dark .tenant-payments .payment-status-panel .border-blue-200 {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+/* Application detail pages contain dense review cards, document panels and
+   confirmation forms. Make all their light-only surfaces readable in dark
+   mode while retaining status colour through accents and borders. */
+.dark .application-detail .bg-white,
+.dark .application-detail .bg-white\/80,
+.dark .application-detail .bg-white\/90 {
+  background-color: #0A0A0A !important;
+}
+
+.dark .application-detail .bg-slate-50,
+.dark .application-detail .bg-slate-100,
+.dark .application-detail .bg-gray-50,
+.dark .application-detail .bg-gray-100 {
+  background-color: rgba(255, 255, 255, 0.055) !important;
+}
+
+.dark .application-detail .from-white,
+.dark .application-detail .via-white {
+  --tw-gradient-from: #111 !important;
+  --tw-gradient-stops: var(--tw-gradient-from), #0A0A0A, var(--tw-gradient-to) !important;
+}
+
+.dark .application-detail .from-orange-50,
+.dark .application-detail .from-green-50,
+.dark .application-detail .from-emerald-50,
+.dark .application-detail .from-blue-50,
+.dark .application-detail .from-purple-50,
+.dark .application-detail .from-amber-50,
+.dark .application-detail .from-red-50 {
+  --tw-gradient-from: #111 !important;
+  --tw-gradient-to: rgb(17 17 17 / 0) !important;
+}
+
+.dark .application-detail .to-orange-50,
+.dark .application-detail .to-green-50,
+.dark .application-detail .to-emerald-50,
+.dark .application-detail .to-blue-50,
+.dark .application-detail .to-purple-50,
+.dark .application-detail .to-violet-50,
+.dark .application-detail .to-amber-50,
+.dark .application-detail .to-yellow-50,
+.dark .application-detail .to-red-50 {
+  --tw-gradient-to: #0A0A0A !important;
+}
+
+.dark .application-detail .bg-orange-50,
+.dark .application-detail .bg-green-50,
+.dark .application-detail .bg-emerald-50,
+.dark .application-detail .bg-blue-50,
+.dark .application-detail .bg-purple-50,
+.dark .application-detail .bg-amber-50,
+.dark .application-detail .bg-red-50 {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.dark .application-detail .border-slate-100,
+.dark .application-detail .border-slate-200,
+.dark .application-detail .border-slate-300,
+.dark .application-detail .border-gray-100,
+.dark .application-detail .border-gray-200 {
+  border-color: rgba(255, 255, 255, 0.11) !important;
+}
+
+.dark .application-detail .text-slate-900,
+.dark .application-detail .text-slate-800,
+.dark .application-detail .text-slate-700,
+.dark .application-detail .text-gray-900,
+.dark .application-detail .text-gray-800,
+.dark .application-detail .text-gray-700 {
+  color: #f1f5f9 !important;
+}
+
+.dark .application-detail .text-slate-600,
+.dark .application-detail .text-slate-500,
+.dark .application-detail .text-slate-400,
+.dark .application-detail .text-gray-600,
+.dark .application-detail .text-gray-500 {
+  color: #a8b1c0 !important;
+}
+
+.dark .application-detail .text-orange-900,
+.dark .application-detail .text-green-900,
+.dark .application-detail .text-emerald-900,
+.dark .application-detail .text-blue-900,
+.dark .application-detail .text-purple-900,
+.dark .application-detail .text-amber-900,
+.dark .application-detail .text-red-900 {
+  color: #f8fafc !important;
+}
+
+.dark .application-detail .text-orange-800,
+.dark .application-detail .text-green-800,
+.dark .application-detail .text-emerald-800,
+.dark .application-detail .text-blue-800,
+.dark .application-detail .text-purple-800,
+.dark .application-detail .text-amber-800,
+.dark .application-detail .text-red-800,
+.dark .application-detail .text-orange-700,
+.dark .application-detail .text-green-700,
+.dark .application-detail .text-emerald-700,
+.dark .application-detail .text-blue-700,
+.dark .application-detail .text-purple-700,
+.dark .application-detail .text-amber-700,
+.dark .application-detail .text-red-700 {
+  color: #cbd5e1 !important;
+}
+
+.dark .application-detail input,
+.dark .application-detail textarea,
+.dark .application-detail select {
+  background-color: #111 !important;
+  color: #f8fafc !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.dark .application-detail .hover\:bg-slate-50:hover,
+.dark .application-detail .hover\:bg-white:hover,
+.dark .application-detail .hover\:bg-orange-50:hover,
+.dark .application-detail .hover\:bg-green-50:hover,
+.dark .application-detail .hover\:bg-emerald-50:hover,
+.dark .application-detail .hover\:bg-blue-50:hover,
+.dark .application-detail .hover\:bg-red-50:hover {
+  background-color: rgba(249, 115, 22, 0.12) !important;
+}
+
+/* Dashboard-wide semantic palette ------------------------------------------------
+   Every dashboard route lives inside .dashboard-shell. These rules eliminate
+   the remaining pale status cards and white-to-pastel gradients in dark mode,
+   without changing their meaning: accent colours still come from icons,
+   borders, buttons and text. */
+.dark .dashboard-shell .bg-orange-50,
+.dark .dashboard-shell .bg-orange-50\/30,
+.dark .dashboard-shell .bg-orange-50\/40,
+.dark .dashboard-shell .bg-orange-50\/50,
+.dark .dashboard-shell .bg-orange-50\/60,
+.dark .dashboard-shell .bg-orange-50\/80 {
+  background-color: rgba(249, 115, 22, 0.10) !important;
+}
+
+.dark .dashboard-shell .bg-green-50,
+.dark .dashboard-shell .bg-green-50\/40,
+.dark .dashboard-shell .bg-green-50\/80,
+.dark .dashboard-shell .bg-emerald-50,
+.dark .dashboard-shell .bg-emerald-50\/60 {
+  background-color: rgba(16, 185, 129, 0.10) !important;
+}
+
+.dark .dashboard-shell .bg-blue-50,
+.dark .dashboard-shell .bg-cyan-50,
+.dark .dashboard-shell .bg-sky-50,
+.dark .dashboard-shell .bg-indigo-50,
+.dark .dashboard-shell .bg-indigo-50\/30,
+.dark .dashboard-shell .bg-purple-50,
+.dark .dashboard-shell .bg-pink-50,
+.dark .dashboard-shell .bg-violet-50 {
+  background-color: rgba(96, 165, 250, 0.10) !important;
+}
+
+.dark .dashboard-shell .bg-amber-50,
+.dark .dashboard-shell .bg-amber-50\/80,
+.dark .dashboard-shell .bg-yellow-50 {
+  background-color: rgba(245, 158, 11, 0.10) !important;
+}
+
+.dark .dashboard-shell .bg-red-50,
+.dark .dashboard-shell .bg-red-50\/30,
+.dark .dashboard-shell .bg-red-50\/50 {
+  background-color: rgba(239, 68, 68, 0.10) !important;
+}
+
+.dark .dashboard-shell .bg-orange-100,
+.dark .dashboard-shell .bg-orange-100\/40 { background-color: rgba(249, 115, 22, 0.16) !important; }
+.dark .dashboard-shell .bg-green-100,
+.dark .dashboard-shell .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.16) !important; }
+.dark .dashboard-shell .bg-blue-100,
+.dark .dashboard-shell .bg-cyan-100,
+.dark .dashboard-shell .bg-sky-100,
+.dark .dashboard-shell .bg-indigo-100,
+.dark .dashboard-shell .bg-purple-100,
+.dark .dashboard-shell .bg-pink-100,
+.dark .dashboard-shell .bg-violet-100 { background-color: rgba(96, 165, 250, 0.16) !important; }
+.dark .dashboard-shell .bg-amber-100,
+.dark .dashboard-shell .bg-yellow-100 { background-color: rgba(245, 158, 11, 0.16) !important; }
+.dark .dashboard-shell .bg-red-100 { background-color: rgba(239, 68, 68, 0.16) !important; }
+
+.dark .dashboard-shell .border-orange-100,
+.dark .dashboard-shell .border-orange-200,
+.dark .dashboard-shell .border-orange-300 { border-color: rgba(249, 115, 22, 0.36) !important; }
+.dark .dashboard-shell .border-green-100,
+.dark .dashboard-shell .border-green-200,
+.dark .dashboard-shell .border-emerald-100,
+.dark .dashboard-shell .border-emerald-200 { border-color: rgba(16, 185, 129, 0.36) !important; }
+.dark .dashboard-shell .border-blue-100,
+.dark .dashboard-shell .border-blue-200,
+.dark .dashboard-shell .border-cyan-100,
+.dark .dashboard-shell .border-indigo-100,
+.dark .dashboard-shell .border-indigo-200,
+.dark .dashboard-shell .border-purple-100,
+.dark .dashboard-shell .border-purple-200,
+.dark .dashboard-shell .border-violet-200 { border-color: rgba(96, 165, 250, 0.36) !important; }
+.dark .dashboard-shell .border-amber-100,
+.dark .dashboard-shell .border-amber-200,
+.dark .dashboard-shell .border-yellow-200 { border-color: rgba(245, 158, 11, 0.36) !important; }
+.dark .dashboard-shell .border-red-100,
+.dark .dashboard-shell .border-red-200 { border-color: rgba(239, 68, 68, 0.36) !important; }
+
+.dark .dashboard-shell .text-orange-900 { color: #ffedd5 !important; }
+.dark .dashboard-shell .text-orange-800 { color: #fed7aa !important; }
+.dark .dashboard-shell .text-orange-700 { color: #fdba74 !important; }
+.dark .dashboard-shell .text-green-900,
+.dark .dashboard-shell .text-emerald-900 { color: #d1fae5 !important; }
+.dark .dashboard-shell .text-green-800,
+.dark .dashboard-shell .text-emerald-800 { color: #a7f3d0 !important; }
+.dark .dashboard-shell .text-green-700,
+.dark .dashboard-shell .text-emerald-700 { color: #86efac !important; }
+.dark .dashboard-shell .text-blue-900,
+.dark .dashboard-shell .text-indigo-900,
+.dark .dashboard-shell .text-purple-900 { color: #dbeafe !important; }
+.dark .dashboard-shell .text-blue-800,
+.dark .dashboard-shell .text-purple-800,
+.dark .dashboard-shell .text-violet-800 { color: #bfdbfe !important; }
+.dark .dashboard-shell .text-blue-700,
+.dark .dashboard-shell .text-indigo-700,
+.dark .dashboard-shell .text-purple-700,
+.dark .dashboard-shell .text-pink-700,
+.dark .dashboard-shell .text-sky-700 { color: #93c5fd !important; }
+.dark .dashboard-shell .text-amber-900,
+.dark .dashboard-shell .text-yellow-900 { color: #fef3c7 !important; }
+.dark .dashboard-shell .text-amber-800,
+.dark .dashboard-shell .text-yellow-800 { color: #fde68a !important; }
+.dark .dashboard-shell .text-amber-700,
+.dark .dashboard-shell .text-yellow-700 { color: #fcd34d !important; }
+.dark .dashboard-shell .text-red-900 { color: #fee2e2 !important; }
+.dark .dashboard-shell .text-red-800 { color: #fecaca !important; }
+.dark .dashboard-shell .text-red-700 { color: #fca5a5 !important; }
+
+.dark .dashboard-shell .from-white,
+.dark .dashboard-shell .via-white,
+.dark .dashboard-shell .from-\[\#FFF9F1\],
+.dark .dashboard-shell .via-\[\#FEF7E6\] {
+  --tw-gradient-from: #111 !important;
+  --tw-gradient-stops: var(--tw-gradient-from), #0A0A0A, var(--tw-gradient-to) !important;
+}
+
+.dark .dashboard-shell .from-orange-50,
+.dark .dashboard-shell .from-orange-100,
+.dark .dashboard-shell .from-green-50,
+.dark .dashboard-shell .from-emerald-50,
+.dark .dashboard-shell .from-blue-50,
+.dark .dashboard-shell .from-cyan-50,
+.dark .dashboard-shell .from-indigo-50,
+.dark .dashboard-shell .from-purple-50,
+.dark .dashboard-shell .from-violet-50,
+.dark .dashboard-shell .from-amber-50,
+.dark .dashboard-shell .from-yellow-50,
+.dark .dashboard-shell .from-red-50 {
+  --tw-gradient-from: #111 !important;
+  --tw-gradient-to: rgb(17 17 17 / 0) !important;
+}
+
+.dark .dashboard-shell .to-slate-50,
+.dark .dashboard-shell .to-slate-100,
+.dark .dashboard-shell .to-white,
+.dark .dashboard-shell .to-\[\#FFF5E1\],
+.dark .dashboard-shell .to-orange-50,
+.dark .dashboard-shell .to-green-50,
+.dark .dashboard-shell .to-emerald-50,
+.dark .dashboard-shell .to-blue-50,
+.dark .dashboard-shell .to-cyan-50,
+.dark .dashboard-shell .to-indigo-50,
+.dark .dashboard-shell .to-purple-50,
+.dark .dashboard-shell .to-violet-50,
+.dark .dashboard-shell .to-amber-50,
+.dark .dashboard-shell .to-yellow-50,
+.dark .dashboard-shell .to-red-50 {
+  --tw-gradient-to: #0A0A0A !important;
 }
 
 /* Enhanced animations */

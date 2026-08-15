@@ -115,7 +115,7 @@ function CheckAccordion({ id, label, hint, icon: Icon, state, open, onToggle, ch
         type="button"
         onClick={() => onToggle(id)}
         aria-expanded={open}
-        className="w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-2xl hover:bg-slate-50/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-2xl hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
       >
         <span className={cn(
           "flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center",
@@ -181,7 +181,7 @@ function DocSlot({ label, value, error, hint, viewing, onFile, onView, onReplace
           <button
             type="button"
             onClick={onReplace}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white dark:hover:text-slate-200 dark:hover:bg-slate-700 transition-colors"
             aria-label={`Replace ${label}`}
             title="Replace"
           >
@@ -191,7 +191,7 @@ function DocSlot({ label, value, error, hint, viewing, onFile, onView, onReplace
             type="button"
             onClick={() => onView(value)}
             disabled={viewing}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white transition-colors disabled:opacity-50"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white dark:hover:text-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
             aria-label={`View ${label}`}
             title="View"
           >
@@ -199,11 +199,11 @@ function DocSlot({ label, value, error, hint, viewing, onFile, onView, onReplace
           </button>
         </div>
       ) : (
-        <label className="group flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/70 px-3 py-6 text-center cursor-pointer transition-colors hover:border-orange-400 hover:bg-orange-50/40">
+        <label className="group flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/70 dark:border-slate-600 dark:bg-slate-800/50 px-3 py-6 text-center cursor-pointer transition-colors hover:border-orange-400 hover:bg-orange-50/40 dark:hover:border-orange-500 dark:hover:bg-orange-950/30">
           <span className="flex h-11 w-11 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-transform group-hover:scale-105">
             <ImagePlus className="h-5 w-5" />
           </span>
-          <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900">Take photo or choose file</span>
+          <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900 dark:text-slate-300 dark:group-hover:text-slate-100">Take photo or choose file</span>
           <span className="text-[11px] text-slate-400 inline-flex items-center gap-1">
             <Camera className="h-3 w-3" /> PNG, JPG or PDF
           </span>
@@ -245,6 +245,7 @@ export default function TrustPassportCard({ property, onSubmit, isLoading, onSav
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [viewingDoc, setViewingDoc] = useState<string | null>(null)
   const [openSection, setOpenSection] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)  // Local submitting state for immediate feedback
   const autoOpened = useRef(false)
 
   // ── Contact (phone) ────────────────────────────────────────────────────────
@@ -428,20 +429,23 @@ export default function TrustPassportCard({ property, onSubmit, isLoading, onSav
     setErrors(errs)
     if (Object.keys(errs).length) return
 
+    // ✨ Set local submitting state immediately for visual feedback
+    setIsSubmitting(true)
+
     const upload = async (v: DocValue): Promise<string | null> => {
       if (isSavedDoc(v)) return v.path
       if (v) return (await applicationsAPI.uploadDocument(v)).path
       return null
     }
 
-    const documents = (await Promise.all([upload(identity), upload(income)]))
-      .filter((p): p is string => !!p)
-
-    const references: CompleteApplicationPayload["references"] = {
-      reference1: { name: refName.trim(), phone: refPhone.trim(), relationship: refRelationship },
-    }
-
     try {
+      const documents = (await Promise.all([upload(identity), upload(income)]))
+        .filter((p): p is string => !!p)
+
+      const references: CompleteApplicationPayload["references"] = {
+        reference1: { name: refName.trim(), phone: refPhone.trim(), relationship: refRelationship },
+      }
+
       await onSubmit({
         documents,
         references,
@@ -462,6 +466,8 @@ export default function TrustPassportCard({ property, onSubmit, isLoading, onSav
       })
     } catch (e: any) {
       setSubmitError(e?.message || "We couldn't submit your application. Please try again.")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -473,6 +479,8 @@ export default function TrustPassportCard({ property, onSubmit, isLoading, onSav
     !!employmentStatus &&
     (!incomeRequired || !!monthlyIncome.trim()) &&
     !!moveInDate
+
+  const isSubmittingNow = isLoading || isSubmitting  // Combined loading state
 
   const missing: string[] = []
   if (!identity) missing.push("an identity document")
@@ -517,7 +525,7 @@ export default function TrustPassportCard({ property, onSubmit, isLoading, onSav
           <button
             type="button"
             onClick={onSaveLater}
-            className="flex-shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+            className="flex-shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-300 dark:hover:bg-slate-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
             aria-label="Close and finish later"
           >
             <X className="h-4 w-4" />
@@ -876,7 +884,7 @@ export default function TrustPassportCard({ property, onSubmit, isLoading, onSav
         )}
 
         {/* Consent — directly above the submit action, never pre-checked */}
-        <label className="flex items-start gap-2.5 rounded-xl p-2.5 -mx-2.5 cursor-pointer transition-colors hover:bg-slate-50" htmlFor="tp-consent">
+        <label className="flex items-start gap-2.5 rounded-xl p-2.5 -mx-2.5 cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50" htmlFor="tp-consent">
           <input
             id="tp-consent"
             type="checkbox"
@@ -899,18 +907,18 @@ export default function TrustPassportCard({ property, onSubmit, isLoading, onSav
             type="button"
             variant="ghost"
             onClick={onSaveLater}
-            disabled={isLoading}
-            className="h-11 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+            disabled={isSubmittingNow}
+            className="h-11 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           >
             Save and finish later
           </Button>
           <Button
             type="button"
             onClick={handleSubmit}
-            disabled={!readyToSubmit || isLoading}
+            disabled={!readyToSubmit || isSubmittingNow}
             className="h-11 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50"
           >
-            {isLoading ? (
+            {isSubmittingNow ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" /> Submitting…
               </>
@@ -922,7 +930,7 @@ export default function TrustPassportCard({ property, onSubmit, isLoading, onSav
           </Button>
         </div>
 
-        {!isLoading && (
+        {!isSubmittingNow && (
           <p className={cn(
             "text-center text-[11px] mt-2.5",
             readyToSubmit ? "text-emerald-600" : "text-slate-400",

@@ -165,14 +165,20 @@ export async function propflowGuestChat(params: {
  * Tenant selects a property from matched results.
  * Records the pick and pauses at the Trust Passport gate — the application
  * is NOT created until propflowCompleteApplication() is called.
+ * 
+ * Enhanced to support two selection modes:
+ * 1. Index-based: Pass property_index (backward compatible)
+ * 2. ID-based: Pass property_id (for direct property selection)
+ * 
+ * Exactly one parameter must be provided, not both.
  */
 export async function propflowSelect(
   workflow_id: string,
-  property_index: number,
+  params: { property_index?: number } | { property_id: string },
 ): Promise<SelectResponse> {
   const { data } = await apiClient.post<SelectResponse>(
     `/api/v1/propflow/select/${workflow_id}`,
-    { property_index },
+    params,
     { timeout: 90_000 }, // Increased to 90s — property selection is faster but can still be slow
   )
   return data
