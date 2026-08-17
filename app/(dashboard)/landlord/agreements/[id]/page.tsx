@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useDashboard } from "@/contexts/DashboardContext"
@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
+import { propflowStatus } from "@/lib/api/propflow"
 import {
   paymentsAPI,
   type TransferHistoryEntry,
@@ -24,6 +25,8 @@ import {
 import { toast } from "sonner"
 import { formatNGN, calculateAgreementBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { AIBadge } from "@/components/ui/ai-badge"
+import { Markdown } from "@/components/ui/markdown"
+import { cn } from "@/lib/utils"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -266,31 +269,45 @@ export default function LandlordAgreementDetailPage() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   // Checkbox must be checked before signing — per handoff spec
   const [termsAccepted, setTermsAccepted] = useState(false)
+  // Read-before-sign gate (same as tenant page): the landlord must scroll
+  // through the full terms before the "I have read" checkbox unlocks.
+  // Prevents blind signing.
+  const [hasReadTerms, setHasReadTerms] = useState(false)
+  const termsScrollRef = useRef<HTMLDivElement | null>(null)
   // Transfer history (Stage 3 polish) -- shown after Signature History
   const [transfers, setTransfers] = useState<TransferHistoryEntry[]>([])
   const [isTransfersLoading, setIsTransfersLoading] = useState(false)
+  // ── Regenerate terms (fix stale pricing from pre-payment-integration agreements) ──
+  const [isRegenerating, setIsRegenerating] = useState(false)
+  // ── PropFlow AI briefing (same pattern as landlord application detail page) ──
+  const [propflowBriefing, setPropflowBriefing] = useState<string | null>(null)
+  const [isBriefingLoading, setIsBriefingLoading] = useState(false)
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
-  const fetchAgreement = useCallback(async () => {
+  const fetchAgreement = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true
     try {
-      setIsLoading(true)
+      if (!silent) setIsLoading(true)
       // FIX: API returns { success, agreement } — not the agreement directly.
       // The backend already enriches with tenant, landlord, property — no extra fetches needed.
       const response = await agreementsAPI.getById(agreementId)
 
       if (response.success && response.agreement) {
         setAgreement(response.agreement)
-      } else {
+      } else if (!silent) {
         toast.error(response.error ?? "Failed to load agreement")
         router.push("/landlord/agreements")
       }
     } catch (error) {
-      console.error("[AgreementDetail] fetch error:", error)
-      toast.error("Failed to load agreement")
-      router.push("/landlord/agreements")
+      // Silent polls must never toast or navigate the landlord away mid-read.
+      if (!silent) {
+        console.error("[AgreementDetail] fetch error:", error)
+        toast.error("Failed to load agreement")
+        router.push("/landlord/agreements")
+      }
     } finally {
-      setIsLoading(false)
+      if (!silent) setIsLoading(false)
     }
   }, [agreementId, router])
 
@@ -298,6 +315,80 @@ export default function LandlordAgreementDetailPage() {
     if (!user) { router.push("/signin"); return }
     if (agreementId) fetchAgreement()
   }, [user, agreementId, fetchAgreement, router])
+
+  // ── Live polling (signatures + payment) ────────────────────────────────────
+  // While signatures are still pending, silently refetch every 15s so the page
+  // reacts in real time when the tenant signs — the "tenant has signed" banner
+  // and the signing block appear without a manual refresh.
+  //
+  // After BOTH parties have signed, keep polling: this page is the landlord's
+  // home base for the rest of the journey. When the tenant's payment lands in
+  // the NUBAN, the webhook flips `reconciliation_status` to FULL_PAYMENT and
+  // the Quick Actions card below flips from "Awaiting Payment" to the
+  // "Review & Release Funds" CTA without a refresh. Polling stops once funds
+  // are released (or the disbursement is already pending) — there is nothing
+  // left to react to. Skips hidden tabs to avoid wasted requests.
+  const isFundsReleased = agreement?.disbursement_status === "released"
+  const isFundsReleasing = agreement?.disbursement_status === "pending"
+  const isFullyPaid = agreement?.reconciliation_status === "FULL_PAYMENT"
+  useEffect(() => {
+    if (!agreementId) return
+    const bothSigned = Boolean(agreement?.tenant_signed_at && agreement?.landlord_signed_at)
+    // Nothing more to watch for once the money is moving / released.
+    if (bothSigned && (isFundsReleased || isFundsReleasing)) return
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return
+      fetchAgreement({ silent: true })
+    }, 15000)
+    return () => clearInterval(id)
+  }, [agreementId, agreement?.tenant_signed_at, agreement?.landlord_signed_at, isFundsReleased, isFundsReleasing, fetchAgreement])
+
+  // Toast once when polling detects the tenant just signed while the landlord
+  // is already on this page (prev === false → now true, landlord not yet signed).
+  const prevTenantSignedRef = useRef<boolean | null>(null)
+  useEffect(() => {
+    const tenantSigned = Boolean(agreement?.tenant_signed_at)
+    if (prevTenantSignedRef.current === false && tenantSigned && !agreement?.landlord_signed_at) {
+      toast.success(
+        `${agreement?.tenant?.full_name ?? "The tenant"} has signed the agreement — your signature is now required.`
+      )
+    }
+    prevTenantSignedRef.current = tenantSigned
+  }, [agreement?.tenant_signed_at, agreement?.landlord_signed_at, agreement?.tenant?.full_name])
+
+  // Toast once when polling detects the tenant's payment just landed while the
+  // landlord is on this page (prev === false → now FULL_PAYMENT). Mirrors the
+  // tenant-signed toast above — same "page reacts live" pattern.
+  const prevFullyPaidRef = useRef<boolean | null>(null)
+  useEffect(() => {
+    if (prevFullyPaidRef.current === false && isFullyPaid) {
+      toast.success(
+        `${agreement?.tenant?.full_name ?? "The tenant"} has paid in full — you can now review and release the funds.`
+      )
+    }
+    prevFullyPaidRef.current = isFullyPaid
+  }, [isFullyPaid, agreement?.tenant?.full_name])
+
+  // ── PropFlow AI briefing ───────────────────────────────────────────────────
+  // Same pattern as the landlord application detail page: fetch the workflow
+  // status via propflow_thread_id and surface the AI-generated landlord
+  // briefing in the sidebar — AI value without opening the chat widget.
+  useEffect(() => {
+    const threadId = agreement?.propflow_thread_id
+    if (!threadId) return
+    let cancelled = false
+    setIsBriefingLoading(true)
+    propflowStatus(threadId)
+      .then((status) => {
+        if (cancelled) return
+        if (status?.success && status.landlord_briefing) {
+          setPropflowBriefing(status.landlord_briefing)
+        }
+      })
+      .catch(() => { /* briefing is optional — the page works without it */ })
+      .finally(() => { if (!cancelled) setIsBriefingLoading(false) })
+    return () => { cancelled = true }
+  }, [agreement?.propflow_thread_id])
 
   // ── Transfer history fetch ─────────────────────────────────────────────────
   // Pulls inbound NUBAN transfers from /nomba/payment_status. Only runs when
@@ -336,10 +427,36 @@ export default function LandlordAgreementDetailPage() {
     }
   }, [agreement, agreementId, fetchTransfers])
 
+  // ── Scroll-to-read tracking ───────────────────────────────────────────────
+  // The landlord must scroll through the full terms before the "I have read"
+  // checkbox unlocks. If the terms fit without scrolling, reading is
+  // considered done immediately.
+  const handleTermsScroll = useCallback(() => {
+    const el = termsScrollRef.current
+    if (!el || hasReadTerms) return
+    // Within 24px of the bottom counts as "read to the end".
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 24
+    if (atBottom) {
+      setHasReadTerms(true)
+    }
+  }, [hasReadTerms])
+
+  useEffect(() => {
+    // Short terms that don't overflow the container need no scrolling.
+    const el = termsScrollRef.current
+    if (el && agreement?.terms && !hasReadTerms) {
+      if (el.scrollHeight <= el.clientHeight + 24) {
+        setHasReadTerms(true)
+      }
+    }
+  }, [agreement?.terms, hasReadTerms])
+
   // ── Sign ───────────────────────────────────────────────────────────────────
 
   const handleSignAgreement = async () => {
-    if (!agreement || !termsAccepted) return
+    // Explicit read-before-sign: both the scroll-to-read gate AND the checkbox
+    // must be satisfied before a signature is accepted.
+    if (!agreement || !termsAccepted || !hasReadTerms) return
     setIsSigning(true)
     try {
       // Fetch client IP for audit trail — graceful fallback on failure
@@ -372,6 +489,32 @@ export default function LandlordAgreementDetailPage() {
       toast.error("Failed to sign agreement. Please try again.")
     } finally {
       setIsSigning(false)
+    }
+  }
+
+  // ── Regenerate terms (fix stale pricing) ──────────────────────────────────
+  // Regenerates the agreement text using the CURRENT pricing model (property
+  // payment_frequency, waived deposit/fees). Only available while unsigned.
+  const handleRegenerate = async () => {
+    if (!agreement) return
+    setIsRegenerating(true)
+    try {
+      const response = await agreementsAPI.regenerate(agreementId)
+      if (response.success && response.agreement) {
+        toast.success("Agreement updated with current pricing.")
+        setAgreement(response.agreement)
+        // Terms changed — require the landlord to re-read and re-accept
+        // before signing.
+        setHasReadTerms(false)
+        setTermsAccepted(false)
+      } else {
+        toast.error(response.error ?? "Failed to regenerate agreement")
+      }
+    } catch (error) {
+      console.error("[AgreementDetail] regenerate error:", error)
+      toast.error("Failed to regenerate agreement. Please try again.")
+    } finally {
+      setIsRegenerating(false)
     }
   }
 
@@ -409,6 +552,22 @@ export default function LandlordAgreementDetailPage() {
   const breakdown = calculateAgreementBreakdown(agreement || {})
   const { monthlyRent, annualRent, cautionFee, platformFee, serviceCharge, totalDue, periodRent, periodLabel, paymentFrequency } = breakdown
   const frequencyMultiplier = getPaymentFrequencyMultiplier(paymentFrequency)
+
+  // ── Payment / release state (drives the live Quick Actions card) ──────────
+  // Source of truth: reconciliation_status + total_received_amount come from
+  // the agreement row (flipped by the Nomba webhook); disbursement_status is
+  // derived server-side from the latest nomba_disbursement transaction row.
+  const totalReceived = Number(agreement?.total_received_amount ?? 0)
+  const isPartiallyPaid =
+    !isFullyPaid && totalReceived > 0
+  // Release is available once the tenant has paid in full and no disbursement
+  // is already in flight or done. Same gate as /landlord/payments/[id].
+  const canRelease =
+    isFullyPaid &&
+    agreement?.disbursement_status !== "released" &&
+    agreement?.disbursement_status !== "pending"
+  // Payout amount the landlord will receive (received minus platform fee).
+  const payoutAmount = Math.max(totalReceived - Number(agreement?.platform_fee ?? 0), 0)
 
   // ── Signing progress ───────────────────────────────────────────────────────
   const signaturesCount =
@@ -479,6 +638,66 @@ export default function LandlordAgreementDetailPage() {
           <StatusBadge agreement={agreement} />
         </div>
         </div>
+
+        {/* ── Tenant-signed banner ────────────────────────────────────────────
+            Shown when the tenant has signed but the landlord hasn't yet.
+            The 15s silent poller keeps this live: if the tenant signs while
+            the landlord is already on this page, the banner appears without
+            a refresh. "Sign Now" scrolls to the signing block in the sidebar. */}
+        {canSign && (
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 to-orange-50 p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <PenLine className="h-4 w-4 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-amber-900">
+                  {agreement.tenant?.full_name ?? "The tenant"} has signed this agreement
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Your signature is required to complete the lease. Review the terms below and sign when ready.
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={() => document.getElementById("sign-agreement-card")?.scrollIntoView({ behavior: "smooth", block: "center" })}
+              className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white h-10 px-5 rounded-xl font-semibold shadow-md flex-shrink-0"
+            >
+              <PenLine className="h-4 w-4 mr-2" />
+              Sign Now
+            </Button>
+          </div>
+        )}
+
+        {/* ── Payment received banner ─────────────────────────────────────────
+            Shown once the tenant's full payment has landed in the NUBAN and
+            the landlord has not yet released the funds. Mirrors the overview
+            page's "Payments Ready for Release" banner so the landlord sees the
+            same call-to-action here on the agreement page — the natural place
+            they return to after signing. The 15s poller keeps this live. */}
+        {canRelease && (
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-emerald-300 bg-gradient-to-r from-emerald-50 to-green-50 p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <Banknote className="h-4 w-4 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-emerald-900">
+                  Payment received — {formatNGN(totalReceived)} from {agreement.tenant?.full_name ?? "the tenant"}
+                </p>
+                <p className="text-xs text-emerald-700 mt-0.5">
+                  Funds are held in escrow. Review your bank details and release {formatNGN(payoutAmount)} to your account.
+                </p>
+              </div>
+            </div>
+            <Link href={`/landlord/payments/${agreement.id}`} className="flex-shrink-0">
+              <Button className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white h-10 px-5 rounded-xl font-semibold shadow-md">
+                <Banknote className="h-4 w-4 mr-2" />
+                Review &amp; Release Funds
+              </Button>
+            </Link>
+          </div>
+        )}
 
         {/* ── Property Hero ── */}
         <Card className="border-orange-200 bg-white/80 backdrop-blur-sm mb-8 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300">
@@ -682,11 +901,30 @@ export default function LandlordAgreementDetailPage() {
                 <AIBadge agreement={agreement} variant="badge" />
               </CardHeader>
               <CardContent>
-                <div className="bg-slate-50 rounded-xl border border-slate-100 p-5 max-h-96 overflow-y-auto">
-                  <pre className="whitespace-pre-wrap text-sm text-slate-700 font-sans leading-relaxed">
-                    {agreement.terms ?? "Agreement terms will appear here."}
-                  </pre>
+                <div
+                  ref={termsScrollRef}
+                  onScroll={handleTermsScroll}
+                  className="bg-slate-50 rounded-xl border border-slate-100 p-5 max-h-96 overflow-y-auto"
+                >
+                  {agreement.terms ? (
+                    <Markdown className="text-sm text-slate-700">{agreement.terms}</Markdown>
+                  ) : (
+                    <p className="text-sm text-slate-500">Agreement terms will appear here.</p>
+                  )}
                 </div>
+                {/* Read-progress hint — only while it's the landlord's turn to sign */}
+                {canSign && !hasReadTerms && (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-orange-600">
+                    <Eye className="h-3.5 w-3.5" />
+                    Scroll to the bottom of the terms to unlock signing.
+                  </p>
+                )}
+                {canSign && hasReadTerms && (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-green-600">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    You&apos;ve reviewed the full agreement.
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -785,6 +1023,42 @@ export default function LandlordAgreementDetailPage() {
               </CardContent>
             </Card>
 
+            {/* ── PropFlow AI Briefing ────────────────────────────────────────
+                Same indigo card pattern as the landlord application detail
+                page. Fetched via propflow_thread_id → propflowStatus() →
+                landlord_briefing. Gives the landlord the AI-generated tenant
+                summary right where they sign — no chat widget needed. */}
+            {propflowBriefing && (
+              <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50 shadow-sm">
+                <CardHeader className="border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-purple-50/30">
+                  <CardTitle className="flex items-center gap-2 text-sm text-slate-900">
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                      <FileText className="h-4 w-4 text-indigo-600" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      AI Tenant Briefing
+                      <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px] ml-1">
+                        Auto-generated
+                      </Badge>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                    {propflowBriefing}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+            {isBriefingLoading && !propflowBriefing && (
+              <Card className="border-indigo-100 bg-indigo-50/40 shadow-sm">
+                <CardContent className="pt-5 pb-4 flex items-center gap-3">
+                  <Loader2 className="h-4 w-4 text-indigo-500 animate-spin" />
+                  <p className="text-xs text-indigo-600">Loading AI briefing…</p>
+                </CardContent>
+              </Card>
+            )}
+
             {/* ── Signing Block ──────────────────────────────────────────────
                 Show only when it's the landlord's turn to sign.
                 Per handoff: checkbox must be checked before button is enabled.
@@ -803,26 +1077,39 @@ export default function LandlordAgreementDetailPage() {
                     The tenant has signed. Review all terms carefully before signing.
                   </p>
 
-                  {/* Checkbox — must be checked first */}
-                  <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-amber-200">
+                  {/* Checkbox — locked until the landlord has read the full terms */}
+                  <div className={cn(
+                    "flex items-start gap-3 p-3 bg-white rounded-lg border border-amber-200",
+                    !hasReadTerms && "opacity-60"
+                  )}>
                     <Checkbox
                       id="terms-accept"
                       checked={termsAccepted}
+                      disabled={!hasReadTerms}
                       onCheckedChange={(checked) => setTermsAccepted(Boolean(checked))}
                       className="mt-0.5 border-amber-400 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
                     />
                     <label
                       htmlFor="terms-accept"
-                      className="text-xs text-slate-700 cursor-pointer leading-relaxed"
+                      className={cn(
+                        "text-xs text-slate-700 leading-relaxed",
+                        hasReadTerms ? "cursor-pointer" : "cursor-not-allowed"
+                      )}
                     >
                       I have read and agree to all terms and conditions in this rental agreement
                     </label>
                   </div>
+                  {!hasReadTerms && (
+                    <p className="text-xs text-orange-600 flex items-center gap-1.5">
+                      <Eye className="h-3.5 w-3.5" />
+                      Read the full agreement above to enable signing.
+                    </p>
+                  )}
 
-                  {/* Sign button — disabled until checkbox checked */}
+                  {/* Sign button — disabled until read + checkbox checked */}
                   <Button
                     onClick={handleSignAgreement}
-                    disabled={isSigning || !termsAccepted}
+                    disabled={isSigning || !termsAccepted || !hasReadTerms}
                     className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:from-slate-200 disabled:to-slate-300 text-white font-semibold shadow-sm transition-all duration-300"
                   >
                     {isSigning ? (
@@ -888,6 +1175,31 @@ export default function LandlordAgreementDetailPage() {
                       Remind Tenant to Sign
                     </Button>
                   </Link>
+                  {/* Regenerate terms — fixes stale pricing from agreements
+                      generated before the payment-integration pricing model.
+                      Only shown while unsigned (server also enforces this). */}
+                  <Button
+                    variant="outline"
+                    onClick={handleRegenerate}
+                    disabled={isRegenerating}
+                    className="w-full border-orange-300 text-orange-700 hover:bg-orange-50 text-xs"
+                  >
+                    {isRegenerating ? (
+                      <>
+                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                        Updating agreement…
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                        Refresh Pricing Terms
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-[11px] text-slate-400 text-center">
+                    If the rent or deposit figures look wrong, use this to regenerate the
+                    agreement with the current pricing.
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -904,27 +1216,99 @@ export default function LandlordAgreementDetailPage() {
                     <div>
                       <p className="font-semibold text-green-800 text-sm">Agreement Fully Signed</p>
                       <p className="text-xs text-green-600 mt-0.5">
-                        Both parties have signed. Awaiting tenant payment.
+                        {isFundsReleased
+                          ? "Payment complete — funds released to your bank."
+                          : isFundsReleasing
+                          ? "Both parties have signed. Your funds release is in progress."
+                          : isFullyPaid
+                          ? "Both parties have signed. Tenant payment received."
+                          : "Both parties have signed. Awaiting tenant payment."}
                       </p>
                     </div>
                   </div>
-                  {/* Payment status */}
-                  <div className="flex items-center gap-2 px-3 py-2.5 bg-white rounded-lg border border-green-200">
-                    <Clock className="h-4 w-4 text-amber-500 flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold text-slate-700">Awaiting Payment</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {formatNGN(totalDue)} due from tenant
-                      </p>
+                  {/* Live payment status — flips automatically as the Nomba
+                      webhook reconciles the tenant's transfer (15s poller). */}
+                  {isFundsReleased ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-emerald-50 rounded-lg border border-emerald-200">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-emerald-800">Funds Released</p>
+                        <p className="text-xs text-emerald-600 mt-0.5">
+                          {formatNGN(Number(agreement.disbursement_amount ?? payoutAmount))} sent to your bank
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  {/* Message tenant about payment */}
-                  <Link href={`/landlord/messages?property=${agreement.property_id}&tenant=${agreement.tenant_id}&context=agreement_payment`} className="block">
-                    <Button variant="outline" className="w-full border-green-300 text-green-700 hover:bg-green-50 text-sm">
-                      <Mail className="mr-2 h-4 w-4" />
-                      Message About Payment
-                    </Button>
-                  </Link>
+                  ) : isFundsReleasing ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-50 rounded-lg border border-amber-200">
+                      <Loader2 className="h-4 w-4 text-amber-500 flex-shrink-0 animate-spin" />
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-amber-800">Releasing Funds…</p>
+                        <p className="text-xs text-amber-600 mt-0.5">
+                          {formatNGN(payoutAmount)} is on the way to your bank
+                        </p>
+                      </div>
+                    </div>
+                  ) : canRelease ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-emerald-50 rounded-lg border border-emerald-200">
+                      <Banknote className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-emerald-800">Payment Received — Ready for Release</p>
+                        <p className="text-xs text-emerald-600 mt-0.5">
+                          {formatNGN(totalReceived)} received · {formatNGN(payoutAmount)} payout after fees
+                        </p>
+                      </div>
+                    </div>
+                  ) : isPartiallyPaid ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-50 rounded-lg border border-amber-200">
+                      <Clock className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-amber-800">Partially Paid</p>
+                        <p className="text-xs text-amber-600 mt-0.5">
+                          {formatNGN(totalReceived)} received · {formatNGN(Math.max(totalDue - totalReceived, 0))} still due
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-white rounded-lg border border-green-200">
+                      <Clock className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-slate-700">Awaiting Payment</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {formatNGN(totalDue)} due from tenant
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {/* Release CTA — appears the moment the tenant's full payment
+                      lands. Links to the payment detail page where the landlord
+                      reviews bank details and confirms the release (same target
+                      as the overview banner's "Review & Release"). */}
+                  {canRelease && (
+                    <Link href={`/landlord/payments/${agreement.id}`} className="block">
+                      <Button className="w-full bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white text-sm shadow-md">
+                        <Banknote className="mr-2 h-4 w-4" />
+                        Review &amp; Release Funds
+                      </Button>
+                    </Link>
+                  )}
+                  {isFundsReleased && (
+                    <Link href={`/landlord/payments/${agreement.id}`} className="block">
+                      <Button variant="outline" className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-sm">
+                        <Eye className="mr-2 h-4 w-4" />
+                        View Payment Details
+                      </Button>
+                    </Link>
+                  )}
+                  {/* Message tenant about payment — only useful while money is
+                      still owed (hidden once paid / releasing / released). */}
+                  {!isFullyPaid && !isFundsReleasing && !isFundsReleased && (
+                    <Link href={`/landlord/messages?property=${agreement.property_id}&tenant=${agreement.tenant_id}&context=agreement_payment`} className="block">
+                      <Button variant="outline" className="w-full border-green-300 text-green-700 hover:bg-green-50 text-sm">
+                        <Mail className="mr-2 h-4 w-4" />
+                        Message About Payment
+                      </Button>
+                    </Link>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -939,7 +1323,7 @@ export default function LandlordAgreementDetailPage() {
             {(effectiveStatus === "SIGNED" || effectiveStatus === "ACTIVE") && (
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold text-slate-700">Agreement Document</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-slate-700">Signed Agreement Document</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {/* Check if URL is real (Supabase CDN + correct bucket) vs old/broken URL */}

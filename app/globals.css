@@ -796,6 +796,7 @@
 .dark .dashboard-shell .bg-sky-50,
 .dark .dashboard-shell .bg-indigo-50,
 .dark .dashboard-shell .bg-indigo-50\/30,
+.dark .dashboard-shell .bg-indigo-50\/60,
 .dark .dashboard-shell .bg-purple-50,
 .dark .dashboard-shell .bg-pink-50,
 .dark .dashboard-shell .bg-violet-50 {
@@ -2169,3 +2170,98 @@ body.has-navbar > div > div:first-child {
 .hide-spinner {
   -moz-appearance: textfield;
 }
+
+/* ── Markdown body typography ────────────────────────────────────────────────
+   Used by <Markdown /> (client/components/ui/markdown.tsx) to render
+   AI-generated agreement terms and tenant briefs. Light + dark variants match
+   the dashboard theme system (near-black panels in dark mode). */
+.markdown-body {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  word-wrap: break-word;
+  /* Text color is inherited from the parent — set the tint with a utility
+     class on the wrapper (e.g. text-slate-700 / text-indigo-900). Headings,
+     strong and blockquotes below set their own explicit colors. */
+}
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  font-weight: 700;
+  color: #0f172a; /* slate-900 */
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  line-height: 1.35;
+}
+.markdown-body h1 { font-size: 1.25rem; }
+.markdown-body h2 { font-size: 1.1rem; }
+.markdown-body h3 { font-size: 1rem; }
+.markdown-body h4 { font-size: 0.9rem; }
+.markdown-body p { margin: 0.6em 0; }
+.markdown-body strong { font-weight: 700; color: #0f172a; }
+.markdown-body ul,
+.markdown-body ol { margin: 0.6em 0; padding-left: 1.4em; }
+.markdown-body ul { list-style: disc; }
+.markdown-body ol { list-style: decimal; }
+.markdown-body li { margin: 0.25em 0; }
+.markdown-body li > ul,
+.markdown-body li > ol { margin: 0.25em 0; }
+.markdown-body a { color: #ea580c; text-decoration: underline; text-underline-offset: 2px; }
+.markdown-body blockquote {
+  margin: 0.8em 0;
+  padding: 0.25em 1em;
+  border-left: 3px solid #fdba74;
+  color: #475569;
+}
+.markdown-body hr {
+  margin: 1.25em 0;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+}
+.markdown-body code {
+  font-size: 0.85em;
+  background: #f1f5f9;
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+}
+.markdown-body pre {
+  margin: 0.8em 0;
+  padding: 0.75em 1em;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.markdown-body pre code { background: transparent; padding: 0; color: inherit; }
+.markdown-body table {
+  width: 100%;
+  margin: 0.8em 0;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid #e2e8f0;
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.markdown-body th { background: #f8fafc; font-weight: 600; }
+
+/* Dark mode — matches the .dark dashboard-shell near-black surfaces.
+   (Base text color is inherited from the wrapper's utility class.) */
+.dark .markdown-body h1,
+.dark .markdown-body h2,
+.dark .markdown-body h3,
+.dark .markdown-body h4,
+.dark .markdown-body strong { color: #f8fafc; }
+.dark .markdown-body a { color: #fb923c; }
+.dark .markdown-body blockquote { border-left-color: rgba(249, 115, 22, 0.5); color: #94a3b8; }
+.dark .markdown-body hr { border-top-color: rgba(255, 255, 255, 0.1); }
+.dark .markdown-body code { background: rgba(255, 255, 255, 0.08); }
+.dark .markdown-body pre { background: #000; color: #e2e8f0; }
+.dark .markdown-body th,
+.dark .markdown-body td { border-color: rgba(255, 255, 255, 0.12); }
+.dark .markdown-body th { background: rgba(255, 255, 255, 0.05); }
+

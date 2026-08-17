@@ -65,32 +65,18 @@ apiClient.interceptors.request.use(
         }
       }
       
-      // If no valid cached token, try Supabase client
+      // If no valid cached token, try Supabase client (single-flight, shared
+      // across all concurrent requests so visibility-change / cold-start churn
+      // doesn't stampede getSession).
       if (!validToken) {
         const sessionStartTime = Date.now();
         console.log('🔍 [API CLIENT] No valid cached token, trying Supabase client...');
-        const supabase = createClient();
-        let session = null;
-        
         try {
-          // Try once with a very short timeout (2 seconds)
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Session retrieval timeout')), 2000)
-          );
-          const sessionPromise = supabase.auth.getSession();
-          const result = await Promise.race([sessionPromise, timeoutPromise]) as any;
-          session = result.data?.session;
-          
+          const fresh = await getFreshToken();
           const sessionElapsed = Date.now() - sessionStartTime;
           console.log(`⏱️ [API CLIENT] Session retrieval took ${sessionElapsed}ms`);
-          
-          if (session?.access_token) {
-            validToken = session.access_token;
-            // Cache the new token
-            localStorage.setItem('sb-access-token', session.access_token);
-            if (session.refresh_token) {
-              localStorage.setItem('sb-refresh-token', session.refresh_token);
-            }
+          if (fresh) {
+            validToken = fresh;
             console.log('✅ [API CLIENT] Got fresh token from Supabase');
           } else {
             console.warn('⚠️ [API CLIENT] Supabase returned no session');
@@ -101,7 +87,7 @@ apiClient.interceptors.request.use(
           console.warn(`⚠️ [API CLIENT] Could not get session after ${sessionElapsed}ms, proceeding without token:`, error.message);
         }
       }
-      
+
       if (validToken && config.headers) {
         config.headers.Authorization = `Bearer ${validToken}`;
         
@@ -130,11 +116,60 @@ apiClient.interceptors.request.use(
 );
 
 // Response interceptor for error handling
+// ── Single-flight token refresh ─────────────────────────────────────────────
+// When the access token expires, many concurrent requests 401 at once. Without
+// dedup, each one independently calls supabase.auth.refreshSession() — we've
+// seen 5 parallel 500ms+ refreshes stampede, which (a) spams the logs,
+// (b) blocks the dashboard request until it times out, and (c) nukes the
+// cached token mid-flight so payment polling dies on 401. This gate ensures
+// exactly ONE refresh runs; every 401 awaits the same promise and retries
+// against the fresh token it produces.
+let _refreshInFlight: Promise<string | null> | null = null;
+
+function getFreshToken(): Promise<string | null> {
+  if (_refreshInFlight) return _refreshInFlight;
+  console.log('🔄 [API CLIENT] Starting single-flight token refresh...');
+  _refreshInFlight = (async () => {
+    try {
+      const supabase = createClient();
+      const result = await supabase.auth.getSession();
+      let session = result.data?.session;
+      if (!session?.access_token) {
+        const r = await supabase.auth.refreshSession();
+        session = r.data?.session;
+      }
+      if (session?.access_token) {
+        localStorage.setItem('sb-access-token', session.access_token);
+        if (session.refresh_token) {
+          localStorage.setItem('sb-refresh-token', session.refresh_token);
+        }
+        if (typeof document !== 'undefined') {
+          document.cookie = `access_token=${session.access_token}; path=/; max-age=3600; SameSite=Lax`;
+        }
+        console.log('💾 [API CLIENT] Fresh session tokens saved to localStorage');
+        return session.access_token;
+      }
+      // No session at all — force re-login.
+      localStorage.removeItem('sb-access-token');
+      localStorage.removeItem('sb-refresh-token');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('auth_cache_v1');
+      return null;
+    } catch (e) {
+      console.error('❌ [API CLIENT] Single-flight refresh failed:', e);
+      return null;
+    } finally {
+      _refreshInFlight = null; // allow a future refresh once this one settles
+    }
+  })();
+  return _refreshInFlight;
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    
     // Prevent infinite loops
     if (originalRequest._retry) {
       return Promise.reject(error);
@@ -143,88 +178,34 @@ apiClient.interceptors.response.use(
     // Handle 401 errors (token expired/invalid)
     if (error.response?.status === 401) {
       originalRequest._retry = true;
-      
+
       try {
-        // Clear any potentially invalid cached tokens first
-        console.log('🧹 [API CLIENT] Clearing potentially invalid cached tokens before refresh...');
-        localStorage.removeItem('sb-access-token');
-        localStorage.removeItem('sb-refresh-token');
-        
-        // Try to refresh session using improved client with retry logic
-        const supabase = createClient();
-        let session = null;
-        let retryCount = 0;
-        const maxRetries = 2;
-        
-        while (retryCount < maxRetries) {
-          try {
-            // Force a fresh session retrieval instead of using cached
-            const result = await supabase.auth.getSession();
-            session = result.data.session;
-            
-            // If no session, try refresh
-            if (!session?.access_token) {
-              const refreshResult = await supabase.auth.refreshSession();
-              session = refreshResult.data.session;
-            }
-            
-            break;
-          } catch (refreshError: any) {
-            retryCount++;
-            console.warn(`⚠️ [API CLIENT] Session retrieval attempt ${retryCount} failed:`, refreshError.message);
-            
-            if (refreshError.message?.includes('AbortError') || refreshError.message?.includes('signal is aborted')) {
-              if (retryCount < maxRetries) {
-                // Wait before retry with exponential backoff
-                await new Promise(resolve => setTimeout(resolve, 200 * Math.pow(2, retryCount)));
-              }
-            } else {
-              // For non-AbortError, don't retry
-              throw refreshError;
-            }
-          }
-        }
-        
-        if (!session?.access_token) {
-          // If refresh fails, clear all auth data and redirect to login
+        // Single-flight refresh: every concurrent 401 shares ONE refresh call
+        // so we don't stampede Supabase or nuke each other's tokens.
+        const freshToken = await getFreshToken();
+
+        if (!freshToken) {
           console.error('❌ [API CLIENT] Session refresh failed - no valid session');
-          localStorage.removeItem('sb-access-token');
-          localStorage.removeItem('sb-refresh-token');
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('user');
-          localStorage.removeItem('auth_cache_v1');
-          window.location.href = '/signin';
+          // Only redirect ONCE, even if many requests failed simultaneously.
+          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/signin')) {
+            window.location.href = '/signin';
+          }
           return Promise.reject(error);
         }
-        
-        // Update token and retry request
-        originalRequest.headers.Authorization = `Bearer ${session.access_token}`;
-        
-        // 🔥 IMPORTANT: Save refreshed tokens to localStorage
-        if (typeof document !== 'undefined') {
-          localStorage.setItem('sb-access-token', session.access_token);
-          if (session.refresh_token) {
-            localStorage.setItem('sb-refresh-token', session.refresh_token);
-          }
-          document.cookie = `access_token=${session.access_token}; path=/; max-age=3600; SameSite=Lax`;
-          console.log('💾 [API CLIENT] Fresh session tokens saved to localStorage');
-        }
-        
+
+        // Update token and retry the request with the freshly-refreshed token.
+        originalRequest.headers.Authorization = `Bearer ${freshToken}`;
         return apiClient(originalRequest);
-        
       } catch (refreshError) {
-        // Refresh failed completely
+        // Single-flight refresh threw — clear auth and redirect once.
         console.error('❌ [API CLIENT] Session refresh completely failed:', refreshError);
-        localStorage.removeItem('sb-access-token');
-        localStorage.removeItem('sb-refresh-token');
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('user');
-        localStorage.removeItem('auth_cache_v1');
-        window.location.href = '/signin';
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/signin')) {
+          window.location.href = '/signin';
+        }
         return Promise.reject(error);
       }
     }
-    
+
     // Handle 403 Forbidden - Check if it's a license error
     if (error.response?.status === 403) {
       const data = error.response.data as any

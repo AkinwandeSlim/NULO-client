@@ -55,12 +55,6 @@ import landlordDashboardAPI, {
 
 } from "@/lib/api/landlordDashboard"
 
-import { viewingRequestsAPI as landlordViewingRequestsAPI } from "@/lib/api/viewingRequestsLandlord"
-
-import { applicationsAPI, type Application } from "@/lib/api/applications"
-
-import { agreementsAPI } from "@/lib/api/agreements"
-
 import { paymentsAPI } from "@/lib/api/payments";
 
 import { engagementAPI, getEngagementLevelColor, getEngagementLevelTextColor, getEngagementLevelBgColor, getTrustScoreColor, getTrustScoreTextColor, getTrustScoreBgColor, trackEngagement } from "@/lib/api/engagement"
@@ -137,7 +131,7 @@ export default function LandlordDashboard() {
 
   const [viewingsLoading, setViewingsLoading] = useState(true)
 
-  const [applications, setApplications] = useState<Application[]>([])
+  const [applications, setApplications] = useState<any[]>([])
 
   const [applicationsLoading, setApplicationsLoading] = useState(true)
 
@@ -308,6 +302,11 @@ export default function LandlordDashboard() {
   const fetchLandlordFnRef = useRef(fetchLandlordDashboard)
   fetchLandlordFnRef.current = fetchLandlordDashboard
   const landlordFetchInFlightRef = useRef(false)
+  // Keep a ref to receivedPayments so the poller can compare lengths without
+  // pulling receivedPayments into its dependency array (which would restart the
+  // interval on every payment update, defeating the purpose).
+  const receivedPaymentsRef = useRef(receivedPayments)
+  receivedPaymentsRef.current = receivedPayments
 
   useEffect(() => {
     if (!mounted) return
@@ -347,355 +346,137 @@ export default function LandlordDashboard() {
 
 
 
-  // Fetch each activity panel once per signed-in landlord. Do not depend on the
-  // full dashboard object: it is replaced during refreshes and was repeatedly
-  // restarting these requests, causing visible skeleton flicker.
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Sync all sub-panel state from the single dashboard payload.
+  // The DashboardContext already fetches viewings, applications, agreements,
+  // and payments in one shot — no need for 5 separate API calls per mount.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const paymentsSeededRef = useRef(false)
+  const dashboardRefreshScheduledRef = useRef(false)
 
   useEffect(() => {
+    if (!landlordData) return
 
-    if (!user?.id) return
+    // Viewings — the backend already returns viewing_requests in the
+    // dashboard payload; filter to actionable statuses for the overview.
+    const rawViewings: any[] = Array.isArray(landlordData.viewingRequests)
+      ? landlordData.viewingRequests
+      : []
+    setViewingRequests(rawViewings.filter((v: any) =>
+      v.status === 'pending' || v.status === 'confirmed' || v.status === 'reschedule_proposed' || v.status === 'completed'
+    ))
+    setViewingsLoading(false)
 
-    
+    // Applications
+    const rawApps: any[] = Array.isArray(landlordData.receivedApplications)
+      ? landlordData.receivedApplications
+      : []
+    setApplications(rawApps.filter((app) => app.status !== 'withdrawn'))
+    setApplicationsLoading(false)
 
-    const fetchViewings = async () => {
+    // Agreements — use effective status derived from timestamps
+    const rawAgreements: any[] = Array.isArray(landlordData.agreements)
+      ? landlordData.agreements
+      : []
+    setAgreements(rawAgreements.filter((a: any) =>
+      ['ACTIVE', 'SIGNED', 'PENDING_LANDLORD', 'PENDING_TENANT', 'EXPIRED'].includes(getEffectiveStatus(a))
+    ))
+    setAgreementsLoading(false)
 
-      try {
-
-        // Always fetch fresh viewing requests from API to ensure accurate stats
-        // (manual DB changes need to be reflected immediately)
-
-        console.log('🔄 [OVERVIEW] Fetching viewing requests from API...')
-
-        const data = await landlordViewingRequestsAPI.getLandlord()
-
-        // getLandlord() returns typed objects directly -- handle array or wrapped response
-
-        const list: any[] = Array.isArray(data)
-
-          ? data
-
-          : Array.isArray((data as any)?.viewing_requests)
-
-          ? (data as any).viewing_requests
-
-          : Array.isArray((data as any)?.data)
-
-          ? (data as any).data
-
-          : []
-
-        // Show actionable states only -- completed/cancelled not actionable on overview.
-        // reschedule_proposed ("Awaiting Tenant") stays visible so the landlord sees
-        // their proposed time is still pending the tenant's response.
-
-        setViewingRequests(list.filter((v: any) => v.status === 'pending' || v.status === 'confirmed' || v.status === 'reschedule_proposed' || v.status === 'completed'))
-
-      } catch (err) {
-
-        console.error('❌ Failed to fetch viewings for overview:', err)
-
-        // Preserve the last known good rows if a transient request fails.
-
-      } finally {
-
-        setViewingsLoading(false)
-
-      }
-
+    // Payments — seed from dashboard payload only on the first successful
+    // load.  After that the poller (below) owns this state to avoid the
+    // dashboard cache overwriting freshly polled data.
+    if (!paymentsSeededRef.current && landlordData.receivedPayments?.length) {
+      setReceivedPayments(landlordData.receivedPayments as any[])
+      setPaymentsLoading(false)
+      paymentsSeededRef.current = true
+    } else if (!paymentsSeededRef.current) {
+      // No payments from the backend — mark seeded so the poller takes over
+      paymentsSeededRef.current = true
+      setPaymentsLoading(false)
     }
+  }, [landlordData])
 
-    fetchViewings()
-
-  }, [user?.id])
-
-
-
-  // Fetch landlord applications (from tenant applicants)
-
-  // First check if data is in cache, otherwise fetch separately
-
+  // Engagement metrics — NOT included in the dashboard payload, so fetch
+  // separately. Depends only on user?.id (stable) to fire once per session.
   useEffect(() => {
-
     if (!user?.id) return
+    let cancelled = false
 
-    
-
-    const fetchApplications = async () => {
-
+    const fetchEngagement = async () => {
       try {
-
-        // Always fetch fresh applications from API to ensure accurate stats
-        // (manual DB changes need to be reflected immediately)
-
-        console.log('🔄 [OVERVIEW] Fetching applications from API...')
-
-        const data = await applicationsAPI.getReceivedApplications()
-
-        // Handle array or wrapped response
-
-        const list: Application[] = Array.isArray(data)
-
-          ? data
-
-          : Array.isArray((data as any)?.applications)
-
-          ? (data as any).applications
-
-          : Array.isArray((data as any)?.data)
-
-          ? (data as any).data
-
-          : []
-
-        // Show only relevant statuses: pending review, approved, rejected (not withdrawn)
-
-        const filtered = list.filter((app: Application) => 
-
-          app.status !== 'withdrawn'
-
-        )
-
-        setApplications(filtered)
-
-      } catch (err) {
-
-        console.error('❌ Failed to fetch applications for overview:', err)
-
-        // Preserve the last known good rows if a transient request fails.
-
-      } finally {
-
-        setApplicationsLoading(false)
-
-      }
-
-    }
-
-    fetchApplications()
-
-  }, [user?.id])
-
-
-
-  // Fetch landlord agreements
-
-  // First check if data is in cache, otherwise fetch separately
-
-  useEffect(() => {
-
-    if (!user?.id) return
-
-    
-
-    const fetchAgreements = async () => {
-
-      try {
-
-        // Always fetch fresh agreements from API to ensure accurate occupancy stats
-        // (manual DB changes need to be reflected immediately)
-
-        console.log('🔄 [OVERVIEW] Fetching agreements from API...')
-
-        const data = await agreementsAPI.getMyAgreements()
-
-        console.log('📊 [OVERVIEW] Agreements API response:', data)
-
-        // Handle array or wrapped response
-
-        const list: any[] = Array.isArray(data)
-
-          ? data
-
-          : Array.isArray((data as any)?.agreements)
-
-          ? (data as any).agreements
-
-          : Array.isArray((data as any)?.data)
-
-          ? (data as any).data
-
-          : []
-
-        console.log('📊 [OVERVIEW] Agreements list length:', list.length)
-
-        // Show all agreements with relevant statuses
-
-        const filtered = list.filter((agreement: any) => 
-
-          ['ACTIVE', 'SIGNED', 'PENDING_LANDLORD', 'PENDING_TENANT', 'EXPIRED'].includes(agreement.status)
-
-        )
-
-        console.log('📊 [OVERVIEW] Filtered agreements:', filtered.length, 'statuses:', filtered.map((a: any) => a.status))
-
-        setAgreements(filtered)
-
-      } catch (err) {
-
-        console.error('❌ Failed to fetch agreements for overview:', err)
-
-        // Preserve the last known good rows if a transient request fails.
-
-      } finally {
-
-        setAgreementsLoading(false)
-
-      }
-
-    }
-
-    fetchAgreements()
-
-  }, [user?.id])
-
-
-
-  // Fetch engagement metrics
-
-  // First check if data is in cache, otherwise fetch separately
-
-  useEffect(() => {
-
-    if (!user?.id) return
-
-    
-
-    const fetchEngagementMetrics = async () => {
-
-      try {
-
-        // 💾 CHECK CACHE FIRST: Use cached data if available
-
-        if (landlordData?.engagementMetrics) {
-
-          console.log('📦 [OVERVIEW] Using cached engagement metrics')
-
-          setEngagementMetrics(landlordData.engagementMetrics)
-
-          return
-
-        }
-
-
-
-        // 🔄 FALLBACK: Fetch separately if not in cache
-
-        console.log('🔄 [OVERVIEW] Fetching engagement metrics from API...')
-
-        const engagementData = await engagementAPI.getEngagementMetrics(user.id)
-
-        setEngagementMetrics(engagementData)
-
+        const data = await engagementAPI.getEngagementMetrics(user.id)
+        if (!cancelled) setEngagementMetrics(data)
       } catch (error) {
-
         console.error('❌ Failed to fetch engagement metrics:', error)
-
-      }
-
-    }
-
-    
-
-    fetchEngagementMetrics()
-
-  }, [user?.id, landlordData?.engagementMetrics])
-
-
-
-  // Fetch received payments — check cache first, then fetch fresh data
-  // Then poll every 10s while rendered to catch new payments in real-time
-  useEffect(() => {
-    if (!user?.id) return
-
-    const fetchPayments = async () => {
-      try {
-        // 💾 CHECK CACHE FIRST: Use cached data if available + recent
-        if (landlordData?.receivedPayments && landlordData.receivedPayments.length > 0) {
-          console.log('📦 [OVERVIEW] Using cached received payments')
-          setReceivedPayments(landlordData.receivedPayments as any[])
-          setPaymentsLoading(false)
-          return
-        }
-
-        // 🔄 FALLBACK: Fetch fresh data
-        console.log('🔄 [OVERVIEW] Fetching received payments from API...')
-        setPaymentsLoading(true)
-        const data = await paymentsAPI.getReceivedPayments(50)
-        setReceivedPayments(data.payments || [])
-      } catch (error: any) {
-        // Don't blank out receivedPayments on transient errors -- keep the last
-        // known good data so the "Total Collected" card doesn't flicker to ₦0
-        // during network glitches or 500 errors.
-        const status = error?.response?.status
-        if (status === 500) {
-          console.warn('⚠️ [OVERVIEW] Failed to fetch payments (server hiccup 500), keeping previous data')
-        } else if (status === 401) {
-          console.warn('⚠️ [OVERVIEW] Failed to fetch payments (auth), keeping previous data')
-        } else {
-          console.warn('⚠️ [OVERVIEW] Failed to fetch payments, keeping previous data:', error?.message || error)
-        }
-        // Note: do NOT call setReceivedPayments([]) here on transient errors.
-      } finally {
-        setPaymentsLoading(false)
       }
     }
 
-    fetchPayments()
-  }, [user?.id, landlordData?.receivedPayments])
+    fetchEngagement()
+    return () => { cancelled = true }
+  }, [user?.id])
 
-  // Real-time payment polling: Check for new payments every 5 seconds
-  // This ensures the "Rent Payment Confirmed" banner appears quickly without page refresh
+  // Real-time payment polling: Check for new payments every 10 seconds.
+  //   - skips while the tab is hidden (no wasted requests),
+  //   - backs off after repeated failures so a dead server doesn't spam logs,
+  //   - ignores 401 (handled by API client single-flight refresh),
+  //   - debounces the heavy dashboard refresh to at most once per 60s so
+  //     the 10s poller doesn't cascade the full dashboard fetch each tick.
   useEffect(() => {
     if (!user?.id || paymentsLoading) return
 
+    let consecutiveFailures = 0
+    const MAX_FAILURES_BEFORE_STOP = 5
+
     const pollInterval = setInterval(async () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+
       try {
         const data = await paymentsAPI.getReceivedPayments()
         const freshPayments = data.payments || []
 
-        // Check if there are new recently-released payments
+        // Detect genuinely new payments (recently released)
         const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000
         const hasNewPayment = freshPayments.some((p: any) =>
           p.disbursement_status === 'released' && new Date(p.released_at ?? p.updated_at ?? p.created_at).getTime() > fortyEightHoursAgo
         )
 
-        // Only update if there's new data (prevents unnecessary re-renders)
-        if (hasNewPayment || freshPayments.length !== receivedPayments.length) {
+        consecutiveFailures = 0
+
+        if (hasNewPayment || freshPayments.length !== receivedPaymentsRef.current.length) {
           console.log('💰 [OVERVIEW] New payments detected, updating...')
           setReceivedPayments(freshPayments)
-          // A new payment may belong to an application created AFTER the last
-          // dashboard fetch. The "Continue in PropFlow" button on the banner
-          // resolves the thread by looking up that application (property + tenant
-          // → propflow_thread_id) in landlordData.receivedApplications, which is
-          // only refreshed on dashboard fetch. If the payment arrived live while
-          // the page was open, receivedApplications is stale → the banner shows
-          // Release-only. Refresh the dashboard in the background (non-loading)
-          // so the thread resolves and the button appears without a skeleton flash.
-          // fetchLandlordDashboard with forceRefresh=false uses the cache if
-          // available, which means it won't set loading=true at all.
-          fetchLandlordDashboard(false)
+          // Schedule a dashboard refresh at most once per 60s. The dashboard
+          // payload includes receivedApplications which the "Continue in
+          // PropFlow" banner needs to resolve the propflow thread. Without
+          // debounce the 10s poll would cascade the heavy 9-worker dashboard
+          // fetch on every tick that finds a new payment.
+          if (!dashboardRefreshScheduledRef.current) {
+            dashboardRefreshScheduledRef.current = true
+            fetchLandlordFnRef.current(true)
+            setTimeout(() => { dashboardRefreshScheduledRef.current = false }, 60_000)
+          }
         }
       } catch (error: any) {
-        // Network glitch or server hiccup -- keep the previous payments data intact
-        // and just log so we don't blank out the "Total Collected" stat card.
-        // Suppress the noisy 500 in console -- we'll retry on next tick.
         const status = error?.response?.status
+        if (status === 401) return
+        consecutiveFailures += 1
         if (status === 500) {
-          console.warn('⚠️ [OVERVIEW] Payments polling: server hiccup (500), will retry in 5s')
-        } else if (status === 401) {
-          console.warn('⚠️ [OVERVIEW] Payments polling: auth expired, will retry')
+          console.warn(`⚠️ [OVERVIEW] Payments polling: server hiccup (500) [${consecutiveFailures}/${MAX_FAILURES_BEFORE_STOP}]`)
         } else if (error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')) {
-          console.warn('⚠️ [OVERVIEW] Payments polling: timeout, will retry')
+          console.warn(`⚠️ [OVERVIEW] Payments polling: timeout [${consecutiveFailures}/${MAX_FAILURES_BEFORE_STOP}]`)
         } else {
           console.warn('⚠️ Payment polling failed, will retry', error?.message || error)
         }
-        // Intentionally do NOT clear receivedPayments on transient errors
-        // so the "Total Collected" card doesn't flicker between 0 and the real value.
+        if (consecutiveFailures >= MAX_FAILURES_BEFORE_STOP) {
+          console.warn('⚠️ [OVERVIEW] Stopping payment polling after repeated failures — a page refresh restarts it.')
+          clearInterval(pollInterval)
+        }
       }
-    }, 5000) // Poll every 5 seconds for faster detection
+    }, 10000)
 
     return () => clearInterval(pollInterval)
-  }, [user?.id, paymentsLoading, receivedPayments.length])
+  }, [user?.id, paymentsLoading])
 
 
 
@@ -957,7 +738,7 @@ export default function LandlordDashboard() {
     }
 
     // Priority 5: New applications (pending review)
-            const pendingApplications = applications.filter((app: Application) => 
+            const pendingApplications = applications.filter((app: any) =>
                 normalizeAppStatus(app.status) === 'pending' && !isBannerDismissed(buildBannerKey('new_application', app.id))
             )
     if (pendingApplications.length > 0) {

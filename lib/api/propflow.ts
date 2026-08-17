@@ -84,7 +84,13 @@ export interface StatusResponse {
   extracted_intent?: ExtractedIntent | null
   selected_property_id?: string | null
   application_id?: string | null
+  /** Present once the agreement has been drafted — lets the chat deep-link
+   *  the tenant to /tenant/agreements/{id} for the read-then-sign flow. */
+  agreement_id?: string | null
   landlord_briefing?: string | null
+  /** Present once the DVA has been provisioned (stage = nomba_provisioned). */
+  virtual_account_number?: string | null
+  expected_payment_amount?: number | null
   error_log?: string[]
 }
 

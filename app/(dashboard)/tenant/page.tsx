@@ -40,7 +40,7 @@ import { toast } from "sonner"
 import { notificationsAPI } from "@/lib/api/notifications"
 import { calculateAgreementBreakdown } from "@/lib/utils/rentalCalculations"
 import { normalizeAppStatus } from "@/lib/utils/applicationStatus"
-import { agreementsAPI } from "@/lib/api/agreements"
+import { viewingRequestsAPI } from "@/lib/api/viewingRequestsTenant"
 import { ReportIssueModal } from "@/components/maintenance/ReportIssueModal"
 
 import {
@@ -101,24 +101,42 @@ export default function TenantDashboard() {
   const [reportModalOpen, setReportModalOpen] = useState(false)
   const [rentedProperties, setRentedProperties] = useState<any[]>([])
 
+  // ── Poller plumbing ──────────────────────────────────────────────────────
+  // fetchTenantDashboard / invalidateTenantCache are recreated whenever the
+  // auth `user` object changes, and recentPayments changes on every poll hit.
+  // Keeping those in poller dep arrays restarted the intervals constantly, so
+  // the pollers read them through refs and keep stable deps instead.
+  const fetchTenantDashboardRef = useRef(fetchTenantDashboard)
+  fetchTenantDashboardRef.current = fetchTenantDashboard
+  const recentPaymentsRef = useRef(recentPayments)
+  recentPaymentsRef.current = recentPayments
+
+  // Shared 60s throttle for poller-triggered refreshes — no matter how many
+  // pollers detect changes, the heavy dashboard endpoint is hit at most once
+  // per minute.
+  const lastForcedRefreshAtRef = useRef(0)
+  const triggerLiveDashboardRefresh = useCallback(() => {
+    const now = Date.now()
+    if (now - lastForcedRefreshAtRef.current < 60_000) return
+    lastForcedRefreshAtRef.current = now
+    fetchTenantDashboardRef.current(true, { silent: true }).catch(() => { /* handled in context */ })
+  }, [])
+
 
 
   useEffect(() => { setMounted(true) }, [])
 
-  // Fetch rented properties for maintenance modal
+  // Rented properties for the maintenance modal — derived from the dashboard
+  // payload. The agreements are already fetched by the tenant dashboard
+  // endpoint; a separate getMyAgreements('ACTIVE') call per mount was
+  // redundant. Property status in the payload is the effective status, so
+  // filtering on ACTIVE matches what the dedicated API returned.
   useEffect(() => {
-    if (user?.id) {
-      const fetchRentedProperties = async () => {
-        try {
-          const agreementsResponse = await agreementsAPI.getMyAgreements('ACTIVE')
-          setRentedProperties(agreementsResponse.agreements || [])
-        } catch (err) {
-          console.error('Failed to fetch rented properties:', err)
-        }
-      }
-      fetchRentedProperties()
-    }
-  }, [user?.id])
+    if (!tenantData?.agreements) return
+    setRentedProperties(
+      tenantData.agreements.filter((a: any) => a.status === 'ACTIVE')
+    )
+  }, [tenantData?.agreements])
 
   // ✅ Initialize dismissed banners from localStorage on mount (PERMANENT dismissal)
   useEffect(() => {
@@ -256,20 +274,22 @@ export default function TenantDashboard() {
   }, [user?.id])
 
   // Real-time payment polling: Check for new payments every 30 seconds
-  // This ensures "Payment Confirmed" banner appears quickly without page refresh
+  // This ensures "Payment Confirmed" banner appears quickly without page refresh.
+  // Deps are stable — payments are read through recentPaymentsRef so a payment
+  // update no longer tears down and recreates the interval. Tenants with zero
+  // payments still poll: the old early-return killed the poller for them, so
+  // their FIRST payment confirmation was never detected live.
   useEffect(() => {
     if (!user?.id || paymentsLoading) return
-
-    // Only start polling if initial fetch was successful
-    if (recentPayments.length === 0 && !paymentsLoading) {
-      return // Don't poll if we couldn't fetch payments initially
-    }
 
     // Track consecutive failures so we can stop polling quickly
     let consecutiveFailures = 0
     const MAX_FAILURES_BEFORE_STOP = 3 // Stop after 3 consecutive failures
 
     const pollInterval = setInterval(async () => {
+      // Skip while the tab is hidden — no wasted requests in background
+      if (typeof document !== 'undefined' && document.hidden) return
+
       try {
         const response = await paymentsAPI.getMyPayments()
 
@@ -277,22 +297,34 @@ export default function TenantDashboard() {
           // Reset failure counter on success
           consecutiveFailures = 0
           // Check if we have new payments (compare with current state)
-          const currentPaymentIds = new Set(recentPayments.map(p => p.id))
+          const currentPaymentIds = new Set(recentPaymentsRef.current.map(p => p.id))
           const newPayments = response.payments.filter((p: any) => !currentPaymentIds.has(p.id))
 
           if (newPayments.length > 0) {
             console.log('[TENANT] New payment detected via polling - updating banner')
             setRecentPayments(response.payments)
 
-            // Invalidate cache to refresh other dashboard data
-            invalidateTenantCache?.()
+            // Refresh the dashboard (throttled to 1/min) so agreements and
+            // stats reflect the new payment without waiting for the 5-min
+            // auto-refresh. force=true bypasses the client cache, so a bare
+            // invalidateTenantCache() call is unnecessary here.
+            triggerLiveDashboardRefresh()
           }
         }
       } catch (error: any) {
-        consecutiveFailures += 1
         // Extract HTTP status code if available
         const status = error?.response?.status
         const isServerError = status >= 500 && status < 600
+
+        // 401 is handled transparently by the API client's single-flight
+        // refresh — if it bubbled here, the interceptor is about to redirect
+        // to /signin (which tears down this interval anyway), so don't count
+        // it as a polling failure or spam the console.
+        if (status === 401) {
+          return
+        }
+
+        consecutiveFailures += 1
 
         // Log first failure only (using warn to avoid alarming red errors)
         if (consecutiveFailures === 1) {
@@ -317,7 +349,76 @@ export default function TenantDashboard() {
     }, 30000) // Poll every 30 seconds
 
     return () => clearInterval(pollInterval)
-  }, [user?.id, paymentsLoading, recentPayments, invalidateTenantCache])
+  }, [user?.id, paymentsLoading, triggerLiveDashboardRefresh])
+
+  // ── Live dashboard refresh (landlord approval / agreement availability /
+  // viewing confirmation) ──
+  // The landlord approves + the agreement is generated on the server while
+  // the tenant is sitting on this page, and the dashboard cache TTL is 5 min.
+  // Instead of forcing the full dashboard endpoint every 20s (~15 server
+  // queries per tick, forever), poll two LIGHT endpoints (my applications +
+  // my viewing requests) and only force the dashboard fetch when an
+  // application or viewing status actually changed — throttled to once per
+  // 60s. Silent = no spinner, no toasts.
+  useEffect(() => {
+    if (!mounted || !user?.id || user.user_type !== 'tenant') return
+
+    const LIVE_POLL_MS = 20_000
+    let inFlight = false
+    let consecutiveFailures = 0
+    const MAX_FAILURES = 3
+    // Baseline signature from the first poll — changes are only detected
+    // between polls, never against differently-shaped dashboard data.
+    let baselineSignature: string | null = null
+
+    const buildSignature = (apps: any[], viewings: any[]) =>
+      `apps:${apps.map((a) => `${a.id}:${a.status}`).sort().join(',')}|vw:${viewings.map((v) => `${v.id}:${v.status}`).sort().join(',')}`
+
+    const pollInterval = setInterval(async () => {
+      // Skip when the tab is hidden — no point burning requests in background
+      if (document.hidden || inFlight) return
+      inFlight = true
+      try {
+        const [appsRes, viewingsRes] = await Promise.all([
+          applicationsAPI.getMyApplicationsFast(),
+          viewingRequestsAPI.getAll(),
+        ])
+        // Both light clients swallow errors and return success:false — treat
+        // that as a failed poll so an empty list is never misread as a change
+        // (which would trigger a pointless forced dashboard refresh).
+        if (!appsRes?.success || !viewingsRes?.success) {
+          throw new Error('light poll returned success:false')
+        }
+        consecutiveFailures = 0
+
+        const sig = buildSignature(
+          appsRes.applications || [],
+          (viewingsRes.data as any)?.viewing_requests || [],
+        )
+
+        // First successful poll establishes the baseline — don't refresh on it
+        if (baselineSignature === null) {
+          baselineSignature = sig
+          return
+        }
+        if (sig !== baselineSignature) {
+          console.log('[TENANT] Application/viewing change detected via light poll — refreshing dashboard')
+          baselineSignature = sig
+          triggerLiveDashboardRefresh()
+        }
+      } catch {
+        consecutiveFailures += 1
+        if (consecutiveFailures >= MAX_FAILURES) {
+          console.warn('[TENANT] Live dashboard polling stopped after repeated failures.')
+          clearInterval(pollInterval)
+        }
+      } finally {
+        inFlight = false
+      }
+    }, LIVE_POLL_MS)
+
+    return () => clearInterval(pollInterval)
+  }, [mounted, user?.id, user?.user_type, triggerLiveDashboardRefresh])
 
   // Show loading spinner if context is loading OR initial load
   const isLoading = loading || initialLoad
@@ -900,6 +1001,14 @@ export default function TenantDashboard() {
                 (app: any) => app.property_id === a.property_id && app.propflow_thread_id
               )
               const hasPropFlow = !!matchingApp?.propflow_thread_id
+              // When the banner data is an actual agreement (PENDING_TENANT),
+              // deep-link straight to the agreement detail page for the
+              // read-then-sign flow. When it's just an approved application
+              // (agreement not yet generated), fall back to the list page.
+              const isAgreement = a.status !== "approved"
+              const signHref = isAgreement && a.id
+                ? `/tenant/agreements/${a.id}`
+                : "/tenant/agreements"
               return (
                 <div className="tenant-status-banner flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-green-200 bg-green-50">
                   <div className="flex items-center gap-3 min-w-0">
@@ -912,7 +1021,7 @@ export default function TenantDashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Link href="/tenant/agreements">
+                    <Link href={signHref}>
                       <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8 text-xs"
                         onClick={() => { setDismissedApprovalBanner(p => [...p, a.id]); dismissBanner(buildBannerKey("agreement_signed", a.id)) }}>
                         Sign Now
@@ -922,7 +1031,13 @@ export default function TenantDashboard() {
                       <button
                         onClick={() => {
                           window.dispatchEvent(new CustomEvent('propflow:open', {
-                            detail: { workflow_id: matchingApp!.propflow_thread_id }
+                            detail: {
+                              workflow_id: matchingApp!.propflow_thread_id,
+                              // Pass the agreement id (when the banner is an
+                              // agreement) so the chat card deep-links straight
+                              // to the read-then-sign page.
+                              agreement_id: isAgreement ? a.id : undefined,
+                            }
                           }))
                           setDismissedApprovalBanner(p => [...p, a.id])
                           dismissBanner(buildBannerKey("agreement_signed", a.id))

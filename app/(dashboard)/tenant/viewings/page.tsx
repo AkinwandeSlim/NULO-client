@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -350,6 +350,51 @@ export default function ViewingsPage() {
   // Track dismissed confirmed-viewing banners by viewing ID
   const [dismissedBanners, setDismissedBanners] = useState<string[]>([])
 
+  // Live sync: poll every 15s and refetch the moment the tab/window regains
+  // focus, so changes made from the other side (e.g. the landlord confirming
+  // or proposing a new time) appear without a manual refresh.
+  const refreshSeq = useRef(0)
+  const hasLoadedRef = useRef(false)
+
+  const fetchApplications = useCallback(async () => {
+    try {
+      const response = await applicationsAPI.getMyApplications()
+      if (response.success) {
+        setApplications(response.applications || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch applications:', error)
+    }
+  }, [])
+
+  const fetchViewingRequests = useCallback(async () => {
+    const seq = ++refreshSeq.current
+    if (!hasLoadedRef.current) setLoading(true)
+    try {
+      const response = await viewingRequestsAPI.getAll()
+      if (seq !== refreshSeq.current) return
+      if (response.success && response.data) {
+        // API client wraps: { success: true, data: { viewing_requests, count } }
+        const list: any[] = (response.data as any).viewing_requests || []
+        // Skip the state update (and re-render) when nothing actually changed.
+        setViewingRequests(prev => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list))
+      } else if (!hasLoadedRef.current) {
+        // Background polls fail silently — only surface errors for a real load.
+        toast.error('Failed to load viewing requests')
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch viewing requests:', error)
+      if (seq === refreshSeq.current && !hasLoadedRef.current) {
+        toast.error(error.message || 'Failed to load viewing requests')
+      }
+    } finally {
+      if (seq === refreshSeq.current) {
+        hasLoadedRef.current = true
+        setLoading(false)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     fetchViewingRequests()
     fetchApplications()
@@ -363,36 +408,21 @@ export default function ViewingsPage() {
       }
       return ids
     })
-  }, [])
-
-  const fetchApplications = async () => {
-    try {
-      const response = await applicationsAPI.getMyApplications()
-      if (response.success) {
-        setApplications(response.applications || [])
+    const interval = setInterval(() => fetchViewingRequests(), 15000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetchViewingRequests()
+        fetchApplications()
       }
-    } catch (error) {
-      console.error('Failed to fetch applications:', error)
     }
-  }
-
-  const fetchViewingRequests = async () => {
-    try {
-      setLoading(true)
-      const response = await viewingRequestsAPI.getAll()
-      if (response.success && response.data) {
-        // API client wraps: { success: true, data: { viewing_requests, count } }
-        setViewingRequests((response.data as any).viewing_requests || [])
-      } else {
-        toast.error('Failed to load viewing requests')
-      }
-    } catch (error: any) {
-      console.error('Failed to fetch viewing requests:', error)
-      toast.error(error.message || 'Failed to load viewing requests')
-    } finally {
-      setLoading(false)
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
     }
-  }
+  }, [fetchViewingRequests, fetchApplications])
 
   const handleCancelRequest = async (requestId: string) => {
     if (!confirm('Are you sure you want to cancel this viewing request?')) {
@@ -406,9 +436,11 @@ export default function ViewingsPage() {
       const response = await viewingRequestsAPI.cancel(requestId)
       if (response.success) {
         // Update status in local state rather than removing — tenant can still see it
-        setViewingRequests(viewingRequests.map(r => 
-          r.id === requestId ? { ...r, status: 'cancelled' } : r
-        ))
+        setViewingRequests(prev =>
+          prev.map(r =>
+            r.id === requestId ? { ...r, status: 'cancelled' } : r
+          )
+        )
         toast.success('Viewing request cancelled')
       } else {
         toast.error('Failed to cancel request')

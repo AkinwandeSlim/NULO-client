@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/contexts/AuthContext"
@@ -60,6 +60,12 @@ export default function TenantPaymentDetailPage() {
   const [historyPage, setHistoryPage] = useState(1)
   const HISTORY_PAGE_SIZE = 5
 
+  // Keep history length in a ref: reading `history.length` from the closure
+  // required it in fetchDetail's deps, so every poll that added a transfer
+  // entry recreated fetchDetail → re-fired the mount effect below (duplicate
+  // fetch + duplicate payment_made engagement tracking).
+  const historyLengthRef = useRef(0)
+
   const fetchDetail = useCallback(async () => {
     if (!agreementId || agreementId === "undefined") { setIsLoading(false); return }
     try {
@@ -67,8 +73,7 @@ export default function TenantPaymentDetailPage() {
       
       // Track payment activity when new payments are detected
       const newPaymentCount = detail.transfer_history.length
-      const oldPaymentCount = history.length
-      if (newPaymentCount > oldPaymentCount && user?.id) {
+      if (newPaymentCount > historyLengthRef.current && user?.id) {
         await trackEngagement(user.id, 'payment_made', {
           agreement_id: agreementId,
           amount: detail.agreement.total_received_amount,
@@ -78,6 +83,7 @@ export default function TenantPaymentDetailPage() {
       
       setAgreement(detail.agreement)
       setHistory(detail.transfer_history)
+      historyLengthRef.current = detail.transfer_history.length
       setHistoryPage(1)
     } catch (error) {
       console.error("[TenantPaymentDetail] fetch error:", error)
@@ -85,7 +91,7 @@ export default function TenantPaymentDetailPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [agreementId, history.length, user?.id])
+  }, [agreementId, user?.id])
 
   useEffect(() => {
     if (!user) { router.push("/signin"); return }
@@ -98,14 +104,19 @@ export default function TenantPaymentDetailPage() {
     }
     
     fetchDetail()
-  }, [user, fetchDetail, router, agreementId])
+    // user?.id (not the user object) — the object identity changes on every
+    // auth token refresh and would re-run this effect (and engagement track).
+  }, [user?.id, fetchDetail, router, agreementId])
 
-  // Auto-refresh every 15s until fully paid
+  // Auto-refresh every 15s until fully paid. Depends on the agreement id and
+  // paid flag only — depending on the whole `agreement` object restarted the
+  // interval on every poll response.
+  const fullyPaid = agreement?.reconciliation_status === "FULL_PAYMENT"
   useEffect(() => {
-    if (!agreement || agreement.reconciliation_status === "FULL_PAYMENT") return
+    if (!agreement || fullyPaid) return
     const t = setInterval(fetchDetail, 15000)
     return () => clearInterval(t)
-  }, [agreement, fetchDetail])
+  }, [agreement, fullyPaid, fetchDetail])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)

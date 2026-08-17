@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { usePathname } from "next/navigation"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -345,7 +344,6 @@ function ViewingRequestCard({ request, updatingId, onApprove, onReject, onComple
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function LandlordViewingsPage() {
   const { user } = useAuth()
-  const pathname = usePathname()
   const [loading, setLoading] = useState(true)
   const [viewingRequests, setViewingRequests] = useState<any[]>([])
   const [updatingId, setUpdatingId] = useState<string | null>(null)
@@ -353,28 +351,53 @@ export default function LandlordViewingsPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [reviewingRequest, setReviewingRequest] = useState<any | null>(null)
 
-  useEffect(() => {
-    setLoading(true)
-    fetchViewingRequests()
-  }, [pathname])
+  // Live sync: poll every 15s and refetch the moment the tab/window regains
+  // focus, so changes made from the other side (e.g. a tenant accepting a
+  // proposed time) appear without a manual refresh.
+  const refreshSeq = useRef(0)
+  const hasLoadedRef = useRef(false)
 
-  const fetchViewingRequests = async () => {
+  const fetchViewingRequests = useCallback(async () => {
+    const seq = ++refreshSeq.current
+    if (!hasLoadedRef.current) setLoading(true)
     try {
-      setLoading(true)
       const data = await viewingRequestsAPI.getLandlord()
+      if (seq !== refreshSeq.current) return
       const list: any[] = Array.isArray(data)
         ? data
         : Array.isArray((data as any)?.viewing_requests)
         ? (data as any).viewing_requests
         : []
-      setViewingRequests(list)
+      // Skip the state update (and re-render) when nothing actually changed.
+      setViewingRequests(prev => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list))
     } catch (error: any) {
       console.error('Failed to fetch viewing requests:', error)
-      toast.error(error.message || 'Failed to load viewing requests')
+      // Background polls fail silently — only surface errors for a real load.
+      if (seq === refreshSeq.current && !hasLoadedRef.current) {
+        toast.error(error.message || 'Failed to load viewing requests')
+      }
     } finally {
-      setLoading(false)
+      if (seq === refreshSeq.current) {
+        hasLoadedRef.current = true
+        setLoading(false)
+      }
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchViewingRequests()
+    const interval = setInterval(() => fetchViewingRequests(), 15000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchViewingRequests()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [fetchViewingRequests])
 
   const handleUpdateStatus = async (
     requestId: string,

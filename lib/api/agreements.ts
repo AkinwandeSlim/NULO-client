@@ -50,6 +50,8 @@ export interface Agreement {
   lease_start_date: string   // YYYY-MM-DD
   lease_end_date: string     // YYYY-MM-DD
   lease_duration: number     // months
+  /** Payment frequency used for pricing (MONTHLY/QUARTERLY/SEMI_ANNUAL/ANNUAL). */
+  payment_frequency?: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL' | null
   tenant_signature_ip?: string | null
   landlord_signature_ip?: string | null
   tenant_signed_at?: string | null
@@ -66,6 +68,8 @@ export interface Agreement {
   disbursement_status?: 'pending' | 'released' | 'failed' | null
   disbursement_amount?: number | null
   disbursement_merchant_tx_ref?: string | null
+  /** PropFlow workflow thread id — present when the agreement was created via PropFlow. */
+  propflow_thread_id?: string | null
 }
 
 /** Agreement enriched with participant and property data — returned by all read endpoints */
@@ -95,8 +99,11 @@ export interface AgreementWithDetails extends Agreement {
     price: number
     images: string[] | null
   } | null
-  // AI integration fields
-  agreement_source?: "groq_llama" | "manual_template"
+  // Generation source tracking:
+  //  - "groq_llama"            legacy AI-generated terms (pre-fix agreements)
+  //  - "manual_template"       legacy manual template
+  //  - "deterministic_template" current deterministic legal template (no LLM)
+  agreement_source?: "groq_llama" | "manual_template" | "deterministic_template"
   generation_metadata?: {
     compliance_score?: number
     model_used?: string
@@ -104,6 +111,9 @@ export interface AgreementWithDetails extends Agreement {
     cost_usd?: number
     generated_at?: string
     template_version?: string
+    security_deposit_amount?: number
+    security_deposit_percent?: number | null
+    regenerated_at?: string
   }
 }
 
@@ -147,6 +157,16 @@ export interface PdfResponse {
   success: boolean
   document_url?: string
   message?: string
+  error?: string
+}
+
+export interface TenantBriefResponse {
+  success: boolean
+  /** Plain-English AI summary of the agreement's key clauses (Qwen-powered). */
+  brief?: string
+  /** True when the brief was served from the server-side cache. */
+  cached?: boolean
+  agreement_id?: string
   error?: string
 }
 
@@ -255,6 +275,35 @@ export const agreementsAPI = {
     const response = await apiClient.post<PdfResponse>(
       `/api/v1/agreements/${agreementId}/receipt`,
       {}
+    );
+    return response.data;
+  },
+
+  /**
+   * Get the plain-English AI brief of the agreement for the tenant.
+   * Qwen-powered clause summary shown BEFORE signing so the tenant
+   * understands what they are agreeing to. Tenant-only; cached server-side.
+   * GET /api/v1/agreements/{id}/tenant-brief
+   */
+  getTenantBrief: async (agreementId: string): Promise<TenantBriefResponse> => {
+    const response = await apiClient.get<TenantBriefResponse>(
+      `/api/v1/agreements/${agreementId}/tenant-brief`,
+      { timeout: 90000 } // LLM generation can be slow on first call
+    );
+    return response.data;
+  },
+
+  /**
+   * Regenerate the agreement terms using the CURRENT pricing model
+   * (property payment_frequency, waived deposit/fees).
+   * Only allowed while NEITHER party has signed.
+   * POST /api/v1/agreements/{id}/regenerate
+   */
+  regenerate: async (agreementId: string): Promise<AgreementResponse> => {
+    const response = await apiClient.post<AgreementResponse>(
+      `/api/v1/agreements/${agreementId}/regenerate`,
+      {},
+      { timeout: 120000 } // AI regeneration can be slow
     );
     return response.data;
   },

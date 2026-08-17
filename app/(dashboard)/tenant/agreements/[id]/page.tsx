@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTenantDashboard } from "@/contexts/DashboardContext"
@@ -12,14 +12,16 @@ import {
   ArrowLeft, FileText, MapPin, Calendar, Users,
   Loader2, AlertCircle, Phone, Mail, Shield,
   Clock, PenLine, Banknote, CheckCircle2,
-  FilePlus2, Download, Eye, Copy, Check, Sparkles
+  FilePlus2, Download, Eye, Copy, Check, Sparkles, RefreshCw
 } from "lucide-react"
 import Link from "next/link"
 import { agreementsAPI, type AgreementWithDetails } from "@/lib/api/agreements"
 import { paymentsAPI, type AgreementPaymentRow } from "@/lib/api/payments"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 import { formatNGN, calculateAgreementBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { AIBadge } from "@/components/ui/ai-badge"
+import { Markdown } from "@/components/ui/markdown"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -179,6 +181,17 @@ export default function TenantAgreementDetailPage() {
   const [copiedField, setCopiedField] = useState<string | null>(null)
   // Checkbox must be checked before signing — per handoff spec
   const [termsAccepted, setTermsAccepted] = useState(false)
+  // ── Explicit read-before-sign ─────────────────────────────────────────────
+  // The tenant must actually scroll through the full terms before the
+  // "I have read" checkbox becomes available. This prevents blind signing.
+  const [hasReadTerms, setHasReadTerms] = useState(false)
+  const termsScrollRef = useRef<HTMLDivElement | null>(null)
+  // ── AI tenant brief (Qwen plain-English summary) ──────────────────────────
+  const [tenantBrief, setTenantBrief] = useState<string | null>(null)
+  const [briefLoading, setBriefLoading] = useState(false)
+  const [briefError, setBriefError] = useState<string | null>(null)
+  // ── Regenerate terms (fix stale pricing from pre-payment-integration agreements) ──
+  const [isRegenerating, setIsRegenerating] = useState(false)
 
   // ── Check for existing payments ─────────────────────────────────────────────
   
@@ -236,10 +249,72 @@ export default function TenantAgreementDetailPage() {
     }
   }, [user, agreementId, fetchAgreement, checkExistingPayments, router])
 
+  // ── AI tenant brief (Qwen plain-English summary) ──────────────────────────
+  // Fetched once the agreement is loaded and it's the tenant's turn to sign.
+  // Server-side cached for 24h, so repeat visits are instant.
+  // briefAttemptedRef guards against an infinite retry loop on persistent
+  // errors — the effect only auto-fetches once per agreement; the "Try again"
+  // button is the only way to re-trigger after a failure.
+  const briefAttemptedRef = useRef(false)
+  const fetchTenantBrief = useCallback(async (force = false) => {
+    if (!agreementId) return
+    if (!force && (briefAttemptedRef.current || tenantBrief)) return
+    briefAttemptedRef.current = true
+    setBriefLoading(true)
+    setBriefError(null)
+    try {
+      const res = await agreementsAPI.getTenantBrief(agreementId)
+      if (res.success && res.brief) {
+        setTenantBrief(res.brief)
+      } else {
+        setBriefError("We couldn't generate the AI summary right now.")
+      }
+    } catch (error) {
+      console.error("[TenantAgreementDetail] tenant brief error:", error)
+      setBriefError("We couldn't generate the AI summary right now.")
+    } finally {
+      setBriefLoading(false)
+    }
+  }, [agreementId, tenantBrief])
+
+  useEffect(() => {
+    // Only fetch the brief when it's actually the tenant's turn to sign —
+    // no point summarising an agreement they've already signed.
+    if (agreement && !agreement.tenant_signed_at) {
+      fetchTenantBrief()
+    }
+  }, [agreement, fetchTenantBrief])
+
+  // ── Scroll-to-read tracking ───────────────────────────────────────────────
+  // The tenant must scroll through the full terms before the "I have read"
+  // checkbox unlocks. If the terms fit without scrolling, reading is
+  // considered done immediately.
+  const handleTermsScroll = useCallback(() => {
+    const el = termsScrollRef.current
+    if (!el || hasReadTerms) return
+    // Within 24px of the bottom counts as "read to the end".
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 24
+    if (atBottom) {
+      setHasReadTerms(true)
+    }
+  }, [hasReadTerms])
+
+  useEffect(() => {
+    // Short terms that don't overflow the container need no scrolling.
+    const el = termsScrollRef.current
+    if (el && agreement?.terms && !hasReadTerms) {
+      if (el.scrollHeight <= el.clientHeight + 24) {
+        setHasReadTerms(true)
+      }
+    }
+  }, [agreement?.terms, hasReadTerms])
+
   // ── Sign ───────────────────────────────────────────────────────────────────
 
   const handleSignAgreement = async () => {
-    if (!agreement || !termsAccepted) return
+    // Explicit read-before-sign: both the scroll-to-read gate AND the checkbox
+    // must be satisfied before a signature is accepted.
+    if (!agreement || !termsAccepted || !hasReadTerms) return
     setIsSigning(true)
     try {
       // FIX: IP fetch in its own try/catch — non-fatal if it fails
@@ -265,6 +340,31 @@ export default function TenantAgreementDetailPage() {
         // keeps showing the pre-sign counts (e.g. "0 agreements") until
         // the cache expires.
         invalidateTenantCache?.()
+
+        // ── PropFlow sync: reopen the widget with a completion message ──────
+        // The widget was closed when the tenant clicked "Review & Sign Agreement"
+        // (so it wouldn't overlap the signing card). Now that signing succeeded,
+        // reopen it with the next-step message. The backend has already advanced
+        // the workflow stage (sync_stage_after_tenant_sign / advance_after_sign),
+        // so the chat reflects the real state. Best-effort — never block the
+        // sign success on this.
+        try {
+          const signedAgreement = response.agreement as AgreementWithDetails
+          const workflowId = signedAgreement.propflow_thread_id
+          if (workflowId) {
+            const fullySigned = signedAgreement.status === "SIGNED"
+            window.dispatchEvent(new CustomEvent("propflow:open", {
+              detail: {
+                workflow_id: workflowId,
+                agreement_id: agreementId,
+                justSigned: true,
+                bothSigned: fullySigned,
+              },
+            }))
+          }
+        } catch (propflowErr) {
+          console.warn("[TenantAgreementDetail] PropFlow reopen dispatch failed (non-fatal):", propflowErr)
+        }
       } else {
         toast.error(response.error ?? "Failed to sign agreement")
       }
@@ -273,6 +373,36 @@ export default function TenantAgreementDetailPage() {
       toast.error("Failed to sign agreement. Please try again.")
     } finally {
       setIsSigning(false)
+    }
+  }
+
+  // ── Regenerate terms (fix stale pricing) ──────────────────────────────────
+  // Regenerates the agreement text using the CURRENT pricing model (property
+  // payment_frequency, waived deposit/fees). Only available while unsigned.
+  const handleRegenerate = async () => {
+    if (!agreement) return
+    setIsRegenerating(true)
+    try {
+      const response = await agreementsAPI.regenerate(agreementId)
+      if (response.success && response.agreement) {
+        toast.success("Agreement updated with current pricing.")
+        setAgreement(response.agreement)
+        // Reset the read-before-sign gate — the terms changed, so the tenant
+        // must re-read the new text before signing.
+        setHasReadTerms(false)
+        setTermsAccepted(false)
+        // Force a fresh brief fetch so it reflects the regenerated terms.
+        setTenantBrief(null)
+        briefAttemptedRef.current = false
+        fetchTenantBrief(true)
+      } else {
+        toast.error(response.error ?? "Failed to regenerate agreement")
+      }
+    } catch (error) {
+      console.error("[TenantAgreementDetail] regenerate error:", error)
+      toast.error("Failed to regenerate agreement. Please try again.")
+    } finally {
+      setIsRegenerating(false)
     }
   }
 
@@ -631,6 +761,44 @@ export default function TenantAgreementDetailPage() {
               </CardContent>
             </Card>
 
+            {/* AI Tenant Brief — plain-English summary (Qwen) shown before the
+                full terms so the tenant understands the key clauses first. */}
+            {canSign && (tenantBrief || briefLoading || briefError) && (
+              <Card className="border-indigo-200 bg-indigo-50/60 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base font-semibold text-indigo-900">
+                    <Sparkles className="h-4 w-4 text-indigo-500" />
+                    AI Agreement Brief
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {briefLoading && (
+                    <div className="flex items-center gap-2 text-sm text-indigo-600">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generating a plain-English summary of your agreement…
+                    </div>
+                  )}
+                  {briefError && !briefLoading && (
+                    <div className="flex items-start gap-2 text-sm text-indigo-700">
+                      <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      <span>
+                        {briefError} You can still read the full terms below and sign.
+                        <button
+                          onClick={() => fetchTenantBrief(true)}
+                          className="ml-1 underline font-medium hover:text-indigo-900"
+                        >
+                          Try again
+                        </button>
+                      </span>
+                    </div>
+                  )}
+                  {tenantBrief && !briefLoading && (
+                    <Markdown className="text-sm text-indigo-900">{tenantBrief}</Markdown>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Agreement Terms */}
             <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
               <CardHeader className="pb-3">
@@ -641,11 +809,30 @@ export default function TenantAgreementDetailPage() {
                 <AIBadge agreement={agreement} variant="badge" />
               </CardHeader>
               <CardContent>
-                <div className="bg-slate-50 rounded-xl border border-slate-100 p-5 max-h-96 overflow-y-auto">
-                  <pre className="whitespace-pre-wrap text-sm text-slate-700 font-sans leading-relaxed">
-                    {agreement.terms ?? "Agreement terms will appear here."}
-                  </pre>
+                <div
+                  ref={termsScrollRef}
+                  onScroll={handleTermsScroll}
+                  className="bg-slate-50 rounded-xl border border-slate-100 p-5 max-h-96 overflow-y-auto"
+                >
+                  {agreement.terms ? (
+                    <Markdown className="text-sm text-slate-700">{agreement.terms}</Markdown>
+                  ) : (
+                    <p className="text-sm text-slate-500">Agreement terms will appear here.</p>
+                  )}
                 </div>
+                {/* Read-progress hint — only while it's the tenant's turn to sign */}
+                {canSign && !hasReadTerms && (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-orange-600">
+                    <Eye className="h-3.5 w-3.5" />
+                    Scroll to the bottom of the terms to unlock signing.
+                  </p>
+                )}
+                {canSign && hasReadTerms && (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-green-600">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    You&apos;ve reviewed the full agreement.
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -718,25 +905,38 @@ export default function TenantAgreementDetailPage() {
                     Please read all terms carefully. You sign first — the landlord countersigns after you.
                   </p>
 
-                  <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200">
+                  <div className={cn(
+                    "flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200",
+                    !hasReadTerms && "opacity-60"
+                  )}>
                     <Checkbox
                       id="terms-accept"
                       checked={termsAccepted}
+                      disabled={!hasReadTerms}
                       onCheckedChange={(checked) => setTermsAccepted(Boolean(checked))}
                       className="mt-0.5 border-orange-400 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
                     />
                     <label
                       htmlFor="terms-accept"
-                      className="text-xs text-slate-700 cursor-pointer leading-relaxed"
+                      className={cn(
+                        "text-xs text-slate-700 leading-relaxed",
+                        hasReadTerms ? "cursor-pointer" : "cursor-not-allowed"
+                      )}
                     >
                       I have read and agree to all terms and conditions in this rental agreement
                     </label>
                   </div>
+                  {!hasReadTerms && (
+                    <p className="text-xs text-orange-600 flex items-center gap-1.5">
+                      <Eye className="h-3.5 w-3.5" />
+                      Read the full agreement above to enable signing.
+                    </p>
+                  )}
 
                   <Button
                     onClick={handleSignAgreement}
-                    disabled={isSigning || !termsAccepted}
-                    className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:from-slate-200 disabled:to-slate-300 text-white font-semibold shadow-sm transition-all duration-300"
+                    disabled={isSigning || !termsAccepted || !hasReadTerms}
+                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold shadow-sm transition-all duration-300"
                   >
                     {isSigning ? (
                       <>
@@ -750,6 +950,32 @@ export default function TenantAgreementDetailPage() {
                       </>
                     )}
                   </Button>
+
+                  {/* Regenerate terms — fixes stale pricing from agreements
+                      generated before the payment-integration pricing model.
+                      Only shown while unsigned (server also enforces this). */}
+                  <Button
+                    variant="outline"
+                    onClick={handleRegenerate}
+                    disabled={isRegenerating || isSigning}
+                    className="w-full border-orange-300 text-orange-700 hover:bg-orange-50 text-xs"
+                  >
+                    {isRegenerating ? (
+                      <>
+                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                        Updating agreement…
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                        Refresh Pricing Terms
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-[11px] text-slate-400 text-center">
+                    If the rent or deposit figures look wrong, use this to regenerate the
+                    agreement with the current pricing.
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -1087,7 +1313,7 @@ export default function TenantAgreementDetailPage() {
             {(effectiveStatus === "SIGNED" || effectiveStatus === "ACTIVE") && (
               <Card className="border-orange-200 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold text-slate-700">Agreement Document</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-slate-700">Signed Agreement Document</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {/* Check if URL is real (Supabase CDN + correct bucket) vs old/broken URL.

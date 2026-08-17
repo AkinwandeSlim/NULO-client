@@ -98,3 +98,11 @@ __dev__/
 node_modules/
 .next/
 out/
+
+# ============================================================================
+# PLAYWRIGHT E2E TEST ARTIFACTS
+# ============================================================================
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

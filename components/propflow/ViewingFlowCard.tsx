@@ -350,26 +350,29 @@ export function ViewingConfirmationCard({ property, date, timeSlot, viewingType,
         <p className="text-sm font-semibold text-emerald-900">Request received</p>
       </div>
       <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
-        The landlord will review your preferred time. We'll notify you here and by email when they respond.
+        The landlord will review your preferred time. Track their response in <span className="font-semibold">My Viewings</span> — we'll also notify you by email when they confirm or propose a new time.
       </p>
       <div className="mt-2.5 rounded-xl border border-emerald-100 bg-white p-2.5 space-y-1 text-xs">
         <div className="flex justify-between gap-3"><span className="text-slate-500">Property</span><span className="font-medium text-slate-700 text-right">{property.title}</span></div>
         <div className="flex justify-between gap-3"><span className="text-slate-500">Requested</span><span className="font-medium text-slate-700 text-right">{formatDate(date)} · {TIME_SLOT_LABEL[timeSlot] || timeSlot}</span></div>
         <div className="flex justify-between gap-3"><span className="text-slate-500">Type</span><span className="font-medium text-slate-700 text-right">{VIEWING_TYPE_LABEL[viewingType] || viewingType}</span></div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      {/* Primary CTA — the dashboard is where the next action happens */}
+      <div className="mt-3">
         <Link href="/tenant/viewings"
-          className="text-sm font-medium rounded-lg py-2 text-center bg-blue-500 hover:bg-blue-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-          View my viewings
+          className="block w-full text-sm font-semibold rounded-xl py-2.5 text-center bg-blue-500 hover:bg-blue-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+          Go to My Viewings
         </Link>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
         <button type="button" onClick={onApplyNow}
           className="text-sm font-medium rounded-lg py-2 border border-emerald-300 text-emerald-700 hover:bg-emerald-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">
           Apply now instead
         </button>
-      </div>
-      <div className="mt-2 flex justify-center">
         <button type="button" onClick={onContinueBrowsing}
-          className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">Continue browsing</button>
+          className="text-sm font-medium rounded-lg py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
+          Continue browsing
+        </button>
       </div>
       </div>
     </div>
@@ -423,16 +426,18 @@ export function ViewingStatusCard({ property, request, onContinueBrowsing, onApp
     "Appointment missed"
 
   const footerTwo: React.ReactNode = (
-    <div className="mt-3 grid grid-cols-2 gap-2">
-      <Link href="/tenant/viewings"
-        className="text-sm font-medium rounded-lg py-2 text-center bg-blue-500 hover:bg-blue-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-        View my viewings
-      </Link>
-      <button type="button" onClick={onContinueBrowsing}
-        className="text-sm font-medium rounded-lg py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
-        Continue browsing
-      </button>
-    </div>
+    <>
+      <div className="mt-3">
+        <Link href="/tenant/viewings"
+          className="block w-full text-sm font-semibold rounded-xl py-2.5 text-center bg-blue-500 hover:bg-blue-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+          Go to My Viewings
+        </Link>
+      </div>
+      <div className="mt-2 flex justify-center">
+        <button type="button" onClick={onContinueBrowsing}
+          className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">Continue browsing</button>
+      </div>
+    </>
   )
 
   return (
@@ -539,14 +544,20 @@ export function ViewingStatusCard({ property, request, onContinueBrowsing, onApp
                       )}
                     </div>
                   )}
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="mt-3">
                     <Link href="/tenant/viewings"
-                      className="text-sm font-medium rounded-lg py-2 text-center bg-blue-500 hover:bg-blue-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-2 focus-visible:ring-blue-300">
-                      View my viewings
+                      className="block w-full text-sm font-semibold rounded-xl py-2.5 text-center bg-blue-500 hover:bg-blue-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                      Go to My Viewings
                     </Link>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
                     <button type="button" onClick={onApplyNow}
                       className="text-sm font-medium rounded-lg py-2 border border-orange-200 text-orange-700 hover:bg-orange-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300">
                       Start application
+                    </button>
+                    <button type="button" onClick={onContinueBrowsing}
+                      className="text-sm font-medium rounded-lg py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
+                      Keep searching
                     </button>
                   </div>
                 </>

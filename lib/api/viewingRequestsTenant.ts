@@ -78,7 +78,10 @@ export const viewingRequestsAPI = {
    */
   create: async (data: ViewingRequestData) => {
     try {
-      const response = await apiClient.post('/api/v1/viewing-requests', data)
+      // Trailing slash is required — the backend route is mounted at
+      // "/viewing-requests/" and a bare "/viewing-requests" triggers a 307
+      // redirect (an extra round-trip on every call).
+      const response = await apiClient.post('/api/v1/viewing-requests/', data)
       return {
         success: true,
         data: response.data
@@ -108,7 +111,8 @@ export const viewingRequestsAPI = {
   getMyRequests: async (statusFilter?: string) => {
     try {
       const params = statusFilter ? { status_filter: statusFilter } : {}
-      const response = await apiClient.get('/api/v1/viewing-requests', { params })
+      // Trailing slash required — avoids a 307 redirect on every poll tick.
+      const response = await apiClient.get('/api/v1/viewing-requests/', { params })
       return {
         success: true,
         data: response.data

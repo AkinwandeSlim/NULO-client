@@ -66,7 +66,7 @@ interface DashboardContextType {
   invalidateLandlordCache: () => void
   
   // Tenant Methods
-  fetchTenantDashboard: (forceRefresh?: boolean) => Promise<void>
+  fetchTenantDashboard: (forceRefresh?: boolean, options?: { silent?: boolean }) => Promise<void>
   invalidateTenantCache: () => void
   
   // Configuration
@@ -254,19 +254,34 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
 
   // Track in-flight request to prevent duplicates
   const landlordRequestRef = useRef<Promise<any> | null>(null)
+  // True iff the most recent completed fetch actually hit the network (vs.
+  // served a cache hit). Lets a queued forceRefresh know whether it still
+  // needs to fetch after waiting on the in-flight request.
+  const landlordLastFetchHitNetworkRef = useRef(false)
   // Stable ref for loading-state checks — avoids putting landlordData in useCallback deps
   const landlordDataRef = useRef(landlordData)
   landlordDataRef.current = landlordData
 
   const fetchLandlordDashboard = useCallback(
     async (forceRefresh = false) => {
-      // 🔥 CRITICAL: Prevent duplicate concurrent requests
-      if (landlordRequestRef.current && !forceRefresh) {
+      // 🔥 CRITICAL: Prevent duplicate concurrent requests.
+      // If a fetch is already in flight, EVERY caller (force or not) waits on
+      // it. Previously a forceRefresh call bypassed this guard and started a
+      // second concurrent fetch while the mount-load was still pending — both
+      // resolved and set state twice, and the second could overwrite the
+      // first's ref mid-flight. The single in-flight promise is the source of
+      // truth; a forceRefresh that lands on a completed cache-hit falls through
+      // to do a real fetch, while one landing on a completed network fetch
+      // already has fresh data and returns.
+      if (landlordRequestRef.current) {
         console.log('🚫 [LANDLORD DASHBOARD] Request already in progress, waiting for existing request...')
         try {
           await landlordRequestRef.current
           console.log('✅ [LANDLORD DASHBOARD] Existing request completed, using that data')
-          return
+          // forceRefresh only needs to proceed if the completed fetch served a
+          // cache hit (no network call). If it actually hit the API, the data
+          // is already fresh — return and avoid a duplicate network fetch.
+          if (!forceRefresh || landlordLastFetchHitNetworkRef.current) return
         } catch (error) {
           console.log('⚠️ [LANDLORD DASHBOARD] Existing request failed, will retry')
           landlordRequestRef.current = null
@@ -285,12 +300,14 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
             if (cachedLandlordData) {
               console.log('✅ [CACHE] HIT: landlord:dashboard')
               setLandlordData(cachedLandlordData)
+              landlordLastFetchHitNetworkRef.current = false
               return
             }
           }
 
           // Fetch from API if not in cache
           console.log('🔄 [LANDLORD DASHBOARD] Fetching fresh data...')
+          landlordLastFetchHitNetworkRef.current = true
           
           // Only show loading state if we don't have data yet
           if (!landlordDataRef.current) {
@@ -354,7 +371,11 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
   tenantDataRef.current = tenantData
 
   const fetchTenantDashboard = useCallback(
-    async (forceRefresh = false) => {
+    async (forceRefresh = false, options?: { silent?: boolean }) => {
+      // Silent mode = background polling (no spinner, no toasts). Used by the
+      // tenant dashboard's live-refresh poller so it never interrupts the user.
+      const silent = options?.silent === true
+
       // ✅ CHECK: Only fetch if user is authenticated and is tenant
       if (!user || user?.user_type !== 'tenant') {
         console.log('🚫 [TENANT DASHBOARD] Skipping tenant dashboard - user not authenticated or not tenant')
@@ -380,10 +401,12 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
       const fetchPromise = (async () => {
         try {
           // Only show loading state if we don't have data yet (not on refreshes)
-          if (!tenantDataRef.current) {
-            setTenantLoading(true)
-          } else if (forceRefresh) {
-            setTenantRefreshing(true)
+          if (!silent) {
+            if (!tenantDataRef.current) {
+              setTenantLoading(true)
+            } else if (forceRefresh) {
+              setTenantRefreshing(true)
+            }
           }
 
           console.log('📊 [TENANT DASHBOARD] Fetching dashboard data...')
@@ -411,7 +434,7 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
 
           console.log('✅ [TENANT DASHBOARD] Dashboard data retrieved successfully')
 
-          if (forceRefresh) {
+          if (forceRefresh && !silent) {
             toast.success('Dashboard refreshed')
           }
         } catch (error: any) {
@@ -421,10 +444,12 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
           // Just log it and continue with cached data
           if (!tenantDataRef.current) {
             // Only show error if we have no data at all
-            if (error.message?.includes('timeout')) {
-              toast.error('Dashboard is loading slowly. Please try refreshing.')
-            } else {
-              toast.error(error.message || 'Failed to load dashboard data')
+            if (!silent) {
+              if (error.message?.includes('timeout')) {
+                toast.error('Dashboard is loading slowly. Please try refreshing.')
+              } else {
+                toast.error(error.message || 'Failed to load dashboard data')
+              }
             }
           } else {
             // We have cached data, just show a subtle info message
@@ -432,8 +457,10 @@ export function DashboardProvider({ children, cacheConfig }: DashboardProviderPr
           }
           throw error
         } finally {
-          setTenantLoading(false)
-          setTenantRefreshing(false)
+          if (!silent) {
+            setTenantLoading(false)
+            setTenantRefreshing(false)
+          }
           tenantRequestRef.current = null
         }
       })()

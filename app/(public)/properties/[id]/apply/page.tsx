@@ -17,6 +17,7 @@ import { createClient } from "@/utils/supabase/client"
 import Link from "next/link"
 import { applicationsAPI, CreateApplicationData } from "@/lib/api/applications"
 import apiClient, { getErrorMessage } from "@/lib/api/client"
+import { useTenantDashboard } from "@/contexts/DashboardContext"
 import { formatNGN, calculateRentalBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { MarketplaceHeader } from "@/components/navigation/MarketplaceHeader"
 
@@ -96,6 +97,7 @@ export default function ApplicationPage() {
   const searchParams = useSearchParams()
   const { user, userProfile, loading } = useAuth()
   const { theme } = useTheme()
+  const { invalidateTenantCache } = useTenantDashboard()
 
   const propertyId = params?.id as string
   // Optional: tenant can arrive here with ?viewing_id=xxx if they applied after a scheduled viewing
@@ -495,6 +497,13 @@ export default function ApplicationPage() {
       }
 
       await applicationsAPI.create(applicationData)
+
+      // ✅ FIX: Invalidate the tenant dashboard cache so the dashboard
+      // reflects the new pending application immediately after redirect.
+      // Without this, the dashboard reads its 5-minute in-memory cache
+      // (populated before the application existed) and shows stale counts
+      // until a manual page refresh.
+      invalidateTenantCache?.()
 
       // Enrich tenant profile with personal info for future prefill (fire-and-forget, non-blocking).
       // Uses apiClient so it reaches the backend directly (localhost:8000) and the
