@@ -40,6 +40,7 @@ import { formatNGN, calculateRentalBreakdown, getPaymentFrequencyMultiplier } fr
 import { toast } from "sonner"
 import { normalizeAppStatus } from "@/lib/utils/applicationStatus"
 import { propflowStatus, propflowResume } from "@/lib/api/propflow"
+import { Markdown } from "@/components/ui/markdown"
 
 const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'
 const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed='
@@ -893,9 +894,7 @@ export default function LandlordApplicationDetailPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-4">
-                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                    {propflowData.briefing}
-                  </p>
+                  <Markdown className="text-slate-700">{propflowData.briefing}</Markdown>
                 </CardContent>
               </Card>
             )}

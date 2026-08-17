@@ -1044,9 +1044,7 @@ export default function LandlordAgreementDetailPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-4">
-                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                    {propflowBriefing}
-                  </p>
+                  <Markdown className="text-slate-700">{propflowBriefing}</Markdown>
                 </CardContent>
               </Card>
             )}
