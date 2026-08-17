@@ -106,3 +106,6 @@ out/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Local E2E credentials (demo accounts) — never commit
+.env.e2e

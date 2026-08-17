@@ -1,4 +1,26 @@
 import { defineConfig, devices } from '@playwright/test'
+import { readFileSync, existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+/**
+ * Load client/.env.e2e (gitignored) into process.env so the e2e specs can
+ * read demo-account credentials without hardcoding them in the repo.
+ * Real env vars always win over file values.
+ */
+function loadE2eEnv() {
+  const file = resolve(__dirname, '.env.e2e')
+  if (!existsSync(file)) return
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq === -1) continue
+    const key = trimmed.slice(0, eq).trim()
+    const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '')
+    if (!(key in process.env)) process.env[key] = value
+  }
+}
+loadE2eEnv()
 
 /**
  * Playwright config for Nulo Africa client E2E tests.

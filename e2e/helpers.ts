@@ -3,17 +3,29 @@ import { expect, type Page, type TestInfo } from '@playwright/test'
 /**
  * Shared E2E helpers for Nulo Africa Playwright tests.
  *
- * Credentials come from env vars with documented demo-account fallbacks so
- * the suite runs out of the box. Google OAuth is never exercised — all
- * authentication uses the email/password form on /signin.
+ * Credentials come from env vars (set them in client/.env.e2e, which is
+ * gitignored — see .env.e2e.example). Google OAuth is never exercised —
+ * all authentication uses the email/password form on /signin.
  */
 
 // ─── Credentials ─────────────────────────────────────────────────────────────
 
-export const TENANT_EMAIL = process.env.E2E_TENANT_EMAIL ?? 'mediaslim0705@gmail.com'
-export const TENANT_PASSWORD = process.env.E2E_TENANT_PASSWORD ?? 'nombahackathon2026'
-export const LANDLORD_EMAIL = process.env.E2E_LANDLORD_EMAIL ?? 'raphawellnessoptimization@gmail.com'
-export const LANDLORD_PASSWORD = process.env.E2E_LANDLORD_PASSWORD ?? 'nombahackathon2026'
+function requireEnv(name: string): string {
+  const value = process.env[name]
+  if (!value) {
+    throw new Error(
+      `Missing ${name}. Copy .env.e2e.example to .env.e2e, fill in the demo ` +
+        `account credentials, then re-run (Playwright loads .env.e2e via ` +
+        `playwright.config.ts).`
+    )
+  }
+  return value
+}
+
+export const TENANT_EMAIL = requireEnv('E2E_TENANT_EMAIL')
+export const TENANT_PASSWORD = requireEnv('E2E_TENANT_PASSWORD')
+export const LANDLORD_EMAIL = requireEnv('E2E_LANDLORD_EMAIL')
+export const LANDLORD_PASSWORD = requireEnv('E2E_LANDLORD_PASSWORD')
 
 // ─── Screenshot helper ───────────────────────────────────────────────────────
 

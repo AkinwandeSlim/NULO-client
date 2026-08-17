@@ -16,14 +16,26 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test'
  *   $env:SLOWMO=600; pnpm test:e2e:headed -- e2e/auth.spec.ts
  *
  * Credentials come from env vars (E2E_TENANT_EMAIL / E2E_TENANT_PASSWORD /
- * E2E_LANDLORD_EMAIL / E2E_LANDLORD_PASSWORD), falling back to the
- * documented demo accounts so the test runs out of the box.
+ * E2E_LANDLORD_EMAIL / E2E_LANDLORD_PASSWORD). Copy .env.e2e.example to
+ * .env.e2e (gitignored) and fill in the demo accounts — playwright.config.ts
+ * loads it automatically.
  */
 
-const TENANT_EMAIL = process.env.E2E_TENANT_EMAIL ?? 'mediaslim0705@gmail.com'
-const TENANT_PASSWORD = process.env.E2E_TENANT_PASSWORD ?? 'nombahackathon2026'
-const LANDLORD_EMAIL = process.env.E2E_LANDLORD_EMAIL ?? 'raphawellnessoptimization@gmail.com'
-const LANDLORD_PASSWORD = process.env.E2E_LANDLORD_PASSWORD ?? 'nombahackathon2026'
+function requireEnv(name: string): string {
+  const value = process.env[name]
+  if (!value) {
+    throw new Error(
+      `Missing ${name}. Copy .env.e2e.example to .env.e2e and fill in the ` +
+        `demo account credentials.`
+    )
+  }
+  return value
+}
+
+const TENANT_EMAIL = requireEnv('E2E_TENANT_EMAIL')
+const TENANT_PASSWORD = requireEnv('E2E_TENANT_PASSWORD')
+const LANDLORD_EMAIL = requireEnv('E2E_LANDLORD_EMAIL')
+const LANDLORD_PASSWORD = requireEnv('E2E_LANDLORD_PASSWORD')
 
 /**
  * Same screenshot helper as guest.spec.ts: attach to the HTML report AND
