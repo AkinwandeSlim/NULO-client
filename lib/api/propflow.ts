@@ -103,6 +103,41 @@ export interface SimulatePaymentResponse {
   error?: string | null
 }
 
+// ─── Thread listing (GET /api/v1/propflow/threads) ───────────────────────────
+
+export interface PropflowThreadInfo {
+  thread_id: string
+  tenant_id: string
+  tenant_name?: string | null
+  landlord_id?: string | null
+  property_title?: string | null
+  current_stage: string
+  status: string
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface ThreadListResponse {
+  success: boolean
+  threads: PropflowThreadInfo[]
+  total: number
+  error_message?: string
+}
+
+/**
+ * List the current user's PropFlow threads (tenants see their own; landlords
+ * see threads for their properties). Used by the chat widget to auto-attach
+ * to the tenant's active workflow so live stage changes (e.g. landlord
+ * approval) are picked up without the tenant reopening the chat.
+ */
+export async function propflowListThreads(status?: string): Promise<ThreadListResponse> {
+  const { data } = await apiClient.get<ThreadListResponse>(
+    '/api/v1/propflow/threads',
+    { params: status ? { status } : undefined },
+  )
+  return data
+}
+
 export interface CompleteApplicationPayload {
   documents: string[];                       // storage paths (≥2: identity + income)
   references: Record<string, { name: string; phone: string; relationship?: string }>;

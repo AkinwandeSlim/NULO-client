@@ -248,7 +248,8 @@ export const agreementsAPI = {
   sign: async (agreementId: string, data: AgreementSignData = {}): Promise<AgreementResponse> => {
     const response = await apiClient.patch<AgreementResponse>(
       `/api/v1/agreements/${agreementId}/sign`,
-      data
+      data,
+      { timeout: 60000 } // Signing involves DB writes + enrichment; allow 60s headroom
     );
     return response.data;
   },

@@ -24,6 +24,7 @@ import {
 } from "@/lib/api/payments"
 import { toast } from "sonner"
 import { formatNGN, calculateAgreementBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
+import { formatBriefingMarkdown } from "@/lib/utils/format"
 import { AIBadge } from "@/components/ui/ai-badge"
 import { Markdown } from "@/components/ui/markdown"
 import { cn } from "@/lib/utils"
@@ -1044,7 +1045,7 @@ export default function LandlordAgreementDetailPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-4">
-                  <Markdown className="text-slate-700">{propflowBriefing}</Markdown>
+                  <Markdown className="text-slate-700">{formatBriefingMarkdown(propflowBriefing)}</Markdown>
                 </CardContent>
               </Card>
             )}

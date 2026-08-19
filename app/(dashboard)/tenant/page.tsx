@@ -53,6 +53,39 @@ import {
 const DEFAULT_PROPERTY_IMAGE =
   "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop"
 
+/**
+ * Merge a fresh payment-poll response over the last known-good rows.
+ *
+ * The backend /api/v1/agreements/ endpoint degrades gracefully when one of
+ * its batch enrichment queries hits a transient Supabase/Cloudflare error:
+ * the row still comes back, but display fields (property title, landlord
+ * name, NUBAN, ...) can arrive as null. Replacing state with that degraded
+ * payload made the payment card flicker (titles blinking blank). This merge
+ * keeps the last known-good value for any field the fresh response lost,
+ * while always trusting fresh NON-null values (status, amounts, etc.).
+ */
+function mergePaymentRows(current: any[], incoming: any[]): any[] {
+  const currentByAgreementId = new Map(
+    (current || []).map((p: any) => [p?.agreement_id, p])
+  )
+  return (incoming || []).map((p: any) => {
+    const prev = currentByAgreementId.get(p?.agreement_id)
+    if (!prev) return p
+    const merged: any = { ...prev, ...p }
+    for (const key of Object.keys(p || {})) {
+      const incomingVal = p[key]
+      const prevVal = (prev as any)[key]
+      const incomingEmpty = incomingVal === null || incomingVal === undefined || incomingVal === ""
+      const prevHasValue =
+        prevVal !== null && prevVal !== undefined && prevVal !== ""
+      if (incomingEmpty && prevHasValue) {
+        merged[key] = prevVal
+      }
+    }
+    return merged
+  })
+}
+
 function SkeletonRows({ count = 3 }: { count?: number }) {
   return (
     <div className="space-y-3">
@@ -263,8 +296,10 @@ export default function TenantDashboard() {
         // Use console.warn to avoid alarming red errors in console
         // The payment banner is not critical, so we silently fail
         console.warn('⚠️ Payments fetch failed (non-critical):', error?.response?.status || error?.message || 'Unknown error')
-        // Don't show error to user - payment banner is not critical
-        setRecentPayments([]) // Set empty array to prevent banner from showing
+        // NOTE: do NOT wipe recentPayments here. A single flaky Supabase /
+        // Cloudflare response used to empty the payment card until the next
+        // successful 30s poll — that was the card disappearing/appearing.
+        // Keep whatever rows are already in state; the poller will recover.
       } finally {
         setPaymentsLoading(false)
       }
@@ -296,13 +331,29 @@ export default function TenantDashboard() {
         if (response.success && response.payments) {
           // Reset failure counter on success
           consecutiveFailures = 0
-          // Check if we have new payments (compare with current state)
-          const currentPaymentIds = new Set(recentPaymentsRef.current.map(p => p.id))
-          const newPayments = response.payments.filter((p: any) => !currentPaymentIds.has(p.id))
+          // Detect REAL payment-state changes. Rows are keyed by agreement_id.
+          // A simulated/confirmed payment changes reconciliation_status and
+          // total_received_amount. NOTE: disbursement_status is deliberately
+          // excluded — the backend batch-enrichment query degrades to null on
+          // transient Supabase/Cloudflare errors, and including it used to
+          // fire "change detected" on every flaky response, causing the card
+          // to flicker and forcing needless dashboard refreshes.
+          const buildPaymentSignature = (payments: any[]) =>
+            payments
+              .map((p: any) => `${p.agreement_id}|${p.status}|${p.reconciliation_status}|${Number(p.total_received_amount ?? 0)}`)
+              .sort()
+              .join(',')
 
-          if (newPayments.length > 0) {
-            console.log('[TENANT] New payment detected via polling - updating banner')
-            setRecentPayments(response.payments)
+          const currentSignature = buildPaymentSignature(recentPaymentsRef.current)
+          const nextSignature = buildPaymentSignature(response.payments)
+
+          if (currentSignature !== nextSignature) {
+            console.log('[TENANT] Payment change detected via polling - updating banner')
+            // Merge new rows over the previous ones: a degraded response can
+            // lose enriched display fields (property title, names, ...) even
+            // though the payment state itself is fine. Keep the last known
+            // good values so the UI does not flicker blank titles.
+            setRecentPayments(mergePaymentRows(recentPaymentsRef.current, response.payments))
 
             // Refresh the dashboard (throttled to 1/min) so agreements and
             // stats reflect the new payment without waiting for the 5-min

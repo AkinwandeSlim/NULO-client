@@ -249,6 +249,45 @@ export default function TenantAgreementDetailPage() {
     }
   }, [user, agreementId, fetchAgreement, checkExistingPayments, router])
 
+  // ── Auto-poll for landlord countersign + NUBAN provisioning ────────────────
+  // The tenant page fetches once on mount. Without polling, the tenant has to
+  // manually refresh to see that the landlord has countersigned (or that the
+  // NUBAN has been provisioned in the background). This effect silently
+  // re-fetches the agreement every 5s while:
+  //   1. Waiting for the landlord to countersign (PENDING_LANDLORD), OR
+  //   2. Both signed but NUBAN not yet provisioned (SIGNED + no VA number)
+  // Polling stops automatically once the landlord signs AND the NUBAN appears.
+  const pollAgreement = useCallback(async () => {
+    if (!agreementId) return
+    try {
+      const response = await agreementsAPI.getById(agreementId)
+      if (response.success && response.agreement) {
+        setAgreement(response.agreement)
+      }
+    } catch (error) {
+      // Silent — don't toast on poll failures, just log
+      console.warn("[TenantAgreementDetail] poll error:", error)
+    }
+  }, [agreementId])
+
+  useEffect(() => {
+    if (!agreement) return
+
+    const status = getEffectiveStatus(agreement)
+    const waitingForLandlord = status === "PENDING_LANDLORD"
+    const waitingForNuban =
+      (status === "SIGNED" || status === "ACTIVE") &&
+      !agreement.virtual_account_number
+
+    if (!waitingForLandlord && !waitingForNuban) return
+
+    const interval = setInterval(() => {
+      pollAgreement()
+    }, 5000) // Poll every 5 seconds
+
+    return () => clearInterval(interval)
+  }, [agreement, pollAgreement])
+
   // ── AI tenant brief (Qwen plain-English summary) ──────────────────────────
   // Fetched once the agreement is loaded and it's the tenant's turn to sign.
   // Server-side cached for 24h, so repeat visits are instant.

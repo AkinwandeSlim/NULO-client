@@ -24,6 +24,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import {
   propflowChat, propflowGuestChat, propflowSelect, propflowResume,
   propflowSimulatePayment, propflowStatus, propflowCompleteApplication,
+  propflowListThreads,
   type ChatResponse, type PropertyMatch,
   type CompleteApplicationPayload, type ExtractedIntent,
 } from "@/lib/api/propflow"
@@ -55,7 +56,7 @@ interface Message {
   viewingConfirmation?: { property: ViewingProperty; index?: number; date: string; timeSlot: string; viewingType: string }
   viewingStatus?: { property: ViewingProperty; index?: number; request: ViewingRequest | null }
 }
-type ActionType = "select_property" | "sign_lease" | "review_agreement" | "simulate_payment" | "confirm_payment" | "restart" | "view_tenancy"
+type ActionType = "select_property" | "sign_lease" | "review_agreement" | "simulate_payment" | "confirm_payment" | "restart" | "view_tenancy" | "payment_ack"
 /** Viewing actions the chat can route to without calling the search graph. */
 type ChatIntent = "view" | "apply" | "status" | "accept_reschedule" | "decline_reschedule" | null
 interface PropFlowChatProps { defaultOpen?: boolean; className?: string }
@@ -250,7 +251,7 @@ function buildStageAction(
   agreementId?: string | null,
   paymentAccount?: { number: string; amount: number } | null,
 ): {
-  actionType: ActionType; actionLabel: string; text: string;
+  actionType?: ActionType; actionLabel?: string; text: string;
   agreementId?: string; paymentAccount?: { number: string; amount: number };
 } | null {
   switch (stage) {
@@ -273,13 +274,18 @@ function buildStageAction(
     // awaiting_full_payment intentionally omitted — confirm_payment is
     // landlord-only and handled via the propflow:open confirmPayment event.
     case "payment_confirmed":
+      // Acknowledgment only — deliberately NO action button here. The tenancy
+      // is not active until the landlord reviews and releases the funds; "View
+      // My Tenancy" only appears at disbursement_complete. `payment_ack` is a
+      // non-rendering sentinel actionType: it gives the poller a stable dedup
+      // key (a bare undefined actionType would match every plain message) and
+      // lets the disbursement upgrade flip this card's chip in place, but it
+      // renders no button (no actionLabel, and no renderer branch for it).
       return {
-        actionType: "view_tenancy",
-        actionLabel: "View My Tenancy",
+        actionType: "payment_ack",
         text: paymentAccount
           ? `✅ Payment of ₦${paymentAccount.amount.toLocaleString("en-NG")} received and verified! The landlord has been notified and is reviewing your payment. Once they confirm and release the funds, your tenancy will be fully active. I'll update you here the moment it happens.`
           : "✅ Your payment has been received and verified! The landlord has been notified and is reviewing your payment. Once they confirm and release the funds, your tenancy will be fully active. I'll update you here the moment it happens.",
-        agreementId: agreementId || undefined,
       }
     case "disbursement_complete":
       return {
@@ -303,18 +309,14 @@ function paymentAccountFrom(s: {
     : null
 }
 
-/** Stages where the tenant is waiting on the landlord — the chat should keep
- *  polling so the next card appears live without the tenant doing anything. */
-const POLLABLE_STAGES = new Set([
-  "awaiting_landlord_approval",
-  "application_created",
-  "intent_extracted",
-  "agreement_drafted",          // waiting to see landlord countersign / payment provision
-  "awaiting_landlord_signature",
-  "nomba_provisioned",          // NUBAN may not be ready yet — keep polling until it appears
-  "payment_confirmed",          // waiting for landlord to review + release funds
-  "awaiting_full_payment",      // waiting for landlord to confirm payment
-  "idle",
+/** Terminal stages — the workflow is finished (or dead), nothing left to
+ *  poll. Everything else keeps polling: an allowlist of "waiting" stages let
+ *  a stale localStorage stage (e.g. awaiting_trust_profile persisted mid-flow)
+ *  permanently disable the poller, blinding the tenant to live changes. */
+const STAGES_NOT_POLLED = new Set([
+  "rejected",
+  "disbursement_complete",
+  "expired",
 ])
 
 function StatusChip({ stage, error, onRetry, showIdle = false }: {
@@ -819,6 +821,43 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
   }, [user?.id, messages.length])
 
   
+  // ── Auto-attach to the tenant's active workflow ───────────────────────────
+  // Autonomous PropFlow: the pollers below only run when threadId is set, but
+  // threadId comes from localStorage — a tenant who applied via chat on
+  // another device, cleared storage, or whose saved chat state was wiped has
+  // no threadId, so the chat never notices when the landlord approves and the
+  // "Continue in PropFlow" banner click becomes the only way in. When a
+  // signed-in tenant has NO thread saved, look up their most recent active
+  // workflow and attach to it. The panel stays closed on attach — the stage
+  // poller opens it if the stage advances to something the tenant must act on.
+  const autoAttachAttemptedRef = useRef(false)
+  useEffect(() => {
+    if (isLandlord || !user?.id || threadId || autoAttachAttemptedRef.current) return
+    // Skip while a guest search is about to be replayed after login — the
+    // replay starts a fresh thread that would replace any attachment anyway.
+    try {
+      if (localStorage.getItem(GUEST_PENDING_KEY)) return
+    } catch { /* ignore */ }
+    autoAttachAttemptedRef.current = true
+
+    let cancelled = false
+    propflowListThreads().then(res => {
+      if (cancelled || !res.success || !res.threads?.length) return
+      const terminal = new Set(["rejected", "disbursement_complete", "expired"])
+      const active = res.threads
+        .filter(t => t.status === "active" && t.current_stage && !terminal.has(t.current_stage))
+        .sort((a, b) =>
+          new Date(b.updated_at ?? b.created_at ?? 0).getTime() -
+          new Date(a.updated_at ?? a.created_at ?? 0).getTime()
+        )
+      const mostRecent = active[0]
+      if (!mostRecent) return
+      setThreadId(mostRecent.thread_id)
+      setCurrentStage(mostRecent.current_stage)
+    }).catch(() => { /* best-effort — the banner path still works */ })
+    return () => { cancelled = true }
+  }, [user?.id, isLandlord, threadId])
+
   // ── Status check on mount ────────────────────────────────────────────────
   // Handles the full flow: sign → payment → confirm → complete.
   //
@@ -844,7 +883,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     // The functional updater in setMessages prevents duplicates.
     const localConfig = buildStageAction(currentStage)
     if (localConfig) {
-      if (localConfig.actionType === "review_agreement" || localConfig.actionType === "simulate_payment" || localConfig.actionType === "view_tenancy") {
+      if (localConfig.actionType === "review_agreement" || localConfig.actionType === "simulate_payment" || localConfig.actionType === "view_tenancy" || localConfig.actionType === "payment_ack") {
         // The agreement card needs the agreement_id, the payment card needs
         // the NUBAN + amount, and the tenancy card needs the amount for the
         // acknowledgment message — fetch status once, then show the card with data.
@@ -941,7 +980,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
 
     const tick = async () => {
       if (inFlight || document.hidden) return
-      if (!POLLABLE_STAGES.has(currentStageRef.current)) return
+      if (STAGES_NOT_POLLED.has(currentStageRef.current)) return
       inFlight = true
       try {
         const s = await propflowStatus(threadId)
@@ -962,12 +1001,33 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         setCurrentStage(s.current_stage)
         if (!config) return
 
+        // ── Autonomous surfacing ──────────────────────────────────────────
+        // The stage genuinely advanced AND the new stage needs tenant action —
+        // the landlord approved / countersigned / released funds while this
+        // tenant browsed. Open the panel so the next step is presented
+        // immediately, without the tenant having to notice the dashboard
+        // banner and click "Continue in PropFlow". Fires once per transition,
+        // so closing the panel afterwards never re-triggers it.
+        setIsOpen(true)
+
         setMessages(p => {
-          const existing = p.find(m => m.actionType === config.actionType)
+          // When the landlord releases the funds, flip the earlier payment
+          // acknowledgment to the final state in place — otherwise its chip
+          // keeps showing the payment-waiting label ("Payment pending" /
+          // "Payment received") even though the tenancy is now active.
+          const upgraded = s.current_stage === "disbursement_complete"
+            ? p.map(m => m.actionType === "payment_ack"
+              // Flip the earlier payment acknowledgment's chip to the final
+              // "Tenancy active" state in place (keep its ack text) so it no
+              // longer reads as payment-waiting once the landlord releases.
+              ? { ...m, stage: "disbursement_complete" }
+              : m)
+            : p
+          const existing = upgraded.find(m => m.actionType === config.actionType)
           // Skip if the same card already exists — unless we're upgrading a
           // NUBAN-less payment card with freshly fetched account details.
-          if (existing && !(config.actionType === "simulate_payment" && config.paymentAccount && !existing.paymentAccount)) return p
-          const withoutStale = p.filter(m => m.actionType !== config.actionType)
+          if (existing && !(config.actionType === "simulate_payment" && config.paymentAccount && !existing.paymentAccount)) return upgraded
+          const withoutStale = upgraded.filter(m => m.actionType !== config.actionType)
           return [...withoutStale, {
             id: crypto.randomUUID(), role: "agent" as const, timestamp: new Date(),
             text: config.text, stage: s.current_stage,
@@ -1890,8 +1950,18 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
           // Remove the stale NUBAN card — payment is done, no need to show the
           // account details + "Mark Payment Complete" button anymore.
           setMessages(prev => prev.filter(m => !m.paymentAccount))
-          addMessage({ role: "agent", text: p.message || "Payment recorded!", stage: "awaiting_full_payment" })
-          setCurrentStage("awaiting_full_payment")
+          // The backend's sync_after_payment flips the graph straight to
+          // payment_confirmed (FULL_PAYMENT), so mirror that here — tagging
+          // this message with the old awaiting_full_payment stage rendered a
+          // stale "Payment pending" chip that survived all the way past the
+          // landlord's release. The acknowledgment carries no action button:
+          // "View My Tenancy" only appears once the landlord releases the
+          // funds (disbursement_complete).
+          const ackText = p.amount != null
+            ? `✅ Payment of ₦${p.amount.toLocaleString("en-NG")} received and verified! The landlord has been notified and is reviewing your payment. Once they confirm and release the funds, your tenancy will be fully active. I'll update you here the moment it happens.`
+            : (p.message || "Payment recorded!")
+          addMessage({ role: "agent", text: ackText, stage: "payment_confirmed", actionType: "payment_ack" })
+          setCurrentStage("payment_confirmed")
         } else throw new Error(p.error || "Simulation failed")
       } else if (type === "confirm_payment") {
         addMessage({ role: "system", text: "Confirming..." })

@@ -39,6 +39,7 @@ import { propertiesAPI } from "@/lib/api/properties"
 import { formatNGN, calculateRentalBreakdown, getPaymentFrequencyMultiplier } from "@/lib/utils/rentalCalculations"
 import { toast } from "sonner"
 import { normalizeAppStatus } from "@/lib/utils/applicationStatus"
+import { formatBriefingMarkdown } from "@/lib/utils/format"
 import { propflowStatus, propflowResume } from "@/lib/api/propflow"
 import { Markdown } from "@/components/ui/markdown"
 
@@ -894,7 +895,7 @@ export default function LandlordApplicationDetailPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-4">
-                  <Markdown className="text-slate-700">{propflowData.briefing}</Markdown>
+                  <Markdown className="text-slate-700">{formatBriefingMarkdown(propflowData.briefing)}</Markdown>
                 </CardContent>
               </Card>
             )}

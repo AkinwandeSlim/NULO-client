@@ -229,6 +229,47 @@ export function getVerificationStatusColor(status: string): string {
 }
 
 /**
+ * Normalize a PropFlow landlord briefing into clean Markdown so the
+ * <Markdown> component renders it as: header paragraph → "What we know:"
+ * label → real bullet list → closing "Not provided" line.
+ *
+ * Why this exists: briefings stored in the DB before the server-side fix
+ * were joined with single newlines, and Markdown collapses those into
+ * spaces — the header merged into the label and the bullets became one big
+ * paragraph. This inserts blank lines between blocks so BOTH old and new
+ * briefings render in the intended structure. Idempotent: already
+ * blank-line-separated text passes through unchanged.
+ */
+export function formatBriefingMarkdown(briefing: string): string {
+  if (!briefing) return ''
+
+  const lines = briefing.split(/\r?\n/).map((l) => l.trim())
+
+  const blocks: string[] = []
+  let bullets: string[] = []
+
+  const flushBullets = () => {
+    if (bullets.length) {
+      blocks.push(bullets.join('\n'))
+      bullets = []
+    }
+  }
+
+  for (const line of lines) {
+    if (!line) continue // blank line = block separator
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      bullets.push(`- ${line.slice(2).trim()}`)
+    } else {
+      flushBullets()
+      blocks.push(line)
+    }
+  }
+  flushBullets()
+
+  return blocks.join('\n\n')
+}
+
+/**
  * Debounce function
  */
 export function debounce<T extends (...args: any[]) => any>(

@@ -208,7 +208,7 @@ export const paymentsAPI = {
    */
   async getMyPayments(): Promise<PaymentsListResponse> {
     const { data } = await apiClient.get('/api/v1/agreements/', {
-      timeout: 15000 // 15 seconds - fail fast for better UX
+      timeout: 60000 // 60 seconds - slow endpoint (6 sequential Supabase queries)
     })
     const agreements = data.agreements ?? data.payments ?? []
     // Normalize enriched agreement rows into the flattened AgreementPaymentRow
