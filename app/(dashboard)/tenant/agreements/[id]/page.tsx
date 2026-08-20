@@ -192,6 +192,12 @@ export default function TenantAgreementDetailPage() {
   const [briefError, setBriefError] = useState<string | null>(null)
   // ── Regenerate terms (fix stale pricing from pre-payment-integration agreements) ──
   const [isRegenerating, setIsRegenerating] = useState(false)
+  // ── Indicator for a non-fatal (transient) load failure ─────────────────────
+  // Distinguishes "couldn't reach the server right now" (show inline Retry, do
+  // NOT kick the tenant off the signing page) from a definitive 404/403 (which
+  // still redirects away). Prevents one transient Supabase blip from ejecting
+  // the tenant mid-signing.
+  const [loadError, setLoadError] = useState(false)
 
   // ── Check for existing payments ─────────────────────────────────────────────
   
@@ -222,6 +228,7 @@ export default function TenantAgreementDetailPage() {
   const fetchAgreement = useCallback(async () => {
     try {
       setIsLoading(true)
+      setLoadError(false)
       // FIX: getById() returns { success, agreement } — not the agreement directly.
       // Backend already enriches with tenant, landlord, property — no extra fetches needed.
       const response = await agreementsAPI.getById(agreementId)
@@ -229,13 +236,26 @@ export default function TenantAgreementDetailPage() {
       if (response.success && response.agreement) {
         setAgreement(response.agreement)
       } else {
+        // Definitive backend response (e.g. 404 not found / 403 forbidden) —
+        // the agreement genuinely isn't available, so redirect away.
         toast.error(response.error ?? "Failed to load agreement")
         router.push("/tenant/agreements")
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("[TenantAgreementDetail] fetch error:", error)
-      toast.error("Failed to load agreement")
-      router.push("/tenant/agreements")
+      // Distinguish a transient failure (network error, timeout, or 5xx) from a
+      // definitive one (404/403). We do NOT want one transient Supabase blip to
+      // eject the tenant from the signing page — the poll effect below will
+      // retry automatically. We only hard-redirect on a real 404/403.
+      const status = error?.response?.status
+      if (status === 404 || status === 403) {
+        toast.error("Agreement not found or you don't have access")
+        router.push("/tenant/agreements")
+      } else {
+        // Transient / network / 5xx — stay on-page, show inline Retry state.
+        // The auto-poll effect will also re-fetch once the server recovers.
+        setLoadError(true)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -248,6 +268,17 @@ export default function TenantAgreementDetailPage() {
       checkExistingPayments()
     }
   }, [user, agreementId, fetchAgreement, checkExistingPayments, router])
+
+  // ── Auto-retry on transient initial-load failure ───────────────────────────
+  // If the FIRST fetch timed out or hit a transient 5xx (won't be redirected —
+  // those only happen on 404/403), keep silently re-fetching on an interval so
+  // the tenant is dropped straight back into the signing page as soon as the
+  // server recovers, instead of seeing a dead end. Stops once loaded.
+  useEffect(() => {
+    if (!agreementId || agreement || !loadError) return
+    const retry = setInterval(() => fetchAgreement(), 5000)
+    return () => clearInterval(retry)
+  }, [agreementId, agreement, loadError, fetchAgreement])
 
   // ── Auto-poll for landlord countersign + NUBAN provisioning ────────────────
   // The tenant page fetches once on mount. Without polling, the tenant has to
@@ -557,6 +588,34 @@ export default function TenantAgreementDetailPage() {
             <div className="w-20 h-20 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
             <h3 className="text-xl font-semibold text-slate-900 mb-2">Loading Agreement</h3>
             <p className="text-slate-600">Fetching agreement details...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!agreement && loadError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-50 p-6">
+        <div className="max-w-7xl mx-auto text-center py-20">
+          <AlertCircle className="w-14 h-14 text-orange-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-slate-900 mb-2">Couldn&apos;t load this agreement</h3>
+          <p className="text-slate-500 mb-6">
+            There was a temporary problem reaching the server. We&apos;re retrying
+            automatically — or tap below to try again now.
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <Button
+              onClick={() => fetchAgreement()}
+              className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-6"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Retry
+            </Button>
+            <Link href="/tenant/agreements">
+              <Button variant="ghost" className="text-slate-600">
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back to Agreements
+              </Button>
+            </Link>
           </div>
         </div>
       </div>

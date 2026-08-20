@@ -254,7 +254,14 @@ export const applicationsAPI = {
    * Approve application (landlord only)
    */
   approve: async (id: string): Promise<{application: Application; agreement?: any}> => {
-    const response = await apiClient.patch<{success: boolean; application: Application; agreement?: any; message: string}>(`/api/v1/applications/${id}/approve`);
+    // The PropFlow approve path awaits the full graph run (agreement creation +
+    // best-effort OSS upload), which can take ~50s — well past the client's
+    // 30s default timeout. Give it a matching long timeout so the client (and
+    // the redirect-to-agreement path in the landlord page) doesn't give up
+    // before the backend finishes (audit gap G4).
+    const response = await apiClient.patch<{success: boolean; application: Application; agreement?: any; message: string}>(`/api/v1/applications/${id}/approve`, undefined, {
+      timeout: 120000,
+    });
     return {
       application: response.data.application,
       agreement: response.data.agreement
