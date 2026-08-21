@@ -17,7 +17,7 @@ import { useRouter } from "next/navigation"
 import {
   AlertCircle, Bot, Building2, CheckCircle2, ChevronDown, ChevronRight, Eye,
   FileText, Loader2, Lock, MapPin, MessageCircle, RotateCcw, Send, ShieldCheck,
-  ThumbsUp, X,
+  ThumbsUp, Video, X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
@@ -165,6 +165,14 @@ function PropertyCard({ property, index, onSelect }: {
             View Details
           </Link>
         </div>
+        {property.virtual_tour_url && (
+          <Link
+            href={`/properties/${property.id}/virtual-tour?from=propflow`}
+            className="mt-2 text-xs font-medium border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg py-1.5 inline-flex w-full items-center justify-center gap-1"
+          >
+            <Video className="h-3 w-3" /> Start self-guided virtual tour
+          </Link>
+        )}
       </div>
     </div>
   )
@@ -746,8 +754,11 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
 
     if (/\bapply now\b|'i am ready to apply'|'am ready to apply'|ready to apply|'want to apply for'|'want to apply now'|'let's apply'|'continue my application'|'start application'|'apply for that property'|i am ready to apply|am ready to apply|want to apply for|want to apply now|let['\u2019]s apply|continue my application|start application|apply for that property|i want to apply|i('d| would) like to apply/.test(t)) return "apply"
 
-    // Strong scheduling verbs — safe to act on even before a property is picked.
-    if (/(book|schedule|arrange|request).{0,20}(viewing|inspection|tour)|(viewing|inspection|tour).{0,20}(book|schedule|arrange)|inspect (the |this )?propert|virtual tour|live tour|schedule an inspection/.test(t)) return "view"
+    // Strong appointment verbs — safe to act on even before a property is picked.
+    // A virtual tour is self-guided, not an appointment: its explicit card/link
+    // opens the tour directly, while a free-text search for one stays with the
+    // normal search conversation until a property is in focus.
+    if (/(book|schedule|arrange|request).{0,20}(viewing|inspection|tour)|(viewing|inspection|tour).{0,20}(book|schedule|arrange)|inspect (the |this )?propert|live tour|schedule an inspection/.test(t)) return "view"
 
     // Referential viewing ("view it", "view first") — only with a property in focus.
     if ((ctx || (hasCards && inSelection)) && /\bview (it|this|the property)\b|view first|viewing first|want to (view|see) (it|this)|can i (view|see|inspect) (it|this)/.test(t)) return "view"

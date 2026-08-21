@@ -136,14 +136,13 @@ export function ViewingDecisionCard({ property, onScheduleViewing, onApplyNow, o
     <div className="rounded-2xl border border-indigo-200 bg-white shadow-sm overflow-hidden">
       <StepHeader
         step="Next step"
-        title="What would you like to do?"
+        title="Choose your next step"
         tone="indigo"
         icon={<Sparkles className="h-4 w-4" />}
       />
       <div className="px-3 pb-3">
         <p className="text-sm text-slate-700 leading-relaxed pt-3">
-          <span className="font-semibold text-slate-800">{property.title}</span> — would you like to{" "}
-          <span className="font-semibold text-slate-800">schedule a viewing</span> first, or are you ready to apply?
+          <span className="font-semibold text-slate-800">{property.title}</span> is ready to explore. A virtual tour is self-guided; after it, you can apply or book a physical viewing to confirm the property in person.
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
@@ -152,7 +151,7 @@ export function ViewingDecisionCard({ property, onScheduleViewing, onApplyNow, o
             className="text-sm font-medium rounded-xl py-2 inline-flex items-center justify-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
           >
             <CalendarCheck2 className="h-4 w-4" />
-            Schedule a viewing
+            Book physical viewing
           </button>
           <button
             type="button"
@@ -162,6 +161,14 @@ export function ViewingDecisionCard({ property, onScheduleViewing, onApplyNow, o
             Apply now
           </button>
         </div>
+        {property.virtual_tour_url && (
+          <Link
+            href={`/properties/${property.id}/virtual-tour?from=propflow`}
+            className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+          >
+            <Video className="h-4 w-4" /> Start self-guided virtual tour
+          </Link>
+        )}
         <div className="mt-2.5 flex items-center justify-center gap-3 text-xs">
           <button type="button" onClick={onContinueBrowsing}
             className="text-slate-500 hover:text-slate-700 underline underline-offset-2">Continue browsing</button>
@@ -223,11 +230,9 @@ export function ViewingScheduleCard({ property, defaultName, defaultPhone, submi
   const [contact, setContact] = useState(defaultPhone || "")
   const [message, setMessage] = useState("")
 
-  const supportsVirtual = !!property.virtual_tour_url
   const supportsLive = !!property.video_tour_url
   const typeOptions: { value: ViewingType; label: string; disabled?: boolean }[] = [
     { value: "PHYSICAL", label: "Physical" },
-    { value: "VIRTUAL", label: "Virtual tour", disabled: !supportsVirtual },
     { value: "LIVE_VIDEO", label: "Live video", disabled: !supportsLive },
   ]
   const effectiveType = typeOptions.find(o => o.value === viewingType && !o.disabled)?.value ?? "PHYSICAL"
@@ -266,18 +271,26 @@ export function ViewingScheduleCard({ property, defaultName, defaultPhone, submi
   return (
     <form onSubmit={handleSubmit} className="rounded-2xl border border-blue-200 bg-white shadow-sm overflow-hidden">
       <StepHeader
-        step="Schedule a viewing"
+        step="Book an appointment"
         title={property.title}
         tone="blue"
         icon={<CalendarCheck2 className="h-4 w-4" />}
       />
       <div className="px-3 pt-3">
-        <p className="text-[11px] text-slate-500">Pick a time that works for you — the landlord will confirm.</p>
+        <p className="text-[11px] text-slate-500">Choose a physical or live viewing time — the landlord will confirm.</p>
       </div>
       <PropertyRow property={property} />
       <div className="px-3 pb-3 space-y-2.5">
+        {property.virtual_tour_url && (
+          <Link
+            href={`/properties/${property.id}/virtual-tour?from=propflow`}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+          >
+            <Video className="h-4 w-4" /> Prefer to explore online first? Start the virtual tour
+          </Link>
+        )}
         <div>
-          <span className={labelCls}>Viewing type</span>
+          <span className={labelCls}>Appointment type</span>
           <Segmented options={typeOptions} value={effectiveType} onChange={setViewingType} />
         </div>
         <div>

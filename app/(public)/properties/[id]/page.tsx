@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter, useParams } from "next/navigation"
+import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSignupCallbackUrl } from "@/hooks/useSignupCallbackUrl"
 import { PublicHeader } from "@/components/navigation/PublicHeader"
@@ -101,9 +101,21 @@ export default function PropertyDetailPage() {
 
   const router     = useRouter()
   const params     = useParams()
+  const searchParams = useSearchParams()
   const { user, loading: authLoading } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const propertyId = (params?.id as string) || ""
+
+  // The shared virtual-tour page returns here with this explicit instruction.
+  // It opens the existing physical-viewing modal only; no viewing request is
+  // created until the tenant submits the form themselves.
+  useEffect(() => {
+    if (searchParams?.get("action") !== "schedule-viewing" || !propertyData) return
+    if (user) {
+      setViewingType("PHYSICAL")
+      setShowViewingModal(true)
+    }
+  }, [propertyData, searchParams, user])
 
   useSignupCallbackUrl()
 
@@ -265,6 +277,12 @@ export default function PropertyDetailPage() {
     if (!propertyData.video_tour_url) { toast.info("Virtual tour not available."); return }
     setHasViewedVideo(true)
     toast.success("Virtual tour started!")
+  }
+
+  // A configured 360° preview is a self-guided Nulo page, not a scheduled
+  // VIRTUAL viewing request. Existing virtual/live appointment flows remain.
+  const openDemoVirtualTour = () => {
+    router.push(`/properties/${propertyId}/virtual-tour`)
   }
 
   // SRCH-08 / VIEW-02: Virtual Viewing is a premium feature planned for
@@ -984,21 +1002,26 @@ export default function PropertyDetailPage() {
                           Physical
                         </button>
 
-                        {/* Virtual — premium feature, show "Coming Soon" toast (SRCH-08) */}
+                        {/* A configured demo tour opens the branded self-guided experience. */}
                         <button
                           onClick={() => {
-                            if (hasExistingViewing) return
-                            if (propertyData.video_tour_url) {
+                            if (propertyData.virtual_tour_url) {
+                              openDemoVirtualTour()
+                            } else if (hasExistingViewing) {
+                              return
+                            } else if (propertyData.video_tour_url) {
                               setViewingType("VIRTUAL")
                             } else {
                               handleVirtualComingSoon()
                             }
                           }}
-                          disabled={hasExistingViewing}
-                          title={hasExistingViewing ? undefined : "360° virtual inspection - coming soon"}
+                          disabled={hasExistingViewing && !propertyData.virtual_tour_url}
+                          title={propertyData.virtual_tour_url ? "Open demo virtual tour" : hasExistingViewing ? undefined : "360° virtual inspection - coming soon"}
                           className={`flex-1 flex flex-col items-center justify-center gap-0 h-9 text-[11px] font-bold rounded-lg transition-all ${
-                            hasExistingViewing
+                            hasExistingViewing && !propertyData.virtual_tour_url
                               ? theme === "dark" ? "text-white/20 cursor-not-allowed" : "text-slate-300 cursor-not-allowed"
+                              : propertyData.virtual_tour_url
+                                ? theme === "dark" ? "bg-blue-500/15 text-blue-300 hover:bg-blue-500/25" : "bg-blue-50 text-blue-700 hover:bg-blue-100"
                               : propertyData.video_tour_url
                                 ? viewingType === "VIRTUAL"
                                   ? `bg-white ${theme === "dark" ? "text-blue-500 shadow-md" : "text-blue-600 shadow-sm"}`
@@ -1007,14 +1030,16 @@ export default function PropertyDetailPage() {
                           }`}
                         >
                           <div className="flex items-center gap-1">
-                            {propertyData.video_tour_url ? (
+                            {propertyData.virtual_tour_url || propertyData.video_tour_url ? (
                               <Video className="h-3.5 w-3.5 flex-shrink-0" />
                             ) : (
                               <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
                             )}
                             Virtual
                           </div>
-                          {!propertyData.video_tour_url && !hasExistingViewing && (
+                          {propertyData.virtual_tour_url ? (
+                            <span className="text-[9px] font-normal leading-none -mt-0.5">Demo preview</span>
+                          ) : !propertyData.video_tour_url && !hasExistingViewing && (
                             <span className="text-[9px] font-normal leading-none -mt-0.5">(Soon)</span>
                           )}
                         </button>
@@ -1223,20 +1248,25 @@ export default function PropertyDetailPage() {
             <Calendar className="h-3 w-3" /> Physical
           </button>
 
-          {/* Virtual — premium feature, show "Coming Soon" toast (SRCH-08) */}
+          {/* A configured demo tour opens the branded self-guided experience. */}
           <button
             onClick={() => {
-              if (hasExistingViewing) return
-              if (propertyData.video_tour_url) {
+              if (propertyData.virtual_tour_url) {
+                openDemoVirtualTour()
+              } else if (hasExistingViewing) {
+                return
+              } else if (propertyData.video_tour_url) {
                 setViewingType("VIRTUAL")
               } else {
                 handleVirtualComingSoon()
               }
             }}
-            disabled={hasExistingViewing}
+            disabled={hasExistingViewing && !propertyData.virtual_tour_url}
             className={`flex-1 flex items-center justify-center gap-1 h-7 text-[11px] font-bold rounded-md transition-all ${
-              hasExistingViewing
+              hasExistingViewing && !propertyData.virtual_tour_url
                 ? theme === "dark" ? "text-white/20 cursor-not-allowed" : "text-slate-300 cursor-not-allowed"
+                : propertyData.virtual_tour_url
+                  ? theme === "dark" ? "bg-blue-500/15 text-blue-300" : "bg-blue-50 text-blue-700"
                 : propertyData.video_tour_url
                   ? viewingType === "VIRTUAL"
                     ? theme === "dark" ? "bg-zinc-700 text-blue-500 shadow-sm" : "bg-white text-blue-600 shadow-sm"
@@ -1244,9 +1274,11 @@ export default function PropertyDetailPage() {
                   : theme === "dark" ? "text-amber-400 hover:text-amber-300" : "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
             }`}
           >
-            {propertyData.video_tour_url ? <Video className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+            {propertyData.virtual_tour_url || propertyData.video_tour_url ? <Video className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
             Virtual
-            {!propertyData.video_tour_url && !hasExistingViewing && (
+            {propertyData.virtual_tour_url ? (
+              <span className="text-[9px] font-normal">Demo preview</span>
+            ) : !propertyData.video_tour_url && !hasExistingViewing && (
               <span className="text-[9px] font-normal">(Soon)</span>
             )}
           </button>
