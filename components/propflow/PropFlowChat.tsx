@@ -41,7 +41,7 @@ import {
 type MessageRole = "user" | "agent" | "system"
 interface Message {
   id: string; role: MessageRole; text: string; timestamp: Date
-  propertyMatches?: PropertyMatch[]; paymentAccount?: { number: string; amount: number }
+  propertyMatches?: PropertyMatch[]; propertyMatchesActive?: boolean; paymentAccount?: { number: string; amount: number }
   /** Search criteria that produced `propertyMatches` — powers "View all results on map". */
   searchIntent?: ExtractedIntent
   stage?: string; actionLabel?: string; actionType?: ActionType
@@ -100,6 +100,15 @@ type ViewingHandlers = {
 
 const AGENT_NAME = "PropFlow"
 
+function paymentPeriodLabel(paymentFrequency?: string): string {
+  switch (paymentFrequency?.toUpperCase()) {
+    case "ANNUAL": return "yr"
+    case "SEMI_ANNUAL": return "6 mo"
+    case "QUARTERLY": return "quarter"
+    default: return "mo"
+  }
+}
+
 /** Build a /properties deep-link from the search criteria that produced a set
  *  of PropFlow matches, so "View all results on map" opens the marketplace with
  *  the same filters already applied (list + map). Only the params the
@@ -115,8 +124,8 @@ function buildPropertiesUrl(intent?: ExtractedIntent | null): string {
 
 // --- Sub-components ---------------------------------------------------------
 
-function PropertyCard({ property, index, onSelect }: {
-  property: PropertyMatch; index: number; onSelect: (index: number) => void
+function PropertyCard({ property, index, onSelect, selectionDisabled = false }: {
+  property: PropertyMatch; index: number; onSelect: (index: number) => void; selectionDisabled?: boolean
 }) {
   const images = property.images || []
   const type = property.property_type
@@ -151,13 +160,13 @@ function PropertyCard({ property, index, onSelect }: {
           <span className="truncate">{property.location}</span>
         </div>
         <div className="flex items-center justify-between mt-2">
-          <span className="text-orange-600 font-bold text-sm">NGN {property.price.toLocaleString()}/mo</span>
+          <span className="text-orange-600 font-bold text-sm">NGN {property.price.toLocaleString()}/{paymentPeriodLabel(property.payment_frequency)}</span>
           {metaBits && <span className="text-xs text-slate-400 truncate">{metaBits}</span>}
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <button onClick={() => onSelect(index)}
-            className="text-xs font-medium bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-1.5">
-            Select This Property
+          <button onClick={() => onSelect(index)} disabled={selectionDisabled}
+            className="text-xs font-medium bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-1.5 disabled:cursor-not-allowed disabled:bg-slate-300">
+            {selectionDisabled ? "Previous result" : "Select This Property"}
           </button>
           <Link href={`/properties/${property.id}`}
             className="text-xs font-medium border border-orange-200 text-orange-600 hover:bg-orange-50 rounded-lg py-1.5 inline-flex items-center justify-center gap-1">
@@ -168,9 +177,9 @@ function PropertyCard({ property, index, onSelect }: {
         {property.virtual_tour_url && (
           <Link
             href={`/properties/${property.id}/virtual-tour?from=propflow`}
-            className="mt-2 text-xs font-medium border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg py-1.5 inline-flex w-full items-center justify-center gap-1"
+            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800 hover:underline"
           >
-            <Video className="h-3 w-3" /> Start self-guided virtual tour
+            <Video className="h-3 w-3" /> Virtual tour available — explore online
           </Link>
         )}
       </div>
@@ -379,7 +388,7 @@ function TrustPassportBanner({ property, onContinue }: {
             {property.title}{property.location ? ` · ${property.location}` : ""}
           </p>
           <p className="text-xs font-semibold text-orange-600 mt-0.5">
-            NGN {property.price.toLocaleString()}/mo
+            NGN {property.price.toLocaleString()}/{paymentPeriodLabel(property.payment_frequency)}
           </p>
         </div>
         <ShieldCheck className="h-5 w-5 text-orange-500 flex-shrink-0" />
@@ -409,6 +418,7 @@ function ChatBubble({ msg, onSelectProperty, onAction, onOpenTrust, onViewing, v
   const isUser = msg.role === "user"
   const isSystem = msg.role === "system"
   const hasCards = !isUser && !isSystem && !!(msg.propertyMatches && msg.propertyMatches.length > 0)
+  const cardsAreCurrent = msg.propertyMatchesActive !== false
   // Guest sign-in card renders full-width instead of a text bubble.
   if (msg.signIn) return <GuestSignInCard />
   // Trust Passport renders full-width as a compact "continue" banner — the form
@@ -465,7 +475,7 @@ function ChatBubble({ msg, onSelectProperty, onAction, onOpenTrust, onViewing, v
   // ── Viewing status: lifecycle-aware (pending / reschedule / confirmed / …) ─
   if (msg.viewingStatus && onViewing) {
     const st = msg.viewingStatus
-    return (
+    const card = (
       <ViewingStatusCard
         property={st.property}
         request={st.request}
@@ -476,6 +486,23 @@ function ChatBubble({ msg, onSelectProperty, onAction, onOpenTrust, onViewing, v
         onDeclineReschedule={() => st.request && onViewing.onReschedule(st.request.id, "decline", st.property, st.index)}
       />
     )
+    // Transition announcements carry their text plus the live status card in
+    // ONE message unit — the bubble promises "the card below", so the card
+    // must render directly beneath the text, never float above it.
+    if (msg.text) {
+      return (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center"><Bot className="h-4 w-4 text-orange-600" /></div>
+            <div className="max-w-[85%] rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap bg-white text-slate-800 shadow-sm border border-slate-100">
+              {msg.text}
+            </div>
+          </div>
+          {card}
+        </div>
+      )
+    }
+    return card
   }
 
   return (
@@ -557,14 +584,14 @@ function ChatBubble({ msg, onSelectProperty, onAction, onOpenTrust, onViewing, v
       {/* Property cards — full panel width so the listing isn't squeezed */}
       {hasCards && (
         <div className="grid grid-cols-1 gap-2">
-          {msg.propertyMatches!.map((p, i) => <PropertyCard key={p.id} property={p} index={i} onSelect={(idx) => onSelectProperty?.(idx)} />)}
+          {msg.propertyMatches!.map((p, i) => <PropertyCard key={p.id} property={p} index={i} onSelect={(idx) => onSelectProperty?.(idx)} selectionDisabled={!cardsAreCurrent} />)}
           {/* Deep-link to the marketplace with the same search applied (list + map). */}
           <Link
             href={buildPropertiesUrl(msg.searchIntent)}
             className="text-xs font-medium border border-orange-200 text-orange-600 hover:bg-orange-50 rounded-lg py-2 inline-flex items-center justify-center gap-1.5"
           >
             <MapPin className="h-3.5 w-3.5" />
-            View all results on map
+            {msg.propertyMatches!.length === 1 ? "View this result on map" : "View all results on map"}
           </Link>
         </div>
       )}
@@ -729,11 +756,15 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
   // Keywords: "list", "show", "prices", "which ones", "filter", "sort", "cheaper", "more expensive"
   // Returns true if we should re-present existing cards instead of sending to the graph.
   const detectBrowsingIntent = useCallback((text: string): boolean => {
+    // Only reuse cards while those exact cards are the active selection set.
+    // After a no-match/clarification response, cached cards may be from a
+    // previous area and must never replace a fresh property search.
+    if (currentStage !== "awaiting_tenant_selection") return false
     if (propertyMatchesRef.current.length === 0) return false
     const t = text.toLowerCase()
     // Match browsing intent phrases — the user wants to inspect or filter what they already saw
     return /\b(list|show|prices|which ones|filter|sort|cheaper|more expensive|under \d+|over \d+|have \d+ bed)\b/.test(t)
-  }, [])
+  }, [currentStage])
 
   // Lightweight conversational intent detection for viewing actions. Deliberately
   // conservative: a phrase like "I want to view a 2-bed in Lekki" must NOT be
@@ -1108,13 +1139,15 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         // the render phase — after this synchronous block — so collecting
         // transitions inside the updater would leave the announcement loop
         // below with an empty list (and StrictMode double-invokes updaters).
-        const transitions: { from: string; to: string; request: ViewingRequest }[] = []
+        // Each transition keeps its source card's property/index so the
+        // announcement can render a fresh status card of its own.
+        const transitions: { from: string; to: string; request: ViewingRequest; property: ViewingProperty; index?: number }[] = []
         for (const m of messagesRef.current) {
-          const req = m.viewingStatus?.request
-          if (req) {
-            const fresh = byId.get(req.id)
-            if (fresh && fresh.status !== req.status) {
-              transitions.push({ from: req.status, to: fresh.status, request: fresh })
+          const st = m.viewingStatus
+          if (st?.request) {
+            const fresh = byId.get(st.request.id)
+            if (fresh && fresh.status !== st.request.status) {
+              transitions.push({ from: st.request.status, to: fresh.status, request: fresh, property: st.property, index: st.index })
             }
             continue
           }
@@ -1125,21 +1158,52 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
             // card is due for a swap to the live status card.
             const fresh = byProperty.get(conf.property.id)
             if (fresh && fresh.status !== "pending") {
-              transitions.push({ from: "pending", to: fresh.status, request: fresh })
+              transitions.push({ from: "pending", to: fresh.status, request: fresh, property: conf.property, index: conf.index })
             }
           }
         }
 
-        // Update cards in place (match by request.id). Pure updater — no side
-        // effects, never appends duplicate cards.
-        setMessages(prev => prev.map(m => {
+        // Plan the announcements first. A transition that gets an announcement
+        // renders its own live status card directly UNDER the message (so the
+        // promised "the card below" always exists and is actionable), and the
+        // superseded card higher up is removed instead of updated in place —
+        // otherwise the tenant sees the same card twice with nothing new after
+        // the announcement.
+        const handled = handledTransitionsRef.current
+        const now = Date.now()
+        for (const [id, expires] of handled) {
+          if (expires <= now) handled.delete(id)
+        }
+        const announcements = new Map<string, {
+          text: string; request: ViewingRequest; property: ViewingProperty; index?: number
+        }>()
+        // Dedupe by request+status (multiple cards can reference one request).
+        const seen = new Set<string>()
+        for (const t of transitions) {
+          const key = `${t.request.id}:${t.to}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          // Skip transitions the tenant just caused themselves (accept/decline
+          // reschedule already posts its own confirmation — see handleReschedule).
+          if (handled.has(t.request.id)) continue
+          const text = viewingTransitionText(t.from, t.to)
+          if (text) announcements.set(t.request.id, { text, request: t.request, property: t.property, index: t.index })
+        }
+
+        // Update remaining cards in place (match by request.id); cards whose
+        // transition is announced are removed — their replacement lives under
+        // the announcement message appended below. Pure updaters — no side
+        // effects, never append duplicate cards.
+        setMessages(prev => prev.flatMap(m => {
           const req = m.viewingStatus?.request
+          if (req && announcements.has(req.id)) return []
+          const conf = m.viewingConfirmation
+          if (conf && announcements.has(byProperty.get(conf.property.id)?.id ?? "")) return []
           if (req) {
             const fresh = byId.get(req.id)
             if (!fresh || fresh.status === req.status) return m
             return { ...m, viewingStatus: { ...m.viewingStatus!, request: fresh } }
           }
-          const conf = m.viewingConfirmation
           if (conf) {
             // Replace the static "request sent" card with the live status card
             // — that's the one with the accept/decline reschedule buttons.
@@ -1154,23 +1218,15 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
           return m
         }))
 
-        // Announce meaningful transitions with one agent message each. Skip
-        // transitions the tenant just caused themselves (accept/decline
-        // reschedule already posts its own confirmation — see handleReschedule).
-        const now = Date.now()
-        const handled = handledTransitionsRef.current
-        for (const [id, expires] of handled) {
-          if (expires <= now) handled.delete(id)
-        }
-        // Dedupe by request+status (multiple cards can reference one request).
-        const seen = new Set<string>()
-        for (const t of transitions) {
-          const key = `${t.request.id}:${t.to}`
-          if (seen.has(key)) continue
-          seen.add(key)
-          if (handled.has(t.request.id)) continue
-          const text = viewingTransitionText(t.from, t.to)
-          if (text) addMessageRef.current?.({ role: "agent", text })
+        // Announce each planned transition WITH its live status card attached,
+        // so every announcement is immediately followed by an actionable card
+        // (Go to My Viewings / Start application / Accept–Decline time / …).
+        for (const a of announcements.values()) {
+          addMessageRef.current?.({
+            role: "agent",
+            text: a.text,
+            viewingStatus: { property: a.property, index: a.index, request: a.request },
+          })
         }
       } catch { /* polling is best-effort */ }
       finally { inFlight = false }
@@ -1418,6 +1474,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     setCurrentStage(r.current_stage)
     const matches = r.matched_properties ?? undefined
     if (matches && matches.length > 0) propertyMatchesRef.current = matches
+    else if (r.current_stage !== "awaiting_tenant_selection") propertyMatchesRef.current = []
     const sel = r.current_stage === "awaiting_tenant_selection"
     const showingCards = sel && matches && matches.length > 0
     // Strip the enumerated property list from text when showing cards (avoids duplication)
@@ -1486,7 +1543,9 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       if (propertyMatchesRef.current.length > 0) {
         addMessage({
           role: "agent",
-          text: `Here are the ${propertyMatchesRef.current.length} properties I found for you:`,
+          text: propertyMatchesRef.current.length === 1
+            ? "Here is the property I found for you:"
+            : `Here are the ${propertyMatchesRef.current.length} properties I found for you:`,
           propertyMatches: propertyMatchesRef.current,
           stage: "awaiting_tenant_selection",
         })
@@ -1513,7 +1572,12 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     // A new search makes any previously-shown property cards, viewing cards and
     // in-progress application obsolete — drop them so stale "Select"/"Continue"
     // buttons can't act on the wrong property from the new thread.
-    if (threadId) setMessages(p => p.filter(m => !m.propertyMatches && !m.trustPassport && !m.viewingDecision && !m.viewingSchedule && !m.viewingConfirmation && !m.viewingStatus))
+    if (threadId) setMessages(p => p
+      // Keep prior results in the transcript, but prevent an old card index
+      // from selecting an item in the new workflow's result set.
+      .map(m => m.propertyMatches ? { ...m, propertyMatchesActive: false } : m)
+      .filter(m => !m.trustPassport && !m.viewingDecision && !m.viewingSchedule && !m.viewingConfirmation && !m.viewingStatus)
+    )
     addMessage({ role: "user", text: t })
     try {
       if (user) {
@@ -1552,6 +1616,16 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       const r = await propflowSelect(threadId, { property_index: idx })
       setCurrentStage(r.current_stage)
 
+      if (r.current_stage === "existing_application") {
+        // Do not open Trust Passport for a property the tenant already applied
+        // for. The server returns the canonical application id, so take the
+        // tenant directly to the record that explains its present status.
+        addMessage({ role: "agent", text: r.response_message, stage: r.current_stage })
+        setTrustModalOpen(false)
+        router.push(r.application_id ? `/tenant/applications/${r.application_id}` : "/tenant/applications")
+        return
+      }
+
       if (r.current_stage === "awaiting_trust_profile") {
         // Add the compact in-chat banner for the selected property, then open the
         // focused Trust Passport modal (the form no longer lives in the chat).
@@ -1568,7 +1642,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       addMessage({ role: "agent", text: "Selection failed: " + (e?.message || "Unknown"), stage: "error" })
       setErrorBanner({ message: e?.message || "Something went wrong" })
     } finally { setIsLoading(false) }
-  }, [threadId, isLoading, addMessage, user])
+  }, [threadId, isLoading, addMessage, user, router])
 
   // ── Viewing scheduling — client-side decision layer over the existing
   //     viewing_requests backend. No parallel flow, no new tables. ────────────
