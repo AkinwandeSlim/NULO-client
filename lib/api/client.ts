@@ -134,7 +134,15 @@ function getFreshToken(): Promise<string | null> {
       const supabase = createClient();
       const result = await supabase.auth.getSession();
       let session = result.data?.session;
-      if (!session?.access_token) {
+
+      // `getSession()` returns the browser's cached session. It can still
+      // contain an expired access token when the tab has been inactive, so a
+      // token being present is not enough to safely retry a protected request.
+      // Refresh slightly before expiry too, which avoids a request racing the
+      // JWT expiry boundary.
+      const expiresSoon = !session?.expires_at || session.expires_at <= (Date.now() / 1000) + 30;
+      if (!session?.access_token || expiresSoon) {
+        console.log('🔄 [API CLIENT] Session token missing or expired; refreshing session...');
         const r = await supabase.auth.refreshSession();
         session = r.data?.session;
       }

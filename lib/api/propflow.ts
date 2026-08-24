@@ -24,6 +24,7 @@ export interface PropertyMatch {
   images?: string[]
   landlord_id?: string
   property_type?: string
+  payment_frequency?: string
   /** Present only when the property supports the viewing type — lets the chat
    *  offer Virtual tour / Live video viewings without guessing. */
   virtual_tour_url?: string
@@ -178,7 +179,7 @@ export async function propflowChat(params: {
   const { data } = await apiClient.post<ChatResponse>(
     '/api/v1/propflow/chat',
     params,
-    { timeout: 120_000 }, // Increased to 120s for slow networks (Nigeria). First intent extraction can be slow.
+    { timeout: 180_000 }, // 180s: Qwen extraction (up to 45s) + nearby-area probes + relaxation queries can exceed 120s on slow networks.
   )
   return data
 }
@@ -197,7 +198,7 @@ export async function propflowGuestChat(params: {
   const { data } = await apiClient.post<ChatResponse>(
     '/api/v1/propflow/chat/guest',
     params,
-    { timeout: 120_000 }, // Increased to 120s for slow networks
+    { timeout: 180_000 }, // 180s — same reasoning as propflowChat above
   )
   return data
 }
