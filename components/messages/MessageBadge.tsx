@@ -19,15 +19,10 @@ export function MessageBadge({ className = "" }: MessageBadgeProps) {
     if (authLoading || !user) return;
 
     const fetchUnreadCount = async () => {
-      try {
-        const count = await messagesAPI.getUnreadCount();
-        setUnreadCount(count);
-      } catch (error) {
-        // Swallow silently — the badge shows nothing rather than breaking the page.
-        // (getUnreadCount re-throws on 401 so the auth layer can handle expiry,
-        //  but a transient failure here should never be fatal to the UI.)
-        console.error('Failed to fetch unread count:', error);
-      }
+      // Never throws — failures (expired session being refreshed/redirected by
+      // the apiClient interceptor, backend down, offline) resolve to 0, so the
+      // badge hides quietly instead of logging an error on every 30s poll.
+      setUnreadCount(await messagesAPI.getUnreadCount());
     };
 
     fetchUnreadCount();

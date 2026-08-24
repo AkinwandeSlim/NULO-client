@@ -2013,20 +2013,31 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         const r = await propflowResume(threadId, "signed")
         setCurrentStage(r.current_stage)
         const needsLandlordSign = r.current_stage === "awaiting_landlord_signature"
-        addMessage({
-          role: "agent", text: r.response_message, stage: r.current_stage,
-          // Note: no paymentAccount here — the resume response doesn't carry the
-          // expected amount, and showing "NGN 0" would be wrong. The mount-time
-          // status check / 15s poller fetches the real NUBAN + amount and
-          // upgrades the card with full details.
-          actionType: needsLandlordSign && isLandlord ? "sign_lease" :
-            r.current_stage === "nomba_provisioned" ? "simulate_payment" :
-            r.current_stage === "awaiting_full_payment" ? "confirm_payment" :
-            r.current_stage === "disbursement_complete" ? "restart" : undefined,
-          actionLabel: needsLandlordSign && isLandlord ? "Sign (as Landlord)" :
-            r.current_stage === "nomba_provisioned" ? "Simulate Payment" :
-            r.current_stage === "awaiting_full_payment" ? "Confirm Payment" :
-            r.current_stage === "disbursement_complete" ? "Start New Search" : undefined,
+        const nextActionType: ActionType | undefined =
+          needsLandlordSign && isLandlord ? "sign_lease" :
+          r.current_stage === "nomba_provisioned" ? "simulate_payment" :
+          r.current_stage === "awaiting_full_payment" ? "confirm_payment" :
+          r.current_stage === "disbursement_complete" ? "restart" : undefined
+        const nextActionLabel: string | undefined =
+          needsLandlordSign && isLandlord ? "Sign (as Landlord)" :
+          r.current_stage === "nomba_provisioned" ? "Simulate Payment" :
+          r.current_stage === "awaiting_full_payment" ? "Confirm Payment" :
+          r.current_stage === "disbursement_complete" ? "Start New Search" : undefined
+        // Idempotent insert (same race as simulate_payment below): the stage
+        // poller / mount-time status check may already have appended this
+        // stage's action card from its own status poll while the resume call
+        // was in flight.
+        setMessages(p => {
+          if (nextActionType && p.some(m => m.actionType === nextActionType)) return p
+          return [...p, {
+            id: crypto.randomUUID(), role: "agent" as const, timestamp: new Date(),
+            // Note: no paymentAccount here — the resume response doesn't carry the
+            // expected amount, and showing "NGN 0" would be wrong. The mount-time
+            // status check / 15s poller fetches the real NUBAN + amount and
+            // upgrades the card with full details.
+            text: r.response_message, stage: r.current_stage,
+            actionType: nextActionType, actionLabel: nextActionLabel,
+          }]
         })
       } else if (type === "simulate_payment") {
         addMessage({ role: "system", text: "Processing payment..." })
@@ -2045,7 +2056,19 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
           const ackText = p.amount != null
             ? `✅ Payment of ₦${p.amount.toLocaleString("en-NG")} received and verified! The landlord has been notified and is reviewing your payment. Once they confirm and release the funds, your tenancy will be fully active. I'll update you here the moment it happens.`
             : (p.message || "Payment recorded!")
-          addMessage({ role: "agent", text: ackText, stage: "payment_confirmed", actionType: "payment_ack" })
+          // Idempotent insert — NOT a bare addMessage. While this request was
+          // in flight, the stage poller's own status poll could already see
+          // payment_confirmed (its currentStageRef guard is stale until React
+          // commits) and append the identical acknowledgment first. Deduping
+          // on actionType here means whichever side loses that race finds the
+          // winner's card in prev and skips — no more double "Payment
+          // received" bubbles.
+          setMessages(p => p.some(m => m.actionType === "payment_ack")
+            ? p
+            : [...p, {
+              id: crypto.randomUUID(), role: "agent" as const, timestamp: new Date(),
+              text: ackText, stage: "payment_confirmed", actionType: "payment_ack",
+            }])
           setCurrentStage("payment_confirmed")
         } else throw new Error(p.error || "Simulation failed")
       } else if (type === "confirm_payment") {

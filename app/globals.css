@@ -923,6 +923,42 @@
   --tw-gradient-to: #0A0A0A !important;
 }
 
+/* Middle gradient stops (via-*) were missed by the palette above: cards like
+   "Application Approved!" (from-emerald-50 via-green-50 to-emerald-50) kept a
+   pale ash band across their centre in dark mode while their start/end stops
+   were correctly remapped. Compose those gradients onto the shared dark
+   canvas, exactly like the via-white treatment above. */
+.dark .dashboard-shell .via-orange-50,
+.dark .dashboard-shell .via-green-50,
+.dark .dashboard-shell .via-emerald-50,
+.dark .dashboard-shell .via-blue-50,
+.dark .dashboard-shell .via-cyan-50,
+.dark .dashboard-shell .via-sky-50,
+.dark .dashboard-shell .via-indigo-50,
+.dark .dashboard-shell .via-purple-50,
+.dark .dashboard-shell .via-violet-50,
+.dark .dashboard-shell .via-pink-50,
+.dark .dashboard-shell .via-amber-50,
+.dark .dashboard-shell .via-yellow-50,
+.dark .dashboard-shell .via-red-50,
+.dark .dashboard-shell .via-rose-50,
+.dark .dashboard-shell .via-slate-50 {
+  --tw-gradient-stops: var(--tw-gradient-from), #0A0A0A, var(--tw-gradient-to) !important;
+}
+
+/* Opacity-suffixed end stops (e.g. to-blue-100/30) generate different class
+   names than the plain to-* selectors above, so they stayed pastel in dark
+   mode (pale strips under "What Happens Next" headers and rejection panels).
+   Map the variants used across the dashboards to the same near-black canvas.
+   Light mode is untouched — these rules are .dark-scoped. */
+.dark .dashboard-shell .to-orange-50\/20,
+.dark .dashboard-shell .to-orange-100\/30,
+.dark .dashboard-shell .to-blue-100\/30,
+.dark .dashboard-shell .to-purple-50\/30,
+.dark .dashboard-shell .to-red-100\/30 {
+  --tw-gradient-to: #0A0A0A !important;
+}
+
 /* Enhanced animations */
 @keyframes fadeInUp {
   from {

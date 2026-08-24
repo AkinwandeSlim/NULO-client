@@ -137,17 +137,19 @@ export const messagesAPI = {
   /**
    * Get total unread message count for the current user.
    * Used by the notification badge in Navbar and sidebar.
-   * Always returns a number -- never throws (non-fatal on backend too).
+   * Always returns a number -- never throws. Session expiry is owned globally
+   * by the apiClient response interceptor (single-flight token refresh, then
+   * redirect to /signin if the session is truly dead), so this endpoint stays
+   * non-fatal: on any failure (401 while the interceptor refreshes/redirects,
+   * backend 500, timeout, offline) the badge just shows nothing instead of
+   * spamming AxiosError stacks in the console every 30-second poll.
    */
   getUnreadCount: async (): Promise<number> => {
     try {
       const res = await apiClient.get("/api/v1/messages/unread-count", { timeout: 5000 })
       return res.data.unread_count ?? 0
-    } catch (error: any) {
-      // 401: re-throw so the auth system can handle it (e.g. redirect to login)
-      if (error.response?.status === 401) throw error
-      // Everything else (500, timeout, network): return 0 silently
-      // The badge simply shows nothing rather than breaking the page
+    } catch {
+      // Non-fatal by design — see doc comment above.
       return 0
     }
   },
