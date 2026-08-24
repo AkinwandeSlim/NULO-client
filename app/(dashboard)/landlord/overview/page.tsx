@@ -82,6 +82,57 @@ function getEffectiveStatus(a: any) {
   return a.status
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Revenue snapshot (stale-while-revalidate)
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * The overview page deliberately force-refreshes the dashboard on every mount
+ * (bypassing the 60s cache), so for the first seconds of a visit the payments,
+ * agreements and stats state is still empty — and the Revenue & Payments card
+ * used to render that as real-looking ₦0 / 0 / 0% before flashing to the true
+ * figures. A landlord refreshing the page could reasonably read it as "my
+ * revenue just dropped to zero".
+ *
+ * The last settled figures are therefore persisted per-landlord and hydrated
+ * synchronously on mount: a refresh instantly shows the previous real values,
+ * then fresh data swaps in silently when the network settles. First-ever
+ * visits (no snapshot yet) get skeleton placeholders instead of fake zeros.
+ */
+interface RevenueSnapshot {
+  user_id: string
+  ts: number
+  totalCollected: number
+  inEscrow: number
+  withdrawn: number
+  occupiedCount: number
+  monthlyRevenue: number
+  pendingRelease: number
+  occupancyRate: number
+}
+const REVENUE_SNAPSHOT_KEY = 'landlord_revenue_snapshot_v1'
+// Older than a day is too stale to present as "current" — fall back to skeletons.
+const REVENUE_SNAPSHOT_TTL_MS = 24 * 60 * 60 * 1000
+
+function loadRevenueSnapshot(userId?: string | null): RevenueSnapshot | null {
+  if (!userId || typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(REVENUE_SNAPSHOT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as RevenueSnapshot
+    if (parsed?.user_id !== userId) return null
+    if (!parsed?.ts || Date.now() - parsed.ts > REVENUE_SNAPSHOT_TTL_MS) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function saveRevenueSnapshot(snapshot: RevenueSnapshot): void {
+  try {
+    window.localStorage.setItem(REVENUE_SNAPSHOT_KEY, JSON.stringify(snapshot))
+  } catch { /* storage full/unavailable — snapshot is best-effort */ }
+}
+
 export default function LandlordDashboard() {
 
   const router = useRouter()
@@ -532,6 +583,70 @@ export default function LandlordDashboard() {
       .reduce((sum, p) => sum + (p.total_received_amount || 0), 0)
 
   }, [receivedPayments])
+
+  // ── Stable Revenue & Payments display (stale-while-revalidate) ─────────────
+  // Hydrated synchronously from localStorage so a page refresh shows the last
+  // real figures instantly instead of ₦0 while the forced dashboard refresh is
+  // still in flight. See the RevenueSnapshot note above the component.
+  // ⚠️ These hooks MUST stay above every early return in this component (the
+  // loading-skeleton and error gates further down) — a hook count that varies
+  // between renders crashes with "Rendered more hooks than during the
+  // previous render".
+  const [revenueSnapshot, setRevenueSnapshot] = useState<RevenueSnapshot | null>(() => loadRevenueSnapshot(user?.id))
+  // If auth resolved after mount (snapshot initialized against no user), pick
+  // it up once the id is known.
+  useEffect(() => {
+    if (!revenueSnapshot) setRevenueSnapshot(loadRevenueSnapshot(user?.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
+
+  // Occupied = agreements that are actually ACTIVE (tenant paid) — same rule
+  // the revenue card uses. Computed once here so display + persistence agree.
+  const occupiedCount = useMemo(() => agreements.filter((a: any) => {
+    return getEffectiveStatus(a) === 'ACTIVE'
+  }).length, [agreements])
+
+  // Stable reference for effect deps (a bare `?? {}` would allocate a fresh
+  // object every render and re-run the persistence effect each time).
+  const landlordStats = useMemo(() => landlordData?.stats ?? ({} as LandlordStats), [landlordData])
+
+  // Persist the settled figures so the next visit/refresh starts from them.
+  // Only writes once BOTH inputs have finished loading — never snapshots the
+  // transient empty state.
+  useEffect(() => {
+    if (!user?.id || paymentsLoading || agreementsLoading) return
+    saveRevenueSnapshot({
+      user_id: user.id,
+      ts: Date.now(),
+      totalCollected: totalPaymentsCollected,
+      inEscrow: totalPendingAmount,
+      withdrawn: totalWithdrawnAmount,
+      occupiedCount,
+      monthlyRevenue: landlordStats.monthly_revenue || 0,
+      pendingRelease: receivedPayments.filter((p: any) =>
+        p.disbursement_status !== 'released' && p.reconciliation_status === 'FULL_PAYMENT').length,
+      occupancyRate: landlordStats.total_properties > 0 ? Math.round((occupiedCount / landlordStats.total_properties) * 100) : 0,
+    })
+  }, [user?.id, paymentsLoading, agreementsLoading, receivedPayments, agreements, landlordStats,
+      totalPaymentsCollected, totalPendingAmount, totalWithdrawnAmount, occupiedCount])
+
+  // While loading WITH a snapshot → show the snapshot (stable previous values).
+  // While loading WITHOUT one → skeletons. Settled → live values.
+  const revenueLoading = paymentsLoading || agreementsLoading
+  const revenueDisplay: Pick<RevenueSnapshot, 'totalCollected' | 'inEscrow' | 'withdrawn' | 'occupiedCount' | 'monthlyRevenue' | 'pendingRelease' | 'occupancyRate'> =
+    revenueLoading && revenueSnapshot
+      ? revenueSnapshot
+      : {
+          totalCollected: totalPaymentsCollected,
+          inEscrow: totalPendingAmount,
+          withdrawn: totalWithdrawnAmount,
+          occupiedCount,
+          monthlyRevenue: landlordStats.monthly_revenue || 0,
+          pendingRelease: receivedPayments.filter((p: any) =>
+            p.disbursement_status !== 'released' && p.reconciliation_status === 'FULL_PAYMENT').length,
+          occupancyRate: landlordStats.total_properties > 0 ? Math.round((occupiedCount / landlordStats.total_properties) * 100) : 0,
+        }
+  const showRevenueSkeleton = revenueLoading && !revenueSnapshot
 
 
 
@@ -2293,22 +2408,17 @@ export default function LandlordDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              {(() => {
-                console.log('💰 [REVENUE CARD DEBUG] Received payments:', receivedPayments.length)
-                console.log('💰 [REVENUE CARD DEBUG] Total collected:', totalPaymentsCollected)
-                console.log('💰 [REVENUE CARD DEBUG] In escrow:', totalPendingAmount)
-                console.log('💰 [REVENUE CARD DEBUG] Withdrawn:', totalWithdrawnAmount)
-                console.log('💰 [REVENUE CARD DEBUG] Agreements:', agreements.length)
-                console.log('💰 [REVENUE CARD DEBUG] Stats:', stats)
-                return null
-              })()}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="p-5 rounded-lg bg-white border-2 border-green-200 dark:bg-black/70 dark:border-emerald-500/40">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-semibold text-slate-600">Total Collected</p>
                     <DollarSign className="w-5 h-5 text-green-600" />
                   </div>
-                  <p className="text-3xl font-bold text-green-600 mb-1">{formatCurrency(totalPaymentsCollected)}</p>
+                  {showRevenueSkeleton ? (
+                    <span className="inline-block h-8 w-32 rounded bg-slate-200 animate-pulse dark:bg-white/10" />
+                  ) : (
+                    <p className="text-3xl font-bold text-green-600 mb-1">{formatCurrency(revenueDisplay.totalCollected)}</p>
+                  )}
                   <p className="text-xs text-slate-500">All-time rent payments</p>
                 </div>
                 <div className="p-5 rounded-lg bg-white border-2 border-orange-200 dark:bg-black/70 dark:border-orange-500/40">
@@ -2316,55 +2426,64 @@ export default function LandlordDashboard() {
                     <p className="text-sm font-semibold text-slate-600">In Escrow</p>
                     <Activity className="w-5 h-5 text-orange-600" />
                   </div>
-                  <p className="text-3xl font-bold text-orange-600 mb-1">{formatCurrency(totalPendingAmount)}</p>
-                  <p className="text-xs text-slate-500">{totalPendingAmount > 0 ? 'Ready for release' : 'No pending funds'}</p>
+                  {showRevenueSkeleton ? (
+                    <span className="inline-block h-8 w-32 rounded bg-slate-200 animate-pulse dark:bg-white/10" />
+                  ) : (
+                    <p className="text-3xl font-bold text-orange-600 mb-1">{formatCurrency(revenueDisplay.inEscrow)}</p>
+                  )}
+                  <p className="text-xs text-slate-500">{revenueDisplay.inEscrow > 0 ? 'Ready for release' : 'No pending funds'}</p>
                 </div>
                 <div className="p-5 rounded-lg bg-white border-2 border-emerald-200 dark:bg-black/70 dark:border-emerald-500/40">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-semibold text-slate-600">Withdrawn</p>
                     <CheckCircle className="w-5 h-5 text-emerald-600" />
                   </div>
-                  <p className="text-3xl font-bold text-emerald-600 mb-1">{formatCurrency(totalWithdrawnAmount)}</p>
+                  {showRevenueSkeleton ? (
+                    <span className="inline-block h-8 w-32 rounded bg-slate-200 animate-pulse dark:bg-white/10" />
+                  ) : (
+                    <p className="text-3xl font-bold text-emerald-600 mb-1">{formatCurrency(revenueDisplay.withdrawn)}</p>
+                  )}
                   <p className="text-xs text-slate-500">Released to your bank</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-green-100 dark:border-emerald-500/20">
                 <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-black/40">
                   <p className="text-xs text-slate-500 mb-1">Occupied</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {/* ✅ FIX: Only count ACTIVE (paid) agreements as occupied.
-                        SIGNED agreements (both parties signed, awaiting payment)
-                        are NOT yet occupied — tenant hasn't paid first month rent. */}
-                    {agreements.filter((a: any) => {
-                      const effectiveStatus = getEffectiveStatus(a)
-                      return effectiveStatus === 'ACTIVE'
-                    }).length}
-                  </p>
+                  {/* ✅ FIX: Only count ACTIVE (paid) agreements as occupied.
+                      SIGNED agreements (both parties signed, awaiting payment)
+                      are NOT yet occupied — tenant hasn't paid first month rent. */}
+                  {showRevenueSkeleton ? (
+                    <span className="inline-block h-7 w-12 rounded bg-slate-200 animate-pulse dark:bg-white/10" />
+                  ) : (
+                    <p className="text-2xl font-bold text-slate-900">{revenueDisplay.occupiedCount}</p>
+                  )}
                   <p className="text-xs text-slate-400 mt-0.5">properties</p>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-black/40">
                   <p className="text-xs text-slate-500 mb-1">Monthly Rate</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.monthly_revenue || 0)}</p>
+                  {showRevenueSkeleton ? (
+                    <span className="inline-block h-7 w-20 rounded bg-slate-200 animate-pulse dark:bg-white/10" />
+                  ) : (
+                    <p className="text-2xl font-bold text-green-600">{formatCurrency(revenueDisplay.monthlyRevenue)}</p>
+                  )}
                   <p className="text-xs text-slate-400 mt-0.5">per month</p>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-black/40">
                   <p className="text-xs text-slate-500 mb-1">Pending Release</p>
-                  <p className="text-2xl font-bold text-orange-600">
-                    {receivedPayments.filter((p: any) => p.disbursement_status !== 'released' && p.reconciliation_status === 'FULL_PAYMENT').length}
-                  </p>
+                  {showRevenueSkeleton ? (
+                    <span className="inline-block h-7 w-12 rounded bg-slate-200 animate-pulse dark:bg-white/10" />
+                  ) : (
+                    <p className="text-2xl font-bold text-orange-600">{revenueDisplay.pendingRelease}</p>
+                  )}
                   <p className="text-xs text-slate-400 mt-0.5">payments</p>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-black/40">
                   <p className="text-xs text-slate-500 mb-1">Occupancy Rate</p>
-                  <p className="text-2xl font-bold text-emerald-600">
-                    {stats.total_properties > 0
-                      ? Math.round((agreements.filter((a: any) => {
-                          // ✅ FIX: Same as above — only ACTIVE (paid) counts as occupied
-                          const effectiveStatus = getEffectiveStatus(a)
-                          return effectiveStatus === 'ACTIVE'
-                        }).length / stats.total_properties) * 100)
-                      : 0}%
-                  </p>
+                  {showRevenueSkeleton ? (
+                    <span className="inline-block h-7 w-14 rounded bg-slate-200 animate-pulse dark:bg-white/10" />
+                  ) : (
+                    <p className="text-2xl font-bold text-emerald-600">{revenueDisplay.occupancyRate}%</p>
+                  )}
                   <p className="text-xs text-slate-400 mt-0.5">occupied</p>
                 </div>
               </div>
