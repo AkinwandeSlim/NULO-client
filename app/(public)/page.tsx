@@ -118,6 +118,7 @@ const NAV_LINKS = [
 
 const NAV_PRODUCTS = [
   { label: "Rental Marketplace", href: "/properties", description: "For Tenants" },
+  { label: "PropFlow", href: "/properties?propflow=1", description: "AI rental agent — it finds your home" },
   { label: "Property Management", href: "/landlord", description: "For Property Managers" },
   { label: "NEST", href: WAITLIST_URL, description: "For Investors" },
 ]
@@ -143,7 +144,7 @@ const PRODUCTS = [
     icon: Search,
     tag: "Rental Marketplace",
     title: "Find Verified Homes",
-    body: "Search verified rentals across Lagos, Abuja, and Port Harcourt. Filter by budget, book viewings, and apply — all in one place.",
+    body: "Search verified rentals across Lagos, Abuja, and Port Harcourt — or just tell our AI rental agent your budget and it finds them for you. Book viewings and apply, all in one place.",
     cta: "Browse Properties",
     href: "/properties",
   },
@@ -521,6 +522,19 @@ export default function LandingPage() {
                 </Link>
               </div>
 
+              {/* PropFlow AI hint — deep-links into the marketplace with the
+                  rental assistant auto-opened (?propflow=1). */}
+              <div className="mb-10">
+                <Link
+                  href="/properties?propflow=1"
+                  className="group inline-flex items-center gap-2 text-[13px] sm:text-[14px] font-medium text-slate-300 transition-colors hover:text-orange-300"
+                >
+                  <Sparkles className="h-4 w-4 text-orange-400" />
+                  <span>Or let our AI rental agent find your next home</span>
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                </Link>
+              </div>
+
               {/* Inline Stats Row — centered */}
               <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-8">
                 {STATS.map((stat, index) => (
@@ -808,6 +822,121 @@ export default function LandingPage() {
                   <ChevronRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </Link>
+            </div>
+          </motion.div>
+        </Section>
+
+        {/* ======================= PROPFLOW — RENTAL AI AGENT ======================= */}
+        <Section id="propflow" variant="gradient-light" glow theme={theme}>
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+          >
+            <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+              {/* Left — Copy */}
+              <div className="text-center lg:text-left">
+                <p className={cx(EYEBROW_BASE, theme === "dark" ? "text-orange-400" : "text-orange-600", "mb-3")}>
+                  PropFlow — Rental AI Agent
+                </p>
+                <h2 className={cx("mb-4 text-[28px] font-bold leading-tight sm:text-[34px] lg:text-[40px]", theme === "dark" ? "text-white" : "text-slate-900")}>
+                  Tell It What You Need. <span className="nulo-gradient-text">It Finds Your Home.</span>
+                </h2>
+                <div className={cx("mx-auto mb-8 max-w-xl space-y-4 text-[14px] sm:text-[15px] leading-relaxed lg:mx-0", theme === "dark" ? "text-white/65" : "text-slate-600")}>
+                  <p>
+                    Skip the endless scrolling. PropFlow is our AI rental agent — describe the home
+                    you want in plain language (or Pidgin), and it searches verified listings,
+                    matches your budget, and walks you through viewings and applications, all in one chat.
+                  </p>
+                </div>
+
+                {/* Capability bullets */}
+                <ul className="mx-auto mb-8 max-w-xl space-y-3 text-left lg:mx-0">
+                  {[
+                    { icon: Search, text: "Understands your budget, size, and area — and only shows homes that fit." },
+                    { icon: ShieldCheck, text: "Every listing is verified, so you never waste time on fake or stale ads." },
+                    { icon: Home, text: "Book viewings and apply directly from the chat — no forms, no phone calls." },
+                  ].map((f) => (
+                    <li key={f.text} className="flex items-start gap-3">
+                      <span className={cx("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/10 ring-1 ring-orange-500/25")}>
+                        <f.icon className={cx("h-4 w-4", theme === "dark" ? "text-orange-400" : "text-orange-600")} />
+                      </span>
+                      <span className={cx("text-[14px] leading-relaxed", theme === "dark" ? "text-white/70" : "text-slate-600")}>{f.text}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
+                  <Link href="/properties?propflow=1">
+                    <Button className={cx(BTN_PRIMARY, "group px-8 py-4 text-[15px]")}>
+                      <Sparkles className="mr-1.5 h-4 w-4" />
+                      Chat with PropFlow
+                      <ChevronRight className="ml-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </Button>
+                  </Link>
+                  <Link
+                    href="/properties"
+                    className={cx("inline-flex items-center gap-2 text-sm font-semibold transition-colors", theme === "dark" ? "text-orange-400 hover:text-orange-300" : "text-orange-600 hover:text-orange-700")}
+                  >
+                    Browse properties instead
+                  </Link>
+                </div>
+              </div>
+
+              {/* Right — Chat mockup (static preview of the live widget) */}
+              <div className="mx-auto w-full max-w-[420px]">
+                <div className={cx(getCardClass(theme), "overflow-hidden shadow-2xl", theme === "dark" ? "shadow-orange-500/10" : "shadow-[0_30px_60px_-20px_rgba(15,23,42,0.25)]")}>
+                  {/* Widget header */}
+                  <div className={cx("flex items-center gap-3 border-b px-5 py-4", theme === "dark" ? "border-white/[0.06] bg-[#0F0F0F]" : "border-slate-200/60 bg-slate-50")}>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-orange-500 text-black">
+                      <Sparkles className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <p className={cx("text-[14px] font-semibold leading-none", theme === "dark" ? "text-white" : "text-slate-900")}>PropFlow</p>
+                      <p className={cx("mt-1 text-[11px] leading-none", theme === "dark" ? "text-white/40" : "text-slate-500")}>AI Rental Agent · Online</p>
+                    </div>
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                  </div>
+
+                  {/* Messages */}
+                  <div className="space-y-3 px-5 py-5">
+                    {/* Agent */}
+                    <div className={cx("max-w-[85%] rounded-2xl rounded-tl-sm px-4 py-2.5 text-[13px] leading-relaxed", theme === "dark" ? "bg-white/[0.06] text-white/80" : "bg-slate-100 text-slate-700")}>
+                      Hi! I&apos;m PropFlow, your AI rental assistant. What kind of home are you looking for?
+                    </div>
+                    {/* User */}
+                    <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-sm bg-orange-500 px-4 py-2.5 text-[13px] leading-relaxed text-black">
+                      I want a 2-bedroom apartment in Lekki with a budget of ₦500,000 per month.
+                    </div>
+                    {/* Agent result */}
+                    <div className={cx("max-w-[85%] rounded-2xl rounded-tl-sm px-4 py-2.5 text-[13px] leading-relaxed", theme === "dark" ? "bg-white/[0.06] text-white/80" : "bg-slate-100 text-slate-700")}>
+                      I found 2 homes in Lekki within your budget. Which one do you prefer?
+                    </div>
+                    {/* Property chip */}
+                    <div className={cx("max-w-[85%] rounded-xl border px-4 py-3", theme === "dark" ? "border-orange-500/25 bg-orange-500/5" : "border-orange-200 bg-orange-50")}>
+                      <p className={cx("text-[13px] font-semibold", theme === "dark" ? "text-white" : "text-slate-900")}>Contemporary 2-Bed Apartment</p>
+                      <p className={cx("mt-0.5 flex items-center gap-1 text-[12px]", theme === "dark" ? "text-white/50" : "text-slate-500")}>
+                        <MapPin className="h-3 w-3" /> Lekki Phase 1, Lagos
+                      </p>
+                      <p className="mt-1 text-[13px] font-semibold text-orange-500">₦480,000 / month</p>
+                    </div>
+                  </div>
+
+                  {/* Input bar */}
+                  <div className={cx("flex items-center gap-2 border-t px-5 py-3.5", theme === "dark" ? "border-white/[0.06] bg-[#0F0F0F]" : "border-slate-200/60 bg-slate-50")}>
+                    <div className={cx("flex-1 rounded-full border px-4 py-2 text-[12px]", theme === "dark" ? "border-white/10 text-white/30" : "border-slate-200 text-slate-400")}>
+                      Try &quot;a 3-bed in Yaba under ₦300k&quot;…
+                    </div>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-black">
+                      <Send className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                </div>
+                <p className={cx("mt-3 text-center text-[12px]", theme === "dark" ? "text-white/35" : "text-slate-400")}>
+                  Live on the marketplace — no account needed to start searching.
+                </p>
+              </div>
             </div>
           </motion.div>
         </Section>
