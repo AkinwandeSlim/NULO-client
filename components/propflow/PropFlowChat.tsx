@@ -16,7 +16,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   AlertCircle, Bot, Building2, CheckCircle2, ChevronDown, ChevronRight, Eye,
-  FileText, Loader2, Lock, MapPin, MessageCircle, RotateCcw, Send, ShieldCheck,
+  FileText, Loader2, Lock, MapPin, MessageCircle, RefreshCw, Send, ShieldCheck, Trash2,
   ThumbsUp, Video, X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -98,7 +98,7 @@ type ViewingHandlers = {
   onRequestAgain: (p: ViewingProperty, index?: number) => void
 }
 
-const AGENT_NAME = "PropFlow"
+const AGENT_NAME = "NEST AI"
 
 function paymentPeriodLabel(paymentFrequency?: string): string {
   switch (paymentFrequency?.toUpperCase()) {
@@ -314,6 +314,30 @@ function buildStageAction(
     default:
       return null
   }
+}
+
+/** Stages that are only reachable AFTER the tenant has signed the lease.
+ *  Used to guard the approved -> "Review & Sign Agreement" card: once the
+ *  tenant's signature already happened, that card must never be appended to
+ *  the bottom of the chat again (a later status poll may still see a stale
+ *  `agreement_drafted` stage until the best-effort graph sync catches up). */
+const POST_SIGN_STAGES = new Set([
+  "awaiting_landlord_signature",
+  "nomba_provisioned",
+  "payment_confirmed",
+  "awaiting_full_payment",
+  "disbursement_complete",
+])
+
+/** True when the chat already proves the tenant signed the agreement. */
+function tenantHasSigned(p: Array<{ stage?: string | null; actionType?: ActionType | null }>): boolean {
+  return p.some((m) =>
+    (m.stage && POST_SIGN_STAGES.has(m.stage)) ||
+    m.actionType === "simulate_payment" ||
+    m.actionType === "payment_ack" ||
+    m.actionType === "view_tenancy" ||
+    m.actionType === "confirm_payment"
+  )
 }
 
 /** Extract the payment account (NUBAN + expected amount) from a status response. */
@@ -634,9 +658,44 @@ const CHAT_STORAGE_KEY = "propflow_chat_state"
 // <PropFlowChat/>; persisting isOpen means the panel reopens automatically with
 // the conversation (and property cards) intact instead of collapsing shut.
 const WIDGET_OPEN_KEY = "propflow_widget_open"
+// First-run hint next to the collapsed bubble — teaches the widget reads as an
+// AI *search* tool ("describe what you want") rather than a support chat icon.
+// Dismissed permanently once the widget is opened for the first time.
+const HINT_DISMISSED_KEY = "propflow_hint_dismissed"
 // Guest searches persist the last inquiry here so it can be auto-replayed
 // (via the authenticated /chat) immediately after the guest logs in.
 const GUEST_PENDING_KEY = "propflow_guest_pending"
+
+// ── Animated "assistant is working" status ──────────────────────────────────
+// For a property *search* we walk through a progressive micro-checklist so the
+// widget reads like the agent is actually working through the request
+// ("Budget understood → Location matched → Searching verified homes…"). Non-search
+// actions (applying, scheduling a viewing, payment) fall back to cycling verbs.
+const SEARCH_STEPS = [
+  "Reading your request",
+  "Budget understood",
+  "Location matched",
+  "Searching verified homes",
+  "Ranking the best matches",
+] as const
+const LOADING_VERBS = ["Thinking", "Searching homes", "Finding matches", "Sending"] as const
+type LoadingScene = "search" | "generic"
+
+function useLoadingStatus(active: boolean, scene: LoadingScene) {
+  const [stepIdx, setStepIdx] = useState(0)
+  const [dots, setDots] = useState(0)
+  useEffect(() => {
+    if (!active) { setStepIdx(0); setDots(0); return }
+    // Reset on (re)start so the sequence begins at the first step each time.
+    setStepIdx(0); setDots(0)
+    const last = scene === "search" ? SEARCH_STEPS.length - 1 : LOADING_VERBS.length - 1
+    const stepT = window.setInterval(() => setStepIdx(i => Math.min(i + 1, last)), 2200)
+    const dotT = window.setInterval(() => setDots(d => (d + 1) % 4), 360)
+    return () => { clearInterval(stepT); clearInterval(dotT) }
+    // Rebuild the intervals when the scene changes so the animation follows it.
+  }, [active, scene])
+  return { stepIdx, dots, scene }
+}
 
 export default function PropFlowChat({ defaultOpen = false, className }: PropFlowChatProps) {
   const [isOpen, setIsOpen] = useState(() => {
@@ -647,6 +706,20 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     } catch { /* ignore */ }
     return defaultOpen
   })
+  // First-run teaching hint — hidden once the widget has been opened at all.
+  const [hintDismissed, setHintDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(HINT_DISMISSED_KEY) === "1"
+    } catch { /* ignore */ }
+    return false
+  })
+  // Opening the widget (launcher, header "AI Search", or a propflow:open event)
+  // dismisses the hint permanently — it has served its purpose.
+  useEffect(() => {
+    if (!isOpen) return
+    setHintDismissed(true)
+    try { localStorage.setItem(HINT_DISMISSED_KEY, "1") } catch { /* ignore */ }
+  }, [isOpen])
   const [messages, setMessages] = useState<Message[]>(() => {
     // Hydrate from localStorage so chat survives page refresh
     try {
@@ -655,7 +728,19 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         const parsed = JSON.parse(saved)
         if (parsed.messages?.length) {
           // Rehydrate Date objects (JSON.parse turns them into strings)
-          return parsed.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+          return parsed.messages.map((m: any) => {
+            const msg = { ...m, timestamp: new Date(m.timestamp) }
+            // Rebrand migration — chats persisted before the PropFlow → NEST AI
+            // rename would otherwise greet returning users with the retired
+            // name forever. Only AGENT-authored text is rewritten; tenant
+            // messages are never modified.
+            if (m.role === "agent" && typeof m.text === "string") {
+              msg.text = m.text
+                .replace(/I'm PropFlow/g, "I'm NEST AI")
+                .replace(/\*\*PropFlow Update\*\*/g, "**NEST AI Update**")
+            }
+            return msg
+          })
         }
       }
     } catch { /* ignore corrupt data */ }
@@ -696,6 +781,12 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
   const trustPanelRef = useRef<HTMLDivElement>(null)
   const isLoadingRef = useRef(isLoading)
   isLoadingRef.current = isLoading
+  // Which flavour of loading animation to show: a property *search* walks a
+  // progressive checklist; other actions (applying / viewing / payment) cycle
+  // generic verbs. Set to "search" just before an actual search request fires.
+  const [loadingScene, setLoadingScene] = useState<LoadingScene>("generic")
+  // Animated "Thinking… / Searching homes… / Finding matches… / Sending…" copy.
+  const loading = useLoadingStatus(isLoading, loadingScene)
   // Mirror of `messages` readable inside interval callbacks without re-subscribing.
   const messagesRef = useRef(messages)
   messagesRef.current = messages
@@ -857,8 +948,8 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     const welcome = user
       ? isLandlord
         ? "Hi " + userName + "! 👋 This assistant is for tenants searching for properties. Head over to your **Applications page** to review and manage tenant applications."
-        : "Hi " + userName + "! I'm PropFlow, your AI rental assistant. Let me know what you're looking for." + "\n\nExample: 'I want a 2-bedroom apartment in Lekki with a budget of 500,000 Naira per month.'"
-      : "Hi! I'm PropFlow 💬 Tell me what you're looking for and I'll find it — no login needed to search."
+        : "Hi " + userName + "! I'm NEST AI, your AI rental assistant. Let me know what you're looking for." + "\n\nExample: 'I want a 2-bedroom apartment in Lekki with a budget of 500,000 Naira per month.'"
+      : "Hi! I'm NEST AI 💬 Tell me what you're looking for and I'll find it — no login needed to search."
     setMessages([{ id: "welcome", role: "agent", text: welcome, timestamp: new Date() }])
   }, [user?.id, messages.length])
 
@@ -934,6 +1025,10 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
           if (cancelled) return
           const cfg = buildStageAction(s.current_stage, s.agreement_id, paymentAccountFrom(s))
           if (!cfg) return
+          // Never surface the approved / "Review & Sign Agreement" card after
+          // the tenant has already signed (e.g. signed earlier from the
+          // dashboard and this reload re-checked a stale agreement_drafted).
+          if (cfg.actionType === "review_agreement" && tenantHasSigned(messagesRef.current)) return
           setCurrentStage(s.current_stage)
           setMessages(p => {
             const existing = p.find(m => m.actionType === cfg.actionType)
@@ -985,6 +1080,10 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
 
       const config = buildStageAction(s.current_stage, s.agreement_id, paymentAccountFrom(s))
       if (!config) return
+      // Never re-add the "Review & Sign Agreement" card once the tenant has
+      // signed — the signed confirmation ("You've signed...") must stay the
+      // last word for this stage.
+      if (config.actionType === "review_agreement" && tenantHasSigned(messagesRef.current)) return
 
       setCurrentStage(s.current_stage)
       setMessages(p => {
@@ -1042,6 +1141,10 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         const config = buildStageAction(s.current_stage, s.agreement_id, paymentAccountFrom(s))
         setCurrentStage(s.current_stage)
         if (!config) return
+        // When the tenant already signed (stage past agreement_drafted), the
+        // exact "Review & Sign Agreement" card must NOT re-appear at the bottom
+        // of the chat, even if the poll still sees a stale agreement_drafted.
+        if (config.actionType === "review_agreement" && tenantHasSigned(messagesRef.current)) return
 
         // ── Autonomous surfacing ──────────────────────────────────────────
         // The stage genuinely advanced AND the new stage needs tenant action —
@@ -1053,18 +1156,12 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         setIsOpen(true)
 
         setMessages(p => {
-          // When the landlord releases the funds, flip the earlier payment
-          // acknowledgment to the final state in place — otherwise its chip
-          // keeps showing the payment-waiting label ("Payment pending" /
-          // "Payment received") even though the tenancy is now active.
-          const upgraded = s.current_stage === "disbursement_complete"
-            ? p.map(m => m.actionType === "payment_ack"
-              // Flip the earlier payment acknowledgment's chip to the final
-              // "Tenancy active" state in place (keep its ack text) so it no
-              // longer reads as payment-waiting once the landlord releases.
-              ? { ...m, stage: "disbursement_complete" }
-              : m)
-            : p
+          // Keep the earlier payment acknowledgment's own chip as "Payment
+          // received" — "Tenancy active" belongs ONLY on the final
+          // disbursement card that appears once the landlord confirms and
+          // releases the funds. Flipping the receipt chip here made the UI
+          // look like the tenancy became active at payment time.
+          const upgraded = p
           const existing = upgraded.find(m => m.actionType === config.actionType)
           // Skip if the same card already exists — unless we're upgrading a
           // NUBAN-less payment card with freshly fetched account details.
@@ -1372,7 +1469,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
               text = "✅ Tenancy is fully active! All payments have been completed."
             } else {
               text = briefing
-                ? `🤖 **PropFlow Update**\n\n${briefing}`
+                ? `🤖 **NEST AI Update**\n\n${briefing}`
                 : `🤖 Your workflow is at stage "${status.current_stage}". Visit your dashboard to take action.`
             }
 
@@ -1387,7 +1484,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
             // Fallback if status API fails
             setMessages([{
               id: crypto.randomUUID(), role: "agent" as const, timestamp: new Date(),
-              text: "Hello! I'm PropFlow, your AI rental assistant. Review tenant applications, agreements, and payments from your dashboard.",
+              text: "Hello! I'm NEST AI, your AI rental assistant. Review tenant applications, agreements, and payments from your dashboard.",
               stage: "idle",
             }])
           })
@@ -1439,6 +1536,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         setMessages(p => {
           const actionType = detail.bothSigned ? "simulate_payment" : "review_agreement"
           if (p.some(m => m.actionType === actionType)) return p
+          if (actionType === "review_agreement" && tenantHasSigned(p)) return p
           return [...p, {
             id: crypto.randomUUID(), role: "agent" as const, timestamp: new Date(),
             text: detail.bothSigned
@@ -1477,6 +1575,16 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     else if (r.current_stage !== "awaiting_tenant_selection") propertyMatchesRef.current = []
     const sel = r.current_stage === "awaiting_tenant_selection"
     const showingCards = sel && matches && matches.length > 0
+    // Hand off to the marketplace: when PropFlow surfaces a set of matching
+    // homes, broadcast the search intent so the marketplace (when it's the
+    // active page) runs the SAME search in the background — location, budget,
+    // beds — and frames that area on the map with these homes (plus others)
+    // already shown. No user navigation needed; the user stays in the chat.
+    if (showingCards) {
+      window.dispatchEvent(new CustomEvent("propflow:marketplace-search", {
+        detail: { intent: r.extracted_intent ?? null },
+      }))
+    }
     // Strip the enumerated property list from text when showing cards (avoids duplication)
     let text = r.response_message
     if (showingCards) {
@@ -1518,11 +1626,12 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       const rest = p.filter(m => m.id !== "welcome")
       return [...rest, { id: crypto.randomUUID(), role: "user", text: pendingSearch, timestamp: new Date() }]
     })
+    setLoadingScene("search")
     setIsLoading(true)
     propflowChat({ message: pendingSearch })
       .then(handleChatResponse)
       .catch((e: any) => addMessage({ role: "agent", text: "Sorry: " + (e?.message || "Unknown"), stage: "error" }))
-      .finally(() => setIsLoading(false))
+      .finally(() => { setIsLoading(false); setLoadingScene("generic") })
   }, [user?.id, addMessage, handleChatResponse])
 
   // Removed: loadLandlordReview — Landlords now manage applications from the dashboard detail page.
@@ -1579,6 +1688,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       .filter(m => !m.trustPassport && !m.viewingDecision && !m.viewingSchedule && !m.viewingConfirmation && !m.viewingStatus)
     )
     addMessage({ role: "user", text: t })
+    setLoadingScene("search")
     try {
       if (user) {
         // Follow-ups pass the current thread so the server carries the earlier
@@ -1595,7 +1705,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
       addMessage({ role: "agent", text: m.includes("401") ? "Session expired. Refresh." : "Sorry: " + m, stage: "error" })
       setErrorBanner({ message: m })
       retryRef.current = () => { void sendMessage(t) }
-    } finally { setIsLoading(false) }
+    } finally { setIsLoading(false); setLoadingScene("generic") }
   }, [input, isLoading, addMessage, handleChatResponse, user, threadId, detectBrowsingIntent, detectViewingIntent])
 
   const handleSelectProperty = useCallback(async (idx: number) => {
@@ -1937,10 +2047,18 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
 
   const openViewingDecision = useCallback((index: number) => {
     if (isLoading) return
-    if (!user) { addMessage({ role: "system", text: "You'll need an account to view or apply for this property.", signIn: true }); return }
-    if (!threadId) { addMessage({ role: "system", text: "Cannot proceed — session not found. Please start a new search." }); return }
     const property = propertyMatchesRef.current[index]
     if (!property) return
+    // Hand off to the marketplace: as soon as the tenant taps a matching home,
+    // fly the marketplace map to it (switching to split view on desktop). This
+    // happens on the click itself — before any apply/view fork — so the
+    // location & popup appear immediately. The marketplace stays in sync from
+    // the propflow:marketplace-search event that fired when results loaded.
+    window.dispatchEvent(new CustomEvent("propflow:map-focus", {
+      detail: { propertyId: property.id, location: property.location },
+    }))
+    if (!user) { addMessage({ role: "system", text: "You'll need an account to view or apply for this property.", signIn: true }); return }
+    if (!threadId) { addMessage({ role: "system", text: "Cannot proceed — session not found. Please start a new search." }); return }
     // Back-to-fork: replace any open form/status card for this property with the
     // fresh "view or apply" decision.
     replaceViewingCards(property)
@@ -2089,6 +2207,56 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
     } finally { setIsLoading(false) }
   }, [threadId, isLoading, addMessage, isLandlord])
 
+  // ── Manual refresh (header button) ───────────────────────────────────────
+  // Runs one status poll on demand — same logic as the background poller's
+  // tick — so a tenant who just acted on the landlord side (or simply doesn't
+  // want to wait the 15s) can pull the latest stage + action card immediately.
+  // If THIS session has no thread (cleared chat, storage wiped, guest who just
+  // signed in), it first tries to re-attach to the most recent active
+  // workflow — "refresh" then means "reconnect my application".
+  // Distinct from the clear button: refresh NEVER wipes the conversation.
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false)
+  const handleRefreshStatus = useCallback(async () => {
+    if (isRefreshingStatus || isLoading) return
+    setIsRefreshingStatus(true)
+    try {
+      let tid = threadId
+      if (!tid && user?.id && !isLandlord) {
+        const res = await propflowListThreads()
+        const terminal = new Set(["rejected", "disbursement_complete", "expired"])
+        const active = (res?.threads ?? [])
+          .filter((t: any) => t.status === "active" && t.current_stage && !terminal.has(t.current_stage))
+          .sort((a: any, b: any) =>
+            new Date(b.updated_at ?? b.created_at ?? 0).getTime() -
+            new Date(a.updated_at ?? a.created_at ?? 0).getTime())
+        if (active.length > 0) {
+          tid = active[0].thread_id
+          setThreadId(tid)
+          setCurrentStage(active[0].current_stage)
+        }
+      }
+      if (!tid) return
+      const s = await propflowStatus(tid)
+      if (!s.success) return
+      setCurrentStage(s.current_stage)
+      const config = buildStageAction(s.current_stage, s.agreement_id, paymentAccountFrom(s))
+      if (!config) return
+      setMessages(p => {
+        const existing = p.find(m => m.actionType === config.actionType)
+        if (existing && !(config.actionType === "simulate_payment" && config.paymentAccount && !existing.paymentAccount)) return p
+        const withoutStale = p.filter(m => m.actionType !== config.actionType)
+        return [...withoutStale, {
+          id: crypto.randomUUID(), role: "agent" as const, timestamp: new Date(),
+          text: config.text, stage: s.current_stage,
+          actionType: config.actionType, actionLabel: config.actionLabel,
+          agreementId: config.agreementId,
+          paymentAccount: config.paymentAccount,
+        }]
+      })
+    } catch { /* best-effort — the 15s poller remains the safety net */ }
+    finally { setIsRefreshingStatus(false) }
+  }, [threadId, isRefreshingStatus, isLoading, user?.id, isLandlord])
+
   // Removed: confirmRejection, cancelRejection — landlords manage approvals from the dashboard.
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -2135,7 +2303,7 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
               </div>
               <div className="min-w-0">
                 <p className="text-slate-900 font-semibold text-sm leading-tight">{AGENT_NAME}</p>
-                <p className="text-slate-400 text-[10px]">AI Rental Assistant</p>
+                <p className="text-slate-400 text-[10px]">NEST AI Assistant</p>
               </div>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
@@ -2147,12 +2315,27 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
                   showIdle={messages.length > 1}
                 />
               )}
+              {/* Refresh — pulls the latest workflow stage + action card on
+                  demand; re-attaches the most recent active workflow if this
+                  session has no thread. Circular-arrow icon is now
+                  unambiguous because clear uses a trash icon. */}
+              {messages.length > 0 && (
+                <button
+                  onClick={() => { void handleRefreshStatus() }}
+                  disabled={isRefreshingStatus || isLoading}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Refresh status" aria-label="Refresh status">
+                  <RefreshCw className={cn("h-3.5 w-3.5", isRefreshingStatus && "animate-spin")} />
+                </button>
+              )}
+              {/* Clear — wipes the conversation and starts over. Trash icon +
+                  red hover so it can never be mistaken for refresh. */}
               {messages.length > 0 && (
                 <button
                   onClick={() => { setThreadId(undefined); setCurrentStage("idle"); setMessages([]); welcomeSet.current = false; setTrustModalOpen(false); setErrorBanner(null); setViewingError(null); retryRef.current = null; localStorage.removeItem(CHAT_STORAGE_KEY) }}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-                  title="Start a new chat" aria-label="Start a new chat">
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  className="p-1.5 rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10"
+                  title="Clear chat & start over" aria-label="Clear chat and start a new conversation">
+                  <Trash2 className="h-3.5 w-3.5" />
                 </button>
               )}
               <button
@@ -2192,11 +2375,29 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
             ))}
             {isLoading && (
               <div className="flex gap-2">
-                <div className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center"><Bot className="h-4 w-4 text-orange-600" /></div>
-                <div className="bg-white rounded-2xl rounded-tl-sm px-3.5 py-2.5 shadow-sm flex items-center gap-1.5">
-                  <Loader2 className="h-3.5 w-3.5 text-orange-400 animate-spin" />
-                  <span className="text-xs text-slate-400">Processing...</span>
-                </div>
+                <div className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center"><Bot className="h-4 w-4 text-orange-600 animate-pulse" /></div>
+
+                {/* Search: progressive micro-checklist with checkmarks on done steps */}
+                {loading.scene === "search" ? (
+                  <div className="bg-white rounded-2xl rounded-tl-sm px-3.5 py-2.5 shadow-sm space-y-1">
+                    {SEARCH_STEPS.slice(0, loading.stepIdx).map(step => (
+                      <div key={step} className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                        <span>{step}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-1.5 text-xs text-slate-700 font-medium">
+                      <Loader2 className="h-3.5 w-3.5 text-orange-400 animate-spin shrink-0" />
+                      <span>{SEARCH_STEPS[loading.stepIdx]}<span className="text-orange-400">{loading.dots > 0 ? ".".repeat(loading.dots) : ""}</span></span>
+                    </div>
+                  </div>
+                ) : (
+                  /* Non-search actions: cycle verbs ("Thinking … Searching homes …") */
+                  <div className="bg-white rounded-2xl rounded-tl-sm px-3.5 py-2.5 shadow-sm flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 text-orange-400 animate-spin" />
+                    <span className="text-xs text-slate-500 font-medium">{LOADING_VERBS[loading.stepIdx]}<span className="text-orange-400">{loading.dots > 0 ? ".".repeat(loading.dots) : ""}</span></span>
+                  </div>
+                )}
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -2222,21 +2423,43 @@ export default function PropFlowChat({ defaultOpen = false, className }: PropFlo
         </div>
       )}
 
+      {/* First-run teaching hint + floating launcher — hidden once the widget has been opened at all */}
+      {!isOpen && messages.length === 0 && !hintDismissed && (
+        <div className="relative max-w-[calc(100vw-6rem)] sm:max-w-xs">
+          <div className="relative flex items-start gap-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-white/90 text-xs font-medium leading-snug rounded-2xl border border-slate-200 dark:border-white/10 shadow-lg pl-3.5 pr-8 py-2.5">
+            <span>
+              <span className="font-semibold text-orange-500">✨ Describe what you want</span> — e.g. “2-bed in Wuse under ₦7m/yr” — and I’ll find the matches for you.
+            </span>
+          </div>
+          <button
+            onClick={() => { setHintDismissed(true); try { localStorage.setItem(HINT_DISMISSED_KEY, "1") } catch { /* ignore */ } }}
+            aria-label="Dismiss hint"
+            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-white/60 flex items-center justify-center hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
       {/* Floating launcher — hidden inside the sheet on mobile when open */}
-      <button onClick={() => setIsOpen(v => !v)}
+      <button
+        onClick={() => {
+          setIsOpen(v => !v)
+          setHintDismissed(true)
+          try { localStorage.setItem(HINT_DISMISSED_KEY, "1") } catch { /* ignore */ }
+        }}
         className={cn(
           "w-14 h-14 rounded-full shadow-lg items-center justify-center transition-all duration-200",
           isOpen ? "hidden sm:flex bg-slate-800 hover:bg-slate-700" : "flex bg-orange-500 hover:bg-orange-600",
         )}
-        aria-label={isOpen ? "Close" : "Open PropFlow"}>
+        aria-label={isOpen ? "Close" : "Open NEST AI"}>
         {isOpen ? <X className="h-6 w-6 text-white" /> : <MessageCircle className="h-6 w-6 text-white" />}
       </button>
-
       {/* Trust Passport modal — desktop: focused centred panel over a dimmed
           backdrop; mobile: full-screen sheet with sticky header/footer. Always
           mounted (hidden) so a "Save and finish later" draft survives closing. */}
       {selectedTrustProperty && (
-        <div className={cn("fixed inset-0 z-[70] items-end justify-center sm:items-center", trustModalOpen ? "flex" : "hidden")}>
+      <div className={cn("fixed inset-0 z-[70] items-end justify-center sm:items-center", trustModalOpen ? "flex" : "hidden")}>
           <div
             className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
             onClick={() => { if (!isLoadingRef.current) setTrustModalOpen(false) }}

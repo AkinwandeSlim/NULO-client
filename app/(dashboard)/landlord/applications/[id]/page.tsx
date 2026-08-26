@@ -942,7 +942,7 @@ export default function LandlordApplicationDetailPage() {
               <Card className="border-indigo-200 bg-indigo-50/30">
                 <CardContent className="p-4 flex items-center gap-3">
                   <Loader2 className="h-4 w-4 text-indigo-500 animate-spin" />
-                  <span className="text-xs text-indigo-600">Loading PropFlow context...</span>
+                  <span className="text-xs text-indigo-600">Loading NEST AI context...</span>
                 </CardContent>
               </Card>
             )}

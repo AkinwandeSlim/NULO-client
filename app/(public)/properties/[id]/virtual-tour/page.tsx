@@ -86,7 +86,7 @@ export default function VirtualTourPage() {
             <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{property.title}</h1>
             <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-slate-600 dark:text-white/65"><MapPin className="h-4 w-4" />{property.location}</p>
           </div>
-          {source === "propflow" && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">Opened from PropFlow — return to chat whenever you are ready.</p>}
+          {source === "propflow" && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">Opened from NEST AI — return to chat whenever you are ready.</p>}
         </div>
 
         <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
@@ -107,7 +107,7 @@ export default function VirtualTourPage() {
           <div className="grid gap-2 sm:grid-cols-3">
             <Link href={`${propertyUrl}?from=virtual-tour&action=schedule-viewing`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-orange-200 px-4 py-2.5 text-sm font-semibold text-orange-700 hover:bg-orange-50 dark:border-orange-500/35 dark:text-orange-300 dark:hover:bg-orange-500/10"><Calendar className="h-4 w-4" /> Schedule physical viewing</Link>
             <Link href={`/properties/${propertyId}/apply?from=virtual-tour`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"><FileText className="h-4 w-4" /> Apply now</Link>
-            <Link href={`/tenant?propflow=1&property_id=${encodeURIComponent(propertyId)}&from=virtual-tour`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"><MessageCircle className="h-4 w-4" /> Ask PropFlow</Link>
+            <Link href={`/tenant?propflow=1&property_id=${encodeURIComponent(propertyId)}&from=virtual-tour`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"><MessageCircle className="h-4 w-4" /> Ask NEST AI</Link>
           </div>
         </section>
       </main>

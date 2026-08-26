@@ -118,7 +118,7 @@ const NAV_LINKS = [
 
 const NAV_PRODUCTS = [
   { label: "Rental Marketplace", href: "/properties", description: "For Tenants" },
-  { label: "PropFlow", href: "/properties?propflow=1", description: "AI rental agent — it finds your home" },
+  { label: "NEST AI", href: "/properties?propflow=1", description: "AI rental agent — it finds your home" },
   { label: "Property Management", href: "/landlord", description: "For Property Managers" },
   { label: "NEST", href: WAITLIST_URL, description: "For Investors" },
 ]
@@ -838,14 +838,14 @@ export default function LandingPage() {
               {/* Left — Copy */}
               <div className="text-center lg:text-left">
                 <p className={cx(EYEBROW_BASE, theme === "dark" ? "text-orange-400" : "text-orange-600", "mb-3")}>
-                  PropFlow — Rental AI Agent
+                  NEST AI — Rental Agent
                 </p>
                 <h2 className={cx("mb-4 text-[28px] font-bold leading-tight sm:text-[34px] lg:text-[40px]", theme === "dark" ? "text-white" : "text-slate-900")}>
                   Tell It What You Need. <span className="nulo-gradient-text">It Finds Your Home.</span>
                 </h2>
                 <div className={cx("mx-auto mb-8 max-w-xl space-y-4 text-[14px] sm:text-[15px] leading-relaxed lg:mx-0", theme === "dark" ? "text-white/65" : "text-slate-600")}>
                   <p>
-                    Skip the endless scrolling. PropFlow is our AI rental agent — describe the home
+                    Skip the endless scrolling. NEST AI is our rental agent — describe the home
                     you want in plain language (or Pidgin), and it searches verified listings,
                     matches your budget, and walks you through viewings and applications, all in one chat.
                   </p>
@@ -871,7 +871,7 @@ export default function LandingPage() {
                   <Link href="/properties?propflow=1">
                     <Button className={cx(BTN_PRIMARY, "group px-8 py-4 text-[15px]")}>
                       <Sparkles className="mr-1.5 h-4 w-4" />
-                      Chat with PropFlow
+                      Chat with NEST AI
                       <ChevronRight className="ml-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                     </Button>
                   </Link>
@@ -893,7 +893,7 @@ export default function LandingPage() {
                       <Sparkles className="h-4 w-4" />
                     </div>
                     <div className="flex-1">
-                      <p className={cx("text-[14px] font-semibold leading-none", theme === "dark" ? "text-white" : "text-slate-900")}>PropFlow</p>
+                      <p className={cx("text-[14px] font-semibold leading-none", theme === "dark" ? "text-white" : "text-slate-900")}>NEST AI</p>
                       <p className={cx("mt-1 text-[11px] leading-none", theme === "dark" ? "text-white/40" : "text-slate-500")}>AI Rental Agent · Online</p>
                     </div>
                     <span className="h-2 w-2 rounded-full bg-emerald-400" />
@@ -903,7 +903,7 @@ export default function LandingPage() {
                   <div className="space-y-3 px-5 py-5">
                     {/* Agent */}
                     <div className={cx("max-w-[85%] rounded-2xl rounded-tl-sm px-4 py-2.5 text-[13px] leading-relaxed", theme === "dark" ? "bg-white/[0.06] text-white/80" : "bg-slate-100 text-slate-700")}>
-                      Hi! I&apos;m PropFlow, your AI rental assistant. What kind of home are you looking for?
+                      Hi! I&apos;m NEST AI, your AI rental assistant. What kind of home are you looking for?
                     </div>
                     {/* User */}
                     <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-sm bg-orange-500 px-4 py-2.5 text-[13px] leading-relaxed text-black">

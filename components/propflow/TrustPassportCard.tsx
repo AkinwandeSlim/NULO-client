@@ -893,7 +893,7 @@ export default function TrustPassportCard({ property, onSubmit, isLoading, onSav
             className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-400"
           />
           <span className="text-xs text-slate-700 leading-relaxed">
-            {"I agree that "}<span className="font-semibold">PropFlow</span>{" "}
+            {"I agree that "}<span className="font-semibold">NEST AI</span>{" "}
             {"may share these application details with this property's landlord."}
           </span>
         </label>

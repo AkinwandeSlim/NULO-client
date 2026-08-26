@@ -1035,7 +1035,7 @@ export default function TenantDashboard() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-50 to-purple-100 hover:from-purple-100 hover:to-purple-200 text-purple-700 text-xs font-semibold shadow-sm transition-all duration-150"
                       >
                         <Bot className="h-3.5 w-3.5" />
-                        Continue in PropFlow
+                        Continue with NEST AI
                       </button>
                     )}
                     <button onClick={() => { setDismissedPaymentBanners(p => [...p, a.id]); dismissBanner(buildBannerKey("agreement_signed", `payment-${a.id}`)) }}
@@ -1096,7 +1096,7 @@ export default function TenantDashboard() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-300 bg-gradient-to-r from-orange-50 to-orange-100 hover:from-orange-100 hover:to-orange-200 text-orange-700 text-xs font-semibold shadow-sm transition-all duration-150"
                       >
                         <Bot className="h-3.5 w-3.5" />
-                        Continue in PropFlow
+                        Continue with NEST AI
                       </button>
                     )}
                     <button onClick={() => { setDismissedApprovalBanner(p => [...p, a.id]); dismissBanner(buildBannerKey("agreement_signed", a.id)) }}
@@ -2016,7 +2016,7 @@ export default function TenantDashboard() {
                   onClick={() => window.dispatchEvent(new CustomEvent('propflow:open'))}
                   className="w-full justify-start border-orange-300 bg-gradient-to-r from-orange-50 to-orange-100 hover:from-orange-100 hover:to-orange-200 h-8 text-xs font-semibold text-orange-700"
                 >
-                  <Bot className="w-3.5 h-3.5 mr-2 text-orange-600" />AI PropFlow Assistant
+                  <Bot className="w-3.5 h-3.5 mr-2 text-orange-600" />AI NEST Assistant
                 </Button>
               </CardContent>
             </Card>

@@ -2004,7 +2004,7 @@ export default function LandlordDashboard() {
                               }}
                             >
                               <Bot className="mr-2 h-4 w-4" />
-                              Continue in PropFlow
+                              Continue with NEST AI
                             </Button>
                           ) : (
                             <Link href="/landlord/agreements">
@@ -2069,7 +2069,7 @@ export default function LandlordDashboard() {
                                     className="border-green-300 text-green-700 hover:bg-green-50 shadow-sm"
                                   >
                                     <Bot className="mr-2 h-4 w-4" />
-                                    Continue in PropFlow
+                                    Continue with NEST AI
                                   </Button>
                                 </Link>
                               )}
@@ -2090,7 +2090,7 @@ export default function LandlordDashboard() {
                                   className="border-green-300 text-green-700 hover:bg-green-50 shadow-sm"
                                 >
                                   <Bot className="mr-2 h-4 w-4" />
-                                  Review with PropFlow
+                                  Review with NEST AI
                                 </Button>
                               </Link>
                             </>

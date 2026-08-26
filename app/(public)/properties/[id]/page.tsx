@@ -1185,7 +1185,7 @@ export default function PropertyDetailPage() {
                           }`}
                         >
                           <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
-                          Continue in PropFlow to Apply
+                          Continue with NEST AI to Apply
                         </button>
                       )}
                     </div>
@@ -1307,7 +1307,7 @@ export default function PropertyDetailPage() {
             }`}
           >
             <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
-            Continue in PropFlow to Apply
+            Continue with NEST AI to Apply
           </button>
         )}
 

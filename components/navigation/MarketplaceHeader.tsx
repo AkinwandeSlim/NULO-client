@@ -25,10 +25,12 @@ import {
   MapPin,
   Menu,
   ChevronDown,
+  Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Logo } from "@/components/logo"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -121,6 +123,15 @@ export function MarketplaceHeader({
     }
   }
 
+  // Open the PropFlow AI assistant. The floating widget is mounted by the
+  // (public) layout and listens for this event — dispatching without a
+  // workflow_id simply reveals it with the user's existing conversation
+  // (or the guest welcome message). Same mechanism as the dashboard
+  // "Continue in PropFlow" banners.
+  const openAiSearch = () => {
+    window.dispatchEvent(new CustomEvent("propflow:open"))
+  }
+
   // Sticky header scroll effect
   useEffect(() => {
     const onScroll = () => {
@@ -150,9 +161,9 @@ export function MarketplaceHeader({
             </div>
           </Link>
 
-          {/* Center - Search Bar (prominent, takes most space) */}
-          <div className="flex-1 max-w-2xl mx-4 hidden md:block">
-            <div className="relative">
+          {/* Center - Search Bar + AI Search (prominent, takes most space) */}
+          <div className="flex-1 max-w-2xl mx-4 hidden md:flex items-center gap-2">
+            <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 dark:text-white/40" />
               <input
                 type="text"
@@ -162,6 +173,33 @@ export function MarketplaceHeader({
                 className="w-full pl-12 pr-4 py-3 rounded-xl text-base border-2 transition-all focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/30 border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30"
               />
             </div>
+            {/* AI Search — labeled entry point into the PropFlow assistant.
+                The corner bubble reads as "support chat", so search intent is
+                converted here instead; the bubble remains for resuming an
+                ongoing conversation. Tooltip teaches on hover (desktop only). */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={openAiSearch}
+                  aria-label="AI Search — describe your ideal home and NEST AI finds matches"
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-3 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-sm hover:shadow-md transition-all"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  AI Search
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end" className="max-w-[240px] p-3">
+                {/* Three-part structure: hook → example → outcome, each on its
+                    own line so the tooltip scans at a glance instead of reading
+                    as one run-on sentence. */}
+                <span className="block text-center font-semibold">Skip the filters — just describe it</span>
+                <span className="mt-1.5 block text-center italic opacity-90">“3-bed in Wuse under ₦7m/yr”</span>
+                <span className="mt-1.5 block border-t border-white/15 pt-1.5 text-center opacity-80">
+                  NEST AI searches verified listings and finds your matches
+                </span>
+              </TooltipContent>
+            </Tooltip>
           </div>
 
           {/* Right - Theme Toggle + Account Menu */}
@@ -261,15 +299,27 @@ export function MarketplaceHeader({
 
         {/* Mobile Search (shown on mobile only) */}
         <div className="md:hidden px-4 pb-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-white/40" />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => onSearchChange?.(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-lg text-sm border transition-colors focus:border-orange-500 focus:outline-none border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-white/40" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => onSearchChange?.(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-lg text-sm border transition-colors focus:border-orange-500 focus:outline-none border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30"
+              />
+            </div>
+            {/* No hover on touch — the visible label is the teaching surface */}
+            <button
+              type="button"
+              onClick={openAiSearch}
+              aria-label="AI Search — describe your ideal home and NEST AI finds matches"
+              className="flex-shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600 active:from-orange-600 active:to-orange-700 shadow-sm"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              AI
+            </button>
           </div>
         </div>
       </div>

@@ -44,6 +44,7 @@ import {
   Loader2,
   Bed,
   Bath,
+  Sparkles,
 } from 'lucide-react'
 
 // Lazy load optimized map
@@ -145,6 +146,10 @@ export default function PropertiesPage() {
   // On first render, lazy useState already applied the URL params — we skip
   // the effect to avoid a redundant state-set → re-render → double-fetch.
   const isFirstUrlParamRender = useRef(true)
+  // Live mirror of `properties` so the PropFlow handoff listeners can resolve a
+  // clicked property to its lat/lng row without re-subscribing on every fetch.
+  const propertiesRef = useRef(properties)
+  propertiesRef.current = properties
 
   // Persist sidebar collapse state in localStorage so it survives reloads
   useEffect(() => {
@@ -311,6 +316,11 @@ export default function PropertiesPage() {
     router.push('/properties', { scroll: false })
   }, [router])
 
+  // Opens the PropFlow AI assistant (header "AI Search" buttons + empty-state nudge)
+  const openAiSearch = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('propflow:open'))
+  }, [])
+
 
   const handleFavoriteClick = useCallback(async (propertyId: string) => {
     if (!user) {
@@ -459,6 +469,54 @@ export default function PropertiesPage() {
     fetchProperties(currentPage)
   }, [currentPage, fetchProperties])
 
+  // ── PropFlow → marketplace handoff ─────────────────────────────────────────
+  // PropFlow is mounted on the same page, so its search + selection events can
+  // drive the marketplace background without any navigation.
+  //
+  // 1) On a PropFlow SEARCH, apply the same intent (location / budget / beds)
+  //    as marketplace filters so the page frames that area with the suggested
+  //    homes (plus others). Desktop auto-enters split view so the map is visible.
+  useEffect(() => {
+    const onMarketplaceSearch = (e: Event) => {
+      const intent = (e as CustomEvent).detail?.intent
+      if (!intent) return
+      if (intent.location) setSearchQuery(intent.location)
+      if (intent.budget_monthly) setPriceRange([0, intent.budget_monthly])
+      if (intent.bedrooms) setMinBeds(intent.bedrooms)
+      setCurrentPage(1)
+      setShouldLoadMap(true)
+      // Show the map in split view on desktop so the handoff is visible.
+      if (typeof window !== 'undefined' && window.innerWidth >= 1024) setViewMode('split')
+    }
+    window.addEventListener('propflow:marketplace-search', onMarketplaceSearch)
+    return () => window.removeEventListener('propflow:marketplace-search', onMarketplaceSearch)
+  }, [])
+
+  // 2) When a tenant taps a PropFlow result, fly the marketplace map to that
+  //    property (split view, selected popup, list card scrolled into view).
+  useEffect(() => {
+    const onMapFocus = (e: Event) => {
+      const { propertyId, location } = (e as CustomEvent).detail || {}
+      if (!propertyId) return
+      setShouldLoadMap(true)
+      if (typeof window !== 'undefined' && window.innerWidth >= 1024) setViewMode('split')
+      // Resolve the click to a full marketplace row (with lat/lng) so the map
+      // can popup + fly precisely. If it hasn't finished loading yet, the
+      // search listener above has already asked that area to load.
+      const found = propertiesRef.current.find(p => String(p.id) === String(propertyId))
+      if (found) {
+        setSelectedProperty(found)
+        window.setTimeout(() => {
+          document.getElementById(`property-card-${found.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }, 120)
+      } else if (location) {
+        setSearchQuery(location)
+      }
+    }
+    window.addEventListener('propflow:map-focus', onMapFocus)
+    return () => window.removeEventListener('propflow:map-focus', onMapFocus)
+  }, [])
+
   // Load favorites on page arrival and when user changes
   // force=true bypasses the 2s debounce so hearts are red immediately on load
   useEffect(() => {
@@ -601,11 +659,18 @@ export default function PropertiesPage() {
                       <Home className={`h-8 w-8 ${theme === "dark" ? "text-white/40" : "text-slate-400"}`} />
                     </div>
                     <p className={`text-sm font-semibold mb-1 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>No properties found</p>
-                    <p className={`text-xs mb-3 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>Try adjusting your filters</p>
-                    <Button size="sm" onClick={clearAllFilters}
-                      className="bg-orange-500 hover:bg-orange-600 text-white text-xs">
-                      Clear filters
-                    </Button>
+                    <p className={`text-xs mb-4 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>Try adjusting your filters</p>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={clearAllFilters}
+                        className="bg-orange-500 hover:bg-orange-600 text-white text-xs">
+                        Clear filters
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={openAiSearch}
+                        className="text-xs text-orange-600 dark:text-orange-400 border-orange-300 dark:border-orange-500/40 hover:bg-orange-50 dark:hover:bg-orange-500/10">
+                        <Sparkles className="h-3.5 w-3.5 mr-1" />
+                        Search with AI
+                      </Button>
+                    </div>
                   </div>
                 )}
 
@@ -865,9 +930,16 @@ export default function PropertiesPage() {
                   {searchQuery ? `No results for "${searchQuery}"` : 'No properties found'}
                 </h3>
                 <p className={`mb-6 ${theme === "dark" ? "text-white/60" : "text-slate-500"}`}>Try adjusting your search or filters</p>
-                <Button onClick={clearAllFilters} className="bg-orange-500 hover:bg-orange-600 text-white">
-                  Clear filters
-                </Button>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button onClick={clearAllFilters} className="bg-orange-500 hover:bg-orange-600 text-white">
+                    Clear filters
+                  </Button>
+                  <Button variant="outline" onClick={openAiSearch}
+                    className="text-orange-600 dark:text-orange-400 border-orange-300 dark:border-orange-500/40 hover:bg-orange-50 dark:hover:bg-orange-500/10">
+                    <Sparkles className="h-4 w-4 mr-1.5" />
+                    Search with AI
+                  </Button>
+                </div>
               </div>
             ) : (
               <>
