@@ -120,7 +120,7 @@ const NAV_PRODUCTS = [
   { label: "Rental Marketplace", href: "/properties", description: "For Tenants" },
   { label: "NEST AI", href: "/properties?propflow=1", description: "AI rental agent — it finds your home" },
   { label: "Property Management", href: "/landlord", description: "For Property Managers" },
-  { label: "NEST", href: WAITLIST_URL, description: "For Investors" },
+  { label: "NEST (Beta)", href: WAITLIST_URL, description: "For Investors" },
 ]
 
 const NAV_GET_STARTED = [
@@ -133,10 +133,10 @@ const NAV_GET_STARTED = [
 const PRODUCTS = [
   {
     icon: Users,
-    tag: "NEST — Launching Soon",
+    tag: "NEST — Beta Mode",
     title: "Co-Own High-Yield Rentals",
     body: "Pool funds with other investors through NEST to acquire premium rental properties. We manage everything; you earn your share of the rent monthly.",
-    cta: "Join the Waitlist",
+    cta: "View NEST (Beta)",
     href: WAITLIST_URL,
     dominant: true,
   },
@@ -241,7 +241,7 @@ const TESTIMONIALS = [
 const FAQS = [
   {
     q: "What is NEST and how does it work?",
-    a: "NEST (Nulo Equity Share Trust) lets you pool funds with other investors to acquire high-yield rental properties. Nulo Africa handles acquisition, tenant sourcing, maintenance, and rent collection, and you receive your proportional share of the rent every month. NEST is currently in early access — join the waitlist to be notified at launch.",
+    a: "NEST (Nulo Equity Share Trust) lets you pool funds with other investors to acquire high-yield rental properties. Nulo Africa handles acquisition, tenant sourcing, maintenance, and rent collection, and you receive your proportional share of the rent every month. NEST is now in Beta — start co-owning properties today.",
   },
   {
     q: "How do you verify properties and landlords?",
@@ -249,7 +249,7 @@ const FAQS = [
   },
   {
     q: "How do I get started?",
-    a: "Join the NEST waitlist to co-invest, browse the marketplace to rent, or open the dashboard to manage properties. Getting started takes just a few minutes.",
+    a: "View NEST (Beta) to co-invest, browse the marketplace to rent, or open the dashboard to manage properties. Getting started takes just a few minutes.",
   },
 ]
 
@@ -356,20 +356,25 @@ export default function LandingPage() {
   // Fetch featured properties
   useEffect(() => {
     const fetchFeaturedProperties = async () => {
+      // Only fetch if API URL is configured
+      if (!process.env.NEXT_PUBLIC_API_URL) {
+        setLoadingProperties(false)
+        return
+      }
+
       try {
         setLoadingProperties(true)
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-        const response = await fetch(`${API_BASE_URL}/api/v1/properties/search?status=vacant&sort=newest&limit=12`)
-        
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/properties/search?status=vacant&sort=newest&limit=12`)
+
         if (!response.ok) {
           throw new Error('Failed to fetch featured properties')
         }
-        
+
         const data = await response.json()
         const propertiesArray = data.properties || data.data || data || []
         setFeaturedProperties(propertiesArray.length > 0 ? propertiesArray : [])
       } catch (error) {
-        console.error('Failed to fetch featured properties:', error)
+        // Silently fail - landing page should work without backend
         setFeaturedProperties([])
       } finally {
         setLoadingProperties(false)
@@ -511,7 +516,7 @@ export default function LandingPage() {
               <div className="flex flex-col items-stretch justify-center gap-3 sm:items-center sm:flex-row sm:gap-4 mb-10">
                 <Link href={WAITLIST_URL} className="sm:inline-flex">
                   <Button className={cx(BTN_PRIMARY, "group w-full sm:w-auto px-8 py-4 text-[15px] hover:-translate-y-0.5 shadow-lg shadow-orange-500/25")}>
-                    Join the NEST Waitlist
+                    View NEST (Beta)
                     <ChevronRight className="ml-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </Button>
                 </Link>
@@ -712,14 +717,14 @@ export default function LandingPage() {
                     We manage everything — acquisition, tenants, maintenance, rent collection — and you simply receive your proportional share of the rent every month, plus benefit from long-term property appreciation.
                   </p>
                   <p className={cx("font-medium", theme === "dark" ? "text-orange-400" : "text-orange-600")}>
-                    NEST is launching soon. Join the waitlist to be first in line.
+                    NEST is now in Beta. Start co-owning properties today.
                   </p>
                 </div>
 
                 <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
                   <Link href={WAITLIST_URL}>
                     <Button className={cx(BTN_PRIMARY, "group px-8 py-4 text-[15px]")}>
-                      Join the NEST Waitlist
+                      View NEST (Beta)
                       <ChevronRight className="ml-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                     </Button>
                   </Link>
